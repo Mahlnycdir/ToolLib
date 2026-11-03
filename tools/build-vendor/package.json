@@ -1,0 +1,15 @@
+{
+  "name": "toollib-build-vendor",
+  "private": true,
+  "description": "Bundles the libraries behind Toollib's storage and sync services into vendor/git.js.",
+  "scripts": {
+    "build": "esbuild entry.js --bundle --format=esm --minify --target=es2020,safari15 --inject:buffer-shim.js --legal-comments=none --outfile=out/git.js"
+  },
+  "devDependencies": {
+    "@isomorphic-git/lightning-fs": "4.10.3",
+    "buffer": "6.0.3",
+    "diff3": "0.0.3",
+    "esbuild": "0.28.2",
+    "isomorphic-git": "1.44.3"
+  }
+}

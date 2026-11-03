@@ -1,11 +1,12 @@
 // The shell: command bar, module bar, workspace and status bar.
-// Routes live in the URL hash: #/home, #/settings, #/m/<module id>.
+// Routes live in the URL hash: #/home, #/settings (or #/settings/<section>), #/m/<module id>.
 import { h, toast, modal, closeTopModal } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, setLang, onLangChange } from '../i18n/i18n.js';
 import { ACCENTS, MODULES, moduleById, paintAccent, setAccent } from './modules.js';
-import { renderHome, renderModule, renderSettings } from './views.js';
+import { formatTime, renderHome, renderModule, renderSettings } from './views.js';
 import { applyUpdate, checkForUpdate, onPwaChange, pwaState } from '../services/pwa.js';
+import { isConfigured, onSyncChange, phaseText, syncKnowledge, syncState } from '../services/sync.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -24,7 +25,7 @@ export function startShell(root) {
   // ---------------------------------------------------------------- routing
   function currentRoute() {
     const [, kind, id] = location.hash.split('/');
-    if (kind === 'settings') return { kind: 'settings' };
+    if (kind === 'settings') return { kind: 'settings', section: id };
     if (kind === 'm' && moduleById(id)) return { kind: 'module', mod: moduleById(id) };
     return { kind: 'home' };
   }
@@ -37,11 +38,12 @@ export function startShell(root) {
 
   function render() {
     const route = currentRoute();
+    setDrawer(false); // also when the route changes from outside, e.g. the back button
     main.replaceChildren();
     paintAccent(main, route.kind === 'module' ? route.mod.id : 'shell');
-    if (route.kind === 'settings') renderSettings(main, { onChange: refresh, onCheckUpdate: runUpdateCheck });
+    if (route.kind === 'settings') renderSettings(main, { onChange: refresh, onCheckUpdate: runUpdateCheck, onSync: runSync, section: route.section });
     else if (route.kind === 'module') renderModule(main, route.mod);
-    else renderHome(main);
+    else renderHome(main, { onSync: runSync, onSetup: () => go('#/settings/sync') });
     renderRail(route);
     main.scrollTop = 0;
   }
@@ -131,7 +133,10 @@ export function startShell(root) {
     for (const a of ACCENTS) {
       list.push({ label: t('cmd.accent', { color: t(`accent.${a.id}`) }), keys: `accent akzent colour color farbe ${a.id}`, icon: 'palette', swatch: a.color, run: () => { setAccent('shell', a.id); refresh(); } });
     }
-    list.push({ label: t('cmd.update'), keys: 'update aktualisieren version', icon: 'refresh', run: runUpdateCheck });
+    list.splice(2, 0, isConfigured()
+      ? { label: t('cmd.sync'), keys: 'sync abgleichen abgleich git github pull push holen hochladen knowledge wissen', icon: 'refresh', run: runSync }
+      : { label: t('cmd.syncSetup'), keys: 'sync abgleichen abgleich einrichten setup git github token knowledge wissen', icon: 'refresh', run: () => go('#/settings/sync') });
+    list.push({ label: t('cmd.update'), keys: 'update aktualisieren version', icon: 'cloudDown', run: runUpdateCheck });
     list.push({ label: t('cmd.help'), keys: 'help hilfe shortcuts tastenkürzel keyboard', icon: 'info', run: showHelp });
     return list;
   }
@@ -229,6 +234,37 @@ export function startShell(root) {
     else if (result === 'unavailable') toast(t('update.unavailable'), 'info', 4000);
   }
 
+  // ---------------------------------------------------------------- sync
+  async function runSync() {
+    if (!isConfigured()) {
+      toast(t('sync.err.notConfigured'), 'info', 4000);
+      go('#/settings/sync');
+      return;
+    }
+    try {
+      const r = await syncKnowledge();
+      if (r.conflicts.length) toast(t('sync.done.conflicts', { count: r.conflicts.length }), 'error', 6000);
+      else if (r.kind === 'cloned') toast(t('sync.done.cloned', { count: r.nodes }), 'ok', 3500);
+      else if (r.kind === 'pushed') toast(t('sync.done.pushed', { count: r.uploaded }), 'ok');
+      else toast(t(`sync.done.${r.kind}`), 'ok');
+    } catch {
+      toast(syncState().error, 'error', 6000);
+    }
+  }
+
+  // While a sync runs only the status bar and the Sync buttons change; afterwards Home shows the new numbers.
+  let wasBusy = false;
+  onSyncChange((s) => {
+    renderStatus();
+    for (const b of document.querySelectorAll('[data-sync-btn]')) {
+      b.disabled = s.busy;
+      b.classList.toggle('busy', s.busy);
+      b.lastChild.textContent = s.busy ? (phaseText(s) || t('status.sync.busy')) : t('action.sync');
+    }
+    if (wasBusy && !s.busy && currentRoute().kind === 'home') render();
+    wasBusy = s.busy;
+  });
+
   // ---------------------------------------------------------------- status bar
   function statusItems() {
     const { ready, version, supported } = pwaState();
@@ -236,10 +272,23 @@ export function startShell(root) {
     return [
       h('span', { class: `st ${ready ? 'ok' : ''}` }, iconEl(ready ? 'check' : 'refresh'), h('span', { text: t(ready ? 'status.offlineReady' : 'status.offlinePreparing') })),
       h('span', { class: `st ${online ? '' : 'warn'}` }, iconEl(online ? 'dot' : 'cloudOff'), h('span', { text: t(online ? 'status.online' : 'status.offline') })),
-      h('span', { class: 'st dim' }, iconEl('refresh'), h('span', { text: t('status.sync') })),
+      syncStatusItem(),
       h('span', { class: 'st dim' }, iconEl('server'), h('span', { text: t('status.hub') })),
       h('span', { class: 'st version', text: supported && version ? `v${version}` : '' }),
     ];
+  }
+
+  function syncStatusItem() {
+    const s = syncState();
+    let cls = 'st st-btn';
+    let text;
+    if (!s.configured) { cls += ' dim'; text = t('status.sync'); }
+    else if (s.busy) { cls += ' busy'; text = phaseText(s) || t('status.sync.busy'); }
+    else if (s.error) { cls += ' warn'; text = t('status.sync.error'); }
+    else if (s.last?.time) { cls += ' ok'; text = t('status.sync.last', { time: formatTime(s.last.time) }); }
+    else text = t('status.sync.ready');
+    return h('button', { type: 'button', class: cls, title: s.error || t('cmd.sync'), onclick: runSync },
+      iconEl(s.error ? 'warn' : 'refresh', s.busy ? 'spin' : ''), h('span', { text }));
   }
 
   function renderStatus() {
