@@ -279,7 +279,12 @@ export function renderCheatsheet(main, mod, { go }) {
     }
     if (!snippets.length && !recipes.length) list.append(h('p', { class: 'muted', text: t(show === 'done' ? 'cheatsheet.noneDone' : show === 'open' ? 'cheatsheet.noneOpen' : 'cheatsheet.none') }));
   }
-  input.addEventListener('input', draw);
+  // The filter belongs to this history entry: Back from a node brings it back, a new visit starts empty.
+  input.value = history.state?.cheatFilter || '';
+  input.addEventListener('input', () => {
+    try { history.replaceState({ ...(history.state || {}), cheatFilter: input.value }, ''); } catch { /* ignore */ }
+    draw();
+  });
   const stop = onIndexChange((s) => { if (!list.isConnected) stop(); else if (!s.building) draw(); });
   draw();
 }

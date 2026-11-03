@@ -41,21 +41,42 @@ export function startShell(root) {
     else location.hash = hash;
   }
 
+  // Every history entry remembers how far its view was scrolled, so Back returns to the same place (e.g. in the
+  // cheatsheet); a new entry starts at the top. The entry gets an id in history.state the first time it is shown.
+  const positions = new Map();   // entry id -> scrollTop
+  let shownEntry = null;
+  let entrySeq = Date.now();
+  function entryId() {
+    let id = history.state?.toollibEntry;
+    if (!id) {
+      id = ++entrySeq;
+      try { history.replaceState({ ...(history.state || {}), toollibEntry: id }, ''); } catch { /* keeps working without */ }
+    }
+    return id;
+  }
+  const restoreScroll = (entry, token) => {
+    if (token === renderToken) main.scrollTop = positions.get(entry) || 0;
+  };
+
   let renderToken = 0;
   function render() {
     const route = currentRoute();
     const token = ++renderToken;
     setDrawer(false); // also when the route changes from outside, e.g. the back button
+    if (shownEntry !== null) positions.set(shownEntry, main.scrollTop);
+    const entry = entryId();
+    shownEntry = entry;
     main.replaceChildren();
     const nodeType = route.kind === 'node' ? nodeByPath(route.path)?.type : null;
     paintAccent(main, route.kind === 'module' ? route.mod.id : route.kind === 'node' ? typeAccent(nodeType) : 'shell');
     if (route.kind === 'settings') renderSettings(main, { onChange: refresh, onCheckUpdate: runUpdateCheck, onSync: runSync, section: route.section });
     else if (route.kind === 'module' && route.mod.id === 'cheatsheet') renderCheatsheet(main, route.mod, { go });
     else if (route.kind === 'module') renderModule(main, route.mod);
-    else if (route.kind === 'node') renderNode(main, route.path, { isCurrent: () => token === renderToken, go, onSync: runSync });
-    else renderHome(main, { onSync: runSync, onSetup: () => go('#/settings/sync') });
+    else if (route.kind === 'node') {
+      renderNode(main, route.path, { isCurrent: () => token === renderToken, go, onSync: runSync }).then(() => restoreScroll(entry, token));
+    } else renderHome(main, { onSync: runSync, onSetup: () => go('#/settings/sync') });
     renderRail(route);
-    main.scrollTop = 0;
+    restoreScroll(entry, token);
   }
 
   function refresh() {
