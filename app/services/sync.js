@@ -67,7 +67,7 @@ export function kobraSettings() {
 }
 
 // ------------------------------------------------------------------ state
-const state = { busy: false, phase: '', percent: null, error: '', last: loadPref('sync.last', null) };
+const state = { busy: false, phase: '', percent: null, error: '', last: loadPref('sync.last', null), pending: 0 };
 const listeners = new Set();
 
 export const syncState = () => ({ ...state, configured: isConfigured() });
@@ -155,7 +155,12 @@ async function run() {
   try {
     if (!url) throw new SyncError('notConfigured');
     if (!navigator.onLine) throw new SyncError('offline');
+    const noted = loadPref('sync.notes', {});
     const result = (await exists(`${dir}/.git`)) ? await update(s, url, cache) : await cloneRepo(s, url, cache);
+    // Everything noted before this sync is on GitHub now; a change made while it ran waits for the next one.
+    const notes = loadPref('sync.notes', {});
+    for (const [p, what] of Object.entries(noted)) if (notes[p] === what) delete notes[p];
+    savePref('sync.notes', notes);
     const stats = await knowledgeStats();
     state.last = {
       time: Date.now(),
@@ -177,8 +182,36 @@ async function run() {
     state.busy = false;
     state.phase = '';
     state.percent = null;
+    try { state.pending = await pendingChanges(); } catch { /* keep the old number */ }
     emit();
   }
+}
+
+// ------------------------------------------------------------------ changes made in Toollib
+// What changed on this device and why, e.g. { "nodes/snippets/py-for-in.md": "verified" }. The next sync
+// names it in the commit message ("Sync from Mac: verified py-for-in"), so GitHub's history stays readable.
+export function noteChange(path, what) {
+  savePref('sync.notes', { ...loadPref('sync.notes', {}), [path]: what });
+  return refreshPending();
+}
+
+// Number of changes on this device that GitHub does not have yet, for the status bar.
+export async function refreshPending() {
+  try { state.pending = await pendingChanges(); } catch { state.pending = 0; }
+  emit();
+  return state.pending;
+}
+
+function describeChanges(paths) {
+  const notes = loadPref('sync.notes', {});
+  const byWhat = new Map();
+  for (const p of paths) {
+    if (!notes[p]) continue;
+    const slug = p.slice(p.lastIndexOf('/') + 1).replace(/\.md$/, '');
+    byWhat.set(notes[p], [...(byWhat.get(notes[p]) || []), slug]);
+  }
+  const parts = [...byWhat].map(([what, slugs]) => [what, slugs.sort()]).map(([what, slugs]) => `${what} ${slugs.length > 5 ? `${slugs.slice(0, 5).join(', ')} and ${slugs.length - 5} more` : slugs.join(', ')}`);
+  return parts.join('; ');
 }
 
 async function cloneRepo(s, url, cache) {
@@ -248,18 +281,20 @@ async function update(s, url, cache) {
 // Saves everything that changed on this device as one commit. Returns the number of changed files.
 async function commitChanges(s, message, cache) {
   const matrix = await git.statusMatrix({ fs, dir, cache });
-  let n = 0;
+  const paths = [];
   for (const [filepath, head, work, stage] of matrix) {
     if (head === 1 && work === 1 && stage === 1) continue;
     if (work === 0) await git.remove({ fs, dir, filepath, cache });
     else await git.add({ fs, dir, filepath, cache });
-    n++;
+    paths.push(filepath);
   }
-  if (!n) return 0;
+  if (!paths.length) return 0;
   setPhase('commit');
-  await git.commit({ fs, dir, message, author: author(s), cache });
+  const what = describeChanges(paths);
+  // The notes stay until the upload worked: when both sides changed, this commit is redone on top of GitHub's.
+  await git.commit({ fs, dir, message: what ? `${message}${message.includes(':') ? ';' : ':'} ${what}` : message, author: author(s), cache });
   await flush();
-  return n;
+  return paths.length;
 }
 
 // Points the branch at another commit and brings the files in line with it.
@@ -481,7 +516,9 @@ export async function removeLocalCopy() {
   await rmrf(dir);
   state.last = null;
   state.error = '';
+  state.pending = 0;
   savePref('sync.last', null);
+  savePref('sync.notes', {});
   emit();
 }
 

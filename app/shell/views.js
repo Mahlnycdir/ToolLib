@@ -12,9 +12,16 @@ import {
   saveSyncSetting, syncSettings, syncState, testConnection,
 } from '../services/sync.js';
 
-// Progress of the foundation; bump DONE when a step is delivered.
-const STEPS = 5;
-const DONE = 5;
+// Progress of the current stage: the Python cheatsheet as a full module. The foundation (5 steps) is done.
+// Mark a point as done when it is delivered; ENTE decides the order of the open ones.
+const STAGE = [
+  { key: 'stage2.verify', done: true },
+  { key: 'stage2.sources', done: true },
+  { key: 'stage2.groups', done: false },
+  { key: 'stage2.run', done: false },
+  { key: 'stage2.kobra', done: false },
+  { key: 'stage2.own', done: false },
+];
 
 const card = (title, ...children) => h('section', { class: 'card' }, title ? h('h2', { text: title }) : null, ...children);
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
@@ -54,13 +61,12 @@ export function renderHome(main, { onSync, onSetup }) {
   fillKnowledgeCard(know, { onSync, onSetup });
 
   const steps = h('ol', { class: 'steps' });
-  for (let i = 1; i <= STEPS; i++) {
-    const state = i <= DONE ? 'done' : i === DONE + 1 ? 'next' : '';
-    steps.append(h('li', { class: state },
-      h('span', { class: 'dot', html: state === 'done' ? icon('check') : String(i) }),
-      h('span', { text: t(`home.step${i}`) })));
-  }
-  main.append(card(t('home.progress.title'), steps));
+  STAGE.forEach((p, i) => {
+    steps.append(h('li', { class: p.done ? 'done' : '' },
+      h('span', { class: 'dot', html: p.done ? icon('check') : String(i + 1) }),
+      h('span', { text: t(`home.${p.key}`) })));
+  });
+  main.append(card(t('home.progress.title'), steps, h('p', { class: 'muted small', text: t('home.progress.foundation') })));
 
   const grid = h('div', { class: 'grid-2' },
     card(t('home.projects.title'), h('p', { class: 'muted', text: t('home.projects.empty') })),

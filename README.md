@@ -2,7 +2,7 @@
 
 Persönliche Arbeitsoberfläche für Mac, iPhone und Linux: eine Web-App (PWA) auf GitHub Pages, dazu später ein Hub zu Hause. Das Wissen liegt getrennt im privaten Repository `knowledge`.
 
-Stand: Basis fertig (Version 0.5.0). Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz.
+Stand: Version 0.6.0, Stufe 2 (Python-Spickzettel als volles Modul) hat begonnen. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch.
 
 ## Aufbau
 
@@ -19,7 +19,8 @@ toollib/                 dieses Repository, öffentlich
     i18n/                strings.json (jeder Satz auf Englisch und Deutsch), i18n.js mit t()
     services/            ui.js und icons.js aus Kobra, prefs.js, pwa.js,
                          storage.js (Dateien auf dem Gerät), sync.js (Abgleich mit GitHub),
-                         nodes.js (Knoten lesen: Kopfdaten, Sprachblöcke, Quellen), search.js (Suchindex)
+                         nodes.js (Knoten lesen: Kopfdaten, Sprachblöcke, Quellen; ein Feld ändern),
+                         search.js (Suchindex)
     shell/               shell.js (Befehlszeile, Modulleiste, Statuszeile), views.js, modules.js, styles.css,
                          node-view.js (Knoten-Ansicht, Python-Spickzettel), markdown.js (sicherer Markdown-Leser)
   tools/                 Hilfsprogramme: import-snippets, build-vendor
@@ -52,8 +53,14 @@ Der Token bleibt im Speicher dieses Geräts und geht nur an den Proxy und an Git
 - Befehlszeile (⌘K oder `/`, auf dem iPhone unten): Treffer aus dem Wissen stehen oben, darunter passende Befehle. Die Suche verzeiht Tippfehler, findet Wortanfänge und kennt englische und deutsche Namen (title, title_de, aliases, tags, Text).
 - Enter öffnet einen Knoten, ⇧ Enter oder das Kopier-Symbol kopiert ein Snippet sofort. Platzhalter wie `${x}` werden beim Kopieren zu `x`.
 - Die Knoten-Ansicht zeigt den Text in der gewählten Sprache, Code und Formeln (als LaTeX) mit Kopierknopf, verwandte Knoten, die Quellen mit Link und Fundstelle sowie einen Link zur Datei auf GitHub.
-- Modul Python-Spickzettel: alle Snippets nach Gruppen, mit Filter und Kopierknopf.
+- Modul Python-Spickzettel: alle Snippets nach Gruppen, mit Filter und Kopierknopf. Oben steht, wie viele schon geprüft sind; „Zu prüfen“ und „Geprüft“ zeigen nur diese.
 - Der Suchindex entsteht beim Start und nach jedem Sync im Speicher; bei einigen tausend Knoten dauert das unter einer Sekunde.
+
+## Prüfen
+
+Knoten, die Claude oder ein Import angelegt hat, tragen `verified: false` und zeigen den Hinweis „Ungeprüft“. Darunter steht der Knopf „Als geprüft markieren“. Er ändert in der Datei auf dem Gerät genau eine Zeile (`verified: true`), sonst nichts. Die Statuszeile zeigt dann „Abgleich: 1 zum Hochladen“, und der nächste Sync lädt die Änderung mit einer lesbaren Commit-Nachricht hoch, z. B. `Sync from Mac: verified py-for-in`. Weil nur eine Zeile anders ist, verbindet Sync das auch mit Änderungen, die gleichzeitig auf einem anderen Gerät an derselben Datei entstanden sind. Rückgängig geht es unten in der Ansicht mit „Als ungeprüft markieren“.
+
+Das ist die erste Änderung am Wissen direkt aus Toollib. Knoten mit fehlerhaften Kopfdaten und Konfliktkopien bekommen den Knopf nicht.
 
 ## Lokal ansehen
 

@@ -2,7 +2,7 @@
 // and finds English and German names alike (title, title_de and aliases are all indexed).
 // The index lives in memory; it is rebuilt at start and after every sync, which takes well under a second.
 import { MiniSearch } from '../../vendor/search.js';
-import { loadAllNodes, summary } from './nodes.js';
+import { getNode, loadAllNodes, summary } from './nodes.js';
 
 // Lower case, without accents, ß as ss: "Zählschleife" and "zahlschleife" become the same word.
 export const normalize = (s) => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ß/g, 'ss');
@@ -69,6 +69,20 @@ export function searchNodes(query, { limit = 8, filter } = {}) {
   let hits = mini.search(query, { ...opts, combineWith: 'AND' });
   if (!hits.length) hits = mini.search(query, { ...opts, combineWith: 'OR' });
   return hits.slice(0, limit).map((r) => byPath.get(r.id)).filter(Boolean);
+}
+
+// After a node changed on this device (e.g. marked as verified): update just this one entry.
+// Quiet on purpose: views that show the node update themselves, the rest reads the new state when drawn.
+export async function refreshNode(path) {
+  const node = await getNode(path);
+  if (!node || !mini) return node ? summary(node) : null;
+  const d = summary(node);
+  if (mini.has(path)) mini.replace(d);
+  else mini.add(d);
+  byPath.set(path, d);
+  if (!d.conflict) bySlug.set(d.slug, d);
+  state.count = byPath.size;
+  return d;
 }
 
 export const nodeByPath = (path) => byPath.get(path) || null;

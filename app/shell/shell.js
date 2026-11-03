@@ -6,7 +6,7 @@ import { t, getLang, setLang, onLangChange } from '../i18n/i18n.js';
 import { ACCENTS, MODULES, moduleById, paintAccent, setAccent } from './modules.js';
 import { formatTime, renderHome, renderModule, renderSettings } from './views.js';
 import { applyUpdate, checkForUpdate, onPwaChange, pwaState } from '../services/pwa.js';
-import { isConfigured, onSyncChange, phaseText, syncKnowledge, syncState } from '../services/sync.js';
+import { isConfigured, onSyncChange, phaseText, refreshPending, syncKnowledge, syncState } from '../services/sync.js';
 import { buildIndex, indexState, nodeByPath, onIndexChange, searchNodes } from '../services/search.js';
 import { copyWithToast, nodeHref, nodeLead, nodeTitle, recentPaths, renderCheatsheet, renderNode, typeAccent, typeIcon, typeLabel } from './node-view.js';
 
@@ -336,10 +336,11 @@ export function startShell(root) {
     if (!s.configured) { cls += ' dim'; text = t('status.sync'); }
     else if (s.busy) { cls += ' busy'; text = phaseText(s) || t('status.sync.busy'); }
     else if (s.error) { cls += ' warn'; text = t('status.sync.error'); }
+    else if (s.pending) { cls += ' pending'; text = t('status.sync.pending', { count: s.pending }); }
     else if (s.last?.time) { cls += ' ok'; text = t('status.sync.last', { time: formatTime(s.last.time) }); }
     else text = t('status.sync.ready');
     return h('button', { type: 'button', class: cls, title: s.error || t('cmd.sync'), onclick: runSync },
-      iconEl(s.error ? 'warn' : 'refresh', s.busy ? 'spin' : ''), h('span', { text }));
+      iconEl(s.error ? 'warn' : s.pending && !s.busy ? 'cloudUp' : 'refresh', s.busy ? 'spin' : ''), h('span', { text }));
   }
 
   function renderStatus() {
@@ -391,4 +392,5 @@ export function startShell(root) {
   renderStatus();
   render();
   buildIndex();
+  refreshPending(); // changes from an earlier visit that are not uploaded yet
 }

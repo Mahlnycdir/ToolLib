@@ -1,7 +1,7 @@
 // Reads knowledge nodes: front matter (YAML between --- lines), language blocks (::: en / ::: de),
 // code blocks and sources. Nothing here touches the page; the node view and the search build on it.
 import { parseYaml, JSON_SCHEMA } from '../../vendor/search.js';
-import { KNOWLEDGE, basename, exists, listTree, readText } from './storage.js';
+import { KNOWLEDGE, basename, exists, listTree, readText, writeFile } from './storage.js';
 
 // ------------------------------------------------------------------ parsing
 export function parseNode(text, path) {
@@ -170,4 +170,41 @@ export async function loadAllNodes() {
 export async function getNode(path) {
   if (!isNodeFile(path) || path.includes('..')) return null;
   try { return parseNode(await readText(`${KNOWLEDGE}/${path}`), path); } catch { return null; }
+}
+
+// ------------------------------------------------------------------ changing nodes
+// Sets one top-level field of the front matter, e.g. "verified: true". Only that line changes (a field that is
+// missing gets a new line after "source:"), so Git shows a one-line difference and the sync can combine it
+// line by line with changes from other devices. Everything else in the file stays exactly as it was.
+export function setField(text, key, value) {
+  const bom = text.startsWith('﻿') ? '﻿' : '';
+  const body = text.slice(bom.length);
+  const nl = body.includes('\r\n') ? '\r\n' : '\n';
+  const line = `${key}: ${value}`;
+  const m = body.match(/^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
+  if (!m) return `${bom}---${nl}${line}${nl}---${nl}${body}`;
+  const head = m[1].split(/\r?\n/);
+  const isKey = (k) => (l) => l.startsWith(`${k}:`) && /^\s|^$/.test(l.slice(k.length + 1));
+  const i = head.findIndex(isKey(key));
+  if (i >= 0) {
+    let end = i + 1; // a block value below the key (indented lines or "- " items) goes too
+    while (end < head.length && /^(\s+\S|-\s)/.test(head[end])) end++;
+    head.splice(i, end - i, line);
+  } else {
+    const after = head.findIndex(isKey('source'));
+    head.splice(after >= 0 ? after + 1 : head.length, 0, line);
+  }
+  const start = m[0].indexOf(m[1]);
+  return bom + m[0].slice(0, start) + head.join(nl) + m[0].slice(start + m[1].length) + body.slice(m[0].length);
+}
+
+// Marks a node as checked by you (verified: true) or as unchecked again. Writes the file on this device;
+// the next sync uploads it. Returns the node as it is now.
+export async function setVerified(path, verified) {
+  if (!isNodeFile(path) || path.includes('..')) throw new Error(`Not a node: ${path}`);
+  const file = `${KNOWLEDGE}/${path}`;
+  const text = await readText(file);
+  const next = setField(text, 'verified', verified ? 'true' : 'false');
+  if (next !== text) await writeFile(file, next);
+  return parseNode(next, path);
 }
