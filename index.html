@@ -5,100 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f6f9fd">
   <meta name="color-scheme" content="light">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Toollib">
   <title>Toollib</title>
-  <style>
-    :root {
-      --bg: #f6f9fd;
-      --panel: #ffffff;
-      --panel-2: #eef3fa;
-      --border: #d7e1ee;
-      --fg: #0f1f3d;
-      --muted: #5a6a82;
-      --blue: #1f63e0;
-      --ok: #15803d;
-      --accent: var(--blue);
-      --accent-soft: color-mix(in srgb, var(--accent) 12%, white);
-    }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; }
-    body {
-      min-height: 100vh;
-      background: var(--bg);
-      color: var(--fg);
-      font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
-    }
-    main { max-width: 560px; margin: 0 auto; }
-    header { display: flex; align-items: center; gap: 12px; margin: 8px 0 24px; }
-    .logo {
-      width: 40px; height: 40px; border-radius: 10px;
-      background: var(--accent); color: #fff;
-      display: grid; place-items: center; font-weight: 700; font-size: 20px;
-    }
-    h1 { font-size: 24px; margin: 0; letter-spacing: -0.01em; }
-    .tag { color: var(--muted); font-size: 14px; margin: 0; }
-    .card {
-      background: var(--panel); border: 1px solid var(--border);
-      border-radius: 12px; padding: 20px;
-    }
-    h2 { font-size: 17px; margin: 0 0 4px; }
-    .lead { color: var(--muted); margin: 0 0 16px; font-size: 15px; }
-    ol { list-style: none; margin: 0; padding: 0; }
-    li {
-      display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start;
-      padding: 12px 0; border-top: 1px solid var(--panel-2);
-    }
-    li:first-child { border-top: 0; }
-    .dot {
-      width: 28px; height: 28px; border-radius: 50%;
-      display: grid; place-items: center; font-size: 13px; font-weight: 600;
-      border: 1px solid var(--border); color: var(--muted); background: var(--panel);
-    }
-    .done .dot { background: var(--ok); border-color: var(--ok); color: #fff; }
-    .next .dot { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-    .step { font-weight: 600; }
-    .what { color: var(--muted); font-size: 14px; }
-    footer { color: var(--muted); font-size: 13px; margin-top: 16px; text-align: center; }
-  </style>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/favicon-64.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="app/shell/styles.css">
+  <script type="module" src="app/main.js"></script>
 </head>
 <body>
-  <main>
-    <header>
-      <div class="logo" aria-hidden="true">T</div>
-      <div>
-        <h1>Toollib</h1>
-        <p class="tag">Foundation · step 2 of 5</p>
-      </div>
-    </header>
-
-    <section class="card" aria-labelledby="plan">
-      <h2 id="plan">Building the foundation</h2>
-      <p class="lead">The cheatsheet starter set is in your knowledge repository.</p>
-      <ol>
-        <li class="done">
-          <span class="dot" aria-label="done">✓</span>
-          <div><div class="step">Repositories and first nodes</div><div class="what">toollib is online, knowledge is private</div></div>
-        </li>
-        <li class="done">
-          <span class="dot" aria-label="done">✓</span>
-          <div><div class="step">Cheatsheet starter set</div><div class="what">55 snippets from Kobra, English and German</div></div>
-        </li>
-        <li class="next">
-          <span class="dot">3</span>
-          <div><div class="step">Shell as an app</div><div class="what">installable, works offline</div></div>
-        </li>
-        <li>
-          <span class="dot">4</span>
-          <div><div class="step">Knowledge on every device</div><div class="what">one tap on Sync</div></div>
-        </li>
-        <li>
-          <span class="dot">5</span>
-          <div><div class="step">Read, search, copy</div><div class="what">type “plot”, find it, copy it</div></div>
-        </li>
-      </ol>
-    </section>
-
-    <footer>No trackers, no external requests.</footer>
-  </main>
+  <div id="app">
+    <noscript>Toollib needs JavaScript.</noscript>
+  </div>
 </body>
 </html>

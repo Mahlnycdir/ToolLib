@@ -2,20 +2,25 @@
 
 Persönliche Arbeitsoberfläche für Mac, iPhone und Linux: eine Web-App (PWA) auf GitHub Pages, dazu später ein Hub zu Hause. Das Wissen liegt getrennt im privaten Repository `knowledge`.
 
-Stand: Basis, Schritt 1 von 5. Die Startseite zeigt den Fortschritt.
+Stand: Basis, Schritt 3 von 5. Der Rahmen läuft als installierbare App und startet offline.
 
-## Aufbau (geplant)
+## Aufbau
 
 ```text
 toollib/                 dieses Repository, öffentlich
-  index.html             Startseite, später der Rahmen (Shell)
+  index.html             lädt den Rahmen
+  manifest.webmanifest   Name, Farben und Icons der App
+  sw.js                  Service Worker: Offline-Cache und Updates (VERSION erhöhen)
+  icons/                 App-Icons
   app/
-    shell/               Command bar, Module bar, Workspace, Context panel
-    services/            Speicher, Git-Abgleich, Python, Editor (aus Kobra)
-    i18n/                en.json, de.json
-    modules/             parts, pins, cheatsheet, workmode, kobra, kladde, scraper
-  hub/                   Python-Server für zu Hause (FastAPI, MQTT, Scraper)
+    main.js              Start: Texte laden, Rahmen bauen, Service Worker anmelden
+    i18n/                strings.json (jeder Satz auf Englisch und Deutsch), i18n.js mit t()
+    services/            ui.js und icons.js aus Kobra, prefs.js, pwa.js
+    shell/               shell.js (Befehlszeile, Modulleiste, Statuszeile), views.js, modules.js, styles.css
+  tools/                 Hilfsprogramme, z. B. import-snippets
 ```
+
+Neue Datei im App-Ordner? Dann auch in die Liste `FILES` in `sw.js` eintragen und `VERSION` erhöhen, sonst fehlt sie offline.
 
 ## Lokal ansehen
 
