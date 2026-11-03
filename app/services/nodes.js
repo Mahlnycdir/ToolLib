@@ -102,6 +102,45 @@ export function codeBlocks(markdown) {
 // Snippets mark the spots to fill in like Kobra: ${name} or ${1:name}. Copying keeps the names.
 export const fillPlaceholders = (code) => code.replace(/\$\{(?:\d+:)?([^}]*)\}/g, '$1');
 
+// What a snippet runs with: its code (the first Python block before any "## " heading), its check (the first
+// Python block under "## Check") and the snippets the check needs ("# needs: a, b" as its first line).
+// The same rules as check_nodes.py in the test folder, so a check runs here exactly as it ran there.
+export function runParts(node) {
+  let code = '';
+  let check = '';
+  node.body.split(/^## /m).forEach((part, i) => {
+    const blocks = codeBlocks(part).filter((b) => b.lang === 'python');
+    if (!blocks.length) return;
+    if (i === 0 && !code) code = blocks[0].code;
+    if (i > 0 && /^Check\b/.test(part) && !check) check = blocks[0].code;
+  });
+  return { code, check, needs: needsOf(check) };
+}
+
+export function needsOf(check) {
+  const m = (check || '').trim().split('\n')[0].match(/^#\s*needs:\s*(.+)$/);
+  return m ? m[1].split(',').map((s) => s.trim()).filter(Boolean) : [];
+}
+
+// The snippets a check needs, with everything they need themselves, in the order their definitions must come.
+// load(slug) returns the node or null. Result: { deps: [[slug, code], ...], missing: [slug, ...] }
+export async function resolveNeeds(needs, load) {
+  const deps = [];
+  const missing = [];
+  const seen = new Set();
+  async function visit(slug) {
+    if (seen.has(slug)) return;
+    seen.add(slug);
+    const node = await load(slug);
+    if (!node) { missing.push(slug); return; }
+    const parts = runParts(node);
+    for (const s of parts.needs) await visit(s);
+    if (parts.code) deps.push([slug, parts.code]);
+  }
+  for (const s of needs) await visit(s);
+  return { deps, missing };
+}
+
 // [[name]] and [[name|label]] in the text plus the field links.
 export function linksOf(node) {
   const out = new Set(asList(node.meta.links));

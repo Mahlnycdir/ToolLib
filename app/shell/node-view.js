@@ -8,6 +8,7 @@ import { allNodes, bestProblem, indexState, nodeByPath, nodeBySlug, onIndexChang
 import { githubRepo, isConfigured, noteChange, repoUrl } from '../services/sync.js';
 import { paintAccent } from './modules.js';
 import { renderMarkdown } from './markdown.js';
+import { runControls } from './run-panel.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 
@@ -134,16 +135,32 @@ export async function renderNode(main, path, ctx) {
       t('node.conflictCopy'), ' ', h('a', { href: nodeHref(original), text: original }))));
   }
 
-  if (d.type === 'snippet' && d.code) {
-    box.append(h('div', { class: 'btn-row' },
-      h('button', { type: 'button', class: 'btn primary copy-main', onclick: () => copyWithToast(d.code) }, iconEl('copy'), h('span', { text: t('node.copyCode') }))));
-  }
-
-  // Body in the chosen language
   const onNodeLink = (slug) => {
     const target = nodeBySlug(slug);
     return target ? { href: nodeHref(target.path), label: nodeTitle(target, lang) } : null;
   };
+
+  // Copy, and run on this device: "Try it" with editable code, "Run check" with the node's check
+  if (d.type === 'snippet' && d.code) {
+    const row = h('div', { class: 'btn-row' },
+      h('button', { type: 'button', class: 'btn primary copy-main', onclick: () => copyWithToast(d.code) }, iconEl('copy'), h('span', { text: t('node.copyCode') })));
+    box.append(row);
+    const run = runControls(node, {
+      canVerify: () => editable && !d.verified,
+      onVerify: async () => {
+        if (!(await changeVerified(path, true))) return false;
+        await redraw();
+        return true;
+      },
+      nodeLink: onNodeLink,
+    });
+    if (run) {
+      row.append(...run.buttons);
+      box.append(run.panel);
+    }
+  }
+
+  // Body in the chosen language
   box.append(renderMarkdown(localize(node.body, lang), { onCopy: (text) => copyWithToast(text), onNodeLink }));
 
   // Related nodes
