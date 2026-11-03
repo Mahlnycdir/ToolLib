@@ -7,7 +7,7 @@ import { ACCENTS, MODULES, moduleById, paintAccent, setAccent } from './modules.
 import { formatTime, renderHome, renderModule, renderSettings } from './views.js';
 import { applyUpdate, checkForUpdate, onPwaChange, pwaState } from '../services/pwa.js';
 import { isConfigured, onSyncChange, phaseText, refreshPending, syncKnowledge, syncState } from '../services/sync.js';
-import { buildIndex, indexState, nodeByPath, onIndexChange, searchNodes } from '../services/search.js';
+import { bestProblem, buildIndex, indexState, nodeByPath, onIndexChange, searchNodes } from '../services/search.js';
 import { copyWithToast, nodeHref, nodeLead, nodeTitle, recentPaths, renderCheatsheet, renderNode, typeAccent, typeIcon, typeLabel } from './node-view.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
@@ -177,10 +177,15 @@ export function startShell(root) {
     const q = query.trim();
     const cmds = match(query);
     const lang = getLang();
-    const nodes = (q ? searchNodes(q, { limit: 8 }) : recentPaths().map(nodeByPath).filter(Boolean).slice(0, 4)).map((d) => ({
-      node: d, label: nodeTitle(d, lang), detail: [typeLabel(d.type), nodeLead(d, lang)].filter(Boolean).join(' · '),
-      icon: typeIcon(d.type), accent: typeAccent(d.type), run: () => go(nodeHref(d.path)),
-    }));
+    // A hit found through one of its problems shows that problem instead of the first sentence.
+    const nodes = (q ? searchNodes(q, { limit: 8 }) : recentPaths().map(nodeByPath).filter(Boolean).slice(0, 4)).map((d) => {
+      const problem = q ? bestProblem(d, q, lang) : '';
+      return {
+        node: d, label: nodeTitle(d, lang), problem,
+        detail: [typeLabel(d.type), problem ? t('commandbar.solves', { problem }) : nodeLead(d, lang)].filter(Boolean).join(' · '),
+        icon: typeIcon(d.type), accent: typeAccent(d.type), run: () => go(nodeHref(d.path)),
+      };
+    });
     const ql = q.toLowerCase();
     const strong = q && cmds.length && cmds[0].label.toLowerCase().split(/\s+/).some((w) => w.startsWith(ql));
     return strong ? [...cmds.slice(0, 3), ...nodes] : [...nodes, ...cmds.slice(0, nodes.length ? 3 : 8)];

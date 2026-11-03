@@ -2,7 +2,7 @@
 
 Persönliche Arbeitsoberfläche für Mac, iPhone und Linux: eine Web-App (PWA) auf GitHub Pages, dazu später ein Hub zu Hause. Das Wissen liegt getrennt im privaten Repository `knowledge`.
 
-Stand: Version 0.6.0, Stufe 2 (Python-Spickzettel als volles Modul) hat begonnen. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch.
+Stand: Version 0.7.0, Stufe 2 (Python-Spickzettel als volles Modul) läuft. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte.
 
 ## Aufbau
 
@@ -50,10 +50,12 @@ Der Token bleibt im Speicher dieses Geräts und geht nur an den Proxy und an Git
 
 ## Suchen, lesen, kopieren
 
-- Befehlszeile (⌘K oder `/`, auf dem iPhone unten): Treffer aus dem Wissen stehen oben, darunter passende Befehle. Die Suche verzeiht Tippfehler, findet Wortanfänge und kennt englische und deutsche Namen (title, title_de, aliases, tags, Text).
+- Befehlszeile (⌘K oder `/`, auf dem iPhone unten): Treffer aus dem Wissen stehen oben, darunter passende Befehle. Die Suche verzeiht Tippfehler, findet Wortanfänge und kennt englische und deutsche Namen (title, title_de, problems, problems_de, aliases, tags, Text).
+- Suche nach Problemen: Schreib, was du lösen willst, z. B. „wie kann ich eine Simulation animieren“. Füllwörter wie „wie kann ich eine“ zählen nicht, eine leichte Stammform macht „animieren“, „Animation“ und „animate“ gleich. Ein Knoten, bei dem ein einziger Problem-Satz die ganze Frage abdeckt, rückt nach oben, und der Treffer zeigt diesen Satz („Löst: …“).
 - Enter öffnet einen Knoten, ⇧ Enter oder das Kopier-Symbol kopiert ein Snippet sofort. Platzhalter wie `${x}` werden beim Kopieren zu `x`.
 - Die Knoten-Ansicht zeigt den Text in der gewählten Sprache, Code und Formeln (als LaTeX) mit Kopierknopf, verwandte Knoten, die Quellen mit Link und Fundstelle sowie einen Link zur Datei auf GitHub.
-- Modul Python-Spickzettel: alle Snippets nach Gruppen, mit Filter und Kopierknopf. Oben steht, wie viele schon geprüft sind; „Zu prüfen“ und „Geprüft“ zeigen nur diese.
+- Modul Python-Spickzettel: oben die Rezepte (Schritt für Schritt zu einem größeren Ziel), darunter alle Snippets nach Gruppen, mit Filter und Kopierknopf. Oben steht, wie viele schon geprüft sind; „Zu prüfen“ und „Geprüft“ zeigen nur diese.
+- Die Knoten-Ansicht zeigt unter dem Titel, wobei der Knoten hilft (problems in der gewählten Sprache).
 - Der Suchindex entsteht beim Start und nach jedem Sync im Speicher; bei einigen tausend Knoten dauert das unter einer Sekunde.
 
 ## Prüfen

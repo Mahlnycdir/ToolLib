@@ -4,7 +4,7 @@ import { loadPref, savePref } from '../services/prefs.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
 import { getNode, linksOf, localize, setVerified, sourcesOf, summary, titleOf } from '../services/nodes.js';
-import { allNodes, indexState, nodeByPath, nodeBySlug, onIndexChange, refreshNode, searchNodes } from '../services/search.js';
+import { allNodes, bestProblem, indexState, nodeByPath, nodeBySlug, onIndexChange, refreshNode, searchNodes } from '../services/search.js';
 import { githubRepo, isConfigured, noteChange, repoUrl } from '../services/sync.js';
 import { paintAccent } from './modules.js';
 import { renderMarkdown } from './markdown.js';
@@ -13,16 +13,18 @@ const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(
 
 // ------------------------------------------------------------------ kinds of nodes
 const TYPE_ICON = {
-  snippet: 'code', formula: 'vars', convention: 'outline', definition: 'book', term: 'book', theorem: 'book',
+  snippet: 'code', recipe: 'list', formula: 'vars', convention: 'outline', definition: 'book', term: 'book', theorem: 'book',
   rule: 'warn', part: 'chip', device: 'chip', pin_map: 'board', tool: 'wand', note: 'edit', project: 'folder',
   card: 'chalkboard', clip: 'globe', research: 'search',
 };
-const TYPE_ACCENT = { snippet: 'cheatsheet', part: 'parts', device: 'parts', rule: 'pins', pin_map: 'pins', card: 'workmode', clip: 'scraper', research: 'scraper' };
+const TYPE_ACCENT = { snippet: 'cheatsheet', recipe: 'cheatsheet', part: 'parts', device: 'parts', rule: 'pins', pin_map: 'pins', card: 'workmode', clip: 'scraper', research: 'scraper' };
 export const typeIcon = (type) => TYPE_ICON[type] || 'file';
 export const typeAccent = (type) => TYPE_ACCENT[type] || 'shell';
 export const typeLabel = (type) => (t(`type.${type}`) === `type.${type}` ? type : t(`type.${type}`));
 export const groupLabel = (group) => (t(`group.${group}`) === `group.${group}` ? group : t(`group.${group}`));
-export const GROUP_ORDER = ['control-flow', 'functions-classes', 'errors-files', 'data', 'gui', 'science', 'imports'];
+export const GROUP_ORDER = ['control-flow', 'functions-classes', 'errors-files', 'data', 'numpy', 'scipy', 'matplotlib', 'animation', 'lattice', 'sympy', 'gui', 'science', 'imports'];
+const inCheatsheet = (d) => d && (d.type === 'snippet' || d.type === 'recipe') && !d.conflict;
+const problemsOf = (d, lang = getLang()) => (lang === 'de' && d.problems_de.length ? d.problems_de : d.problems.length ? d.problems : d.problems_de);
 
 export const nodeHref = (path) => `#/n/${path.split('/').map(encodeURIComponent).join('/')}`;
 export const nodeTitle = (d, lang = getLang()) => titleOf(d, lang, d.slug);
@@ -103,6 +105,13 @@ export async function renderNode(main, path, ctx) {
       h('h1', { class: 'view-title', text: nodeTitle(d, lang) }),
       other ? h('p', { class: 'muted other-title', text: other }) : null,
       chips)));
+
+  // The problems this node solves: what the search matches first.
+  const problems = problemsOf(d, lang);
+  if (problems.length) {
+    box.append(h('div', { class: 'solves' }, h('span', { class: 'solves-label', text: t('node.solves') }),
+      h('ul', {}, problems.map((p) => h('li', { text: p })))));
+  }
 
   if (!d.verified) {
     const who = t(`node.source.${d.source}`) === `node.source.${d.source}` ? d.source : t(`node.source.${d.source}`);
@@ -194,11 +203,16 @@ export function renderCheatsheet(main, mod, { go }) {
   main.append(head, h('div', { class: 'filter-row' }, iconEl('search'), input), h('div', { class: 'cheat-tools' }, seg, progress), list);
 
   const wanted = (d) => show === 'all' || (show === 'open' ? !d.verified : d.verified);
+  const lead = (d) => {
+    const q = input.value.trim();
+    const problem = q ? bestProblem(d, q, getLang()) : '';
+    return problem ? t('commandbar.solves', { problem }) : nodeLead(d);
+  };
   const row = (d) => h('div', { class: 'snip-row' },
     h('a', { class: 'snip-main', href: nodeHref(d.path) },
       h('span', { class: 'snip-title' }, h('span', { text: nodeTitle(d) }),
         d.verified ? h('span', { class: 'snip-ok', title: t('node.verified'), 'aria-label': t('node.verified'), html: icon('check') }) : null),
-      h('span', { class: 'snip-lead muted', text: nodeLead(d) })),
+      h('span', { class: 'snip-lead muted', text: lead(d) })),
     d.code ? h('button', { type: 'button', class: 'icon-btn', title: t('node.copyCode'), 'aria-label': `${t('node.copyCode')}: ${nodeTitle(d)}`, html: icon('copy'), onclick: () => copyWithToast(d.code) }) : null);
 
   function drawTools(snippets) {
@@ -218,7 +232,7 @@ export function renderCheatsheet(main, mod, { go }) {
   function draw() {
     const s = indexState();
     list.replaceChildren();
-    drawTools(s.ready ? allNodes().filter((d) => d.type === 'snippet' && !d.conflict) : []);
+    drawTools(s.ready ? allNodes().filter(inCheatsheet) : []);
     if (!s.ready) { list.append(h('p', { class: 'muted', text: t('commandbar.indexing') })); return; }
     if (!s.hasKnowledge) {
       list.append(h('div', { class: 'card' }, h('p', { class: 'muted', text: t('cheatsheet.noKnowledge') }),
@@ -227,18 +241,26 @@ export function renderCheatsheet(main, mod, { go }) {
     }
     const q = input.value.trim();
     if (q) {
-      const hits = searchNodes(q, { limit: 200, filter: (d) => d?.type === 'snippet' && wanted(d) });
+      const hits = searchNodes(q, { limit: 200, filter: (d) => inCheatsheet(d) && wanted(d) });
       list.append(hits.length ? h('div', { class: 'card snip-card' }, hits.map(row)) : h('p', { class: 'muted', text: t('cheatsheet.none') }));
       return;
     }
-    const snippets = allNodes().filter((d) => d.type === 'snippet' && !d.conflict && wanted(d));
+    const byTitle = (a, b) => nodeTitle(a).localeCompare(nodeTitle(b));
+    const recipes = allNodes().filter((d) => d.type === 'recipe' && inCheatsheet(d) && wanted(d)).sort(byTitle);
+    if (recipes.length) {
+      list.append(h('section', { class: 'card snip-card recipes' },
+        h('h2', {}, h('span', { class: 'icon', html: icon('list') }), t('cheatsheet.recipes'), h('span', { class: 'count', text: String(recipes.length) })),
+        h('p', { class: 'muted small recipes-hint', text: t('cheatsheet.recipes.hint') }),
+        recipes.map(row)));
+    }
+    const snippets = allNodes().filter((d) => d.type === 'snippet' && inCheatsheet(d) && wanted(d));
     const groups = [...new Set([...GROUP_ORDER, ...snippets.map((d) => d.group || 'other')])];
     for (const g of groups) {
       const items = snippets.filter((d) => (d.group || 'other') === g).sort((a, b) => nodeTitle(a).localeCompare(nodeTitle(b)));
       if (!items.length) continue;
       list.append(h('section', { class: 'card snip-card' }, h('h2', {}, groupLabel(g), h('span', { class: 'count', text: String(items.length) })), items.map(row)));
     }
-    if (!snippets.length) list.append(h('p', { class: 'muted', text: t(show === 'done' ? 'cheatsheet.noneDone' : show === 'open' ? 'cheatsheet.noneOpen' : 'cheatsheet.none') }));
+    if (!snippets.length && !recipes.length) list.append(h('p', { class: 'muted', text: t(show === 'done' ? 'cheatsheet.noneDone' : show === 'open' ? 'cheatsheet.noneOpen' : 'cheatsheet.none') }));
   }
   input.addEventListener('input', draw);
   const stop = onIndexChange((s) => { if (!list.isConnected) stop(); else if (!s.building) draw(); });

@@ -17,7 +17,9 @@ import {
 const STAGE = [
   { key: 'stage2.verify', done: true },
   { key: 'stage2.sources', done: true },
-  { key: 'stage2.groups', done: false },
+  { key: 'stage2.problems', done: true },
+  { key: 'stage2.groups', done: true },
+  { key: 'stage2.groups2', done: false },
   { key: 'stage2.run', done: false },
   { key: 'stage2.kobra', done: false },
   { key: 'stage2.own', done: false },

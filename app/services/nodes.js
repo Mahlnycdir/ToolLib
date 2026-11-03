@@ -141,6 +141,8 @@ export function summary(node) {
     title: String(m.title || m.title_de || node.slug),
     title_de: m.title_de ? String(m.title_de) : '',
     aliases: asList(m.aliases),
+    problems: asList(m.problems),
+    problems_de: asList(m.problems_de),
     tags: asList(m.tags),
     group: m.group ? String(m.group) : '',
     area: asList(m.area),

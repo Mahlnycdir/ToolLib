@@ -6,7 +6,7 @@ import { h } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t } from '../i18n/i18n.js';
 
-const SECTION_KEYS = { example: 'section.example', examples: 'section.example', pitfalls: 'section.pitfalls', check: 'section.check' };
+const SECTION_KEYS = { example: 'section.example', examples: 'section.example', pitfalls: 'section.pitfalls', check: 'section.check', steps: 'section.steps' };
 const iconEl = (name) => h('span', { class: 'icon', html: icon(name) });
 
 // options: onCopy(text, label), onNodeLink(slug) → { label, open } or null

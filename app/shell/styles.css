@@ -474,3 +474,16 @@ dl.keys dd { margin: 0; }
 .snip-ok { display: inline-flex; color: var(--ok); }
 .snip-ok .ic { width: 15px; height: 15px; }
 .note.unverified > .icon { align-self: flex-start; margin-top: 1px; }
+
+/* ---- 0.7.0: problems a node solves, recipes */
+.solves { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 4px 0 14px; font-size: 14px; }
+.solves-label { color: var(--muted); font-weight: 600; }
+.solves ul { display: contents; list-style: none; }
+.solves li { padding: 2px 10px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 9%, white); color: var(--fg); }
+.recipes { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.recipes h2 .icon { color: var(--accent); display: inline-flex; }
+.recipes-hint { margin: 2px 8px 6px; }
+@media (max-width: 759px) {
+  .solves { font-size: 13px; gap: 4px 6px; }
+  .solves li { padding: 1px 8px; }
+}
