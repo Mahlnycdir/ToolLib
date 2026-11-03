@@ -1,5 +1,5 @@
 // Output of a Python run: text, errors, input() and figures. Taken from Kobra's ConsoleView (runner.js);
-// changes for Toollib: no REPL yet, all texts via t(), figures can be saved with shareOrDownload-like download.
+// changes for Toollib: no REPL yet, all texts via t(), figures can be saved as PNG.
 import { h } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
@@ -29,8 +29,6 @@ export class ConsoleView {
 
   started() {
     this.clear();
-    const time = new Date().toLocaleTimeString(getLang() === 'de' ? 'de-DE' : 'en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    this.out.append(h('div', { class: 'con-run' }, h('span', { text: `▶ ${t('console.started')}` }), h('span', { class: 'muted', text: time })));
   }
 
   write(text, kind = 'out') {
@@ -49,8 +47,14 @@ export class ConsoleView {
     }
   }
 
+  // kind: info, warn, ok, or auto (a quiet line, e.g. the imports Toollib added)
   note(code, vars = {}, kind = 'info') {
     this.lastBlock = null;
+    if (kind === 'auto') {
+      const line = h('div', { class: 'con-auto', text: t(code, vars) });
+      this.out.append(line);
+      return line;
+    }
     const row = h('div', { class: `con-note ${kind}` },
       h('span', { class: 'icon', html: icon(kind === 'ok' ? 'check' : kind === 'warn' ? 'warn' : 'info') }),
       h('span', { text: t(code, vars) }));
@@ -70,12 +74,13 @@ export class ConsoleView {
     const locale = getLang() === 'de' ? 'de-DE' : 'en-GB';
     const secs = ms < 1000 ? `${ms} ms` : `${(ms / 1000).toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} s`;
     const key = result.gui ? 'console.live' : ok ? 'console.done' : 'console.failed';
-    this.out.append(h('div', { class: `con-end ${ok ? 'ok' : 'bad'}`, text: t(key, { time: secs, code: result.exit }) }));
+    this.out.append(h('div', { class: `con-end ${ok ? 'ok' : 'bad'}` },
+      h('span', { class: 'icon', html: icon(ok ? 'check' : 'warn') }), h('span', { text: t(key, { time: secs, code: result.exit }) })));
     this.onFinished?.(result);
   }
 
   liveEnded() {
-    this.out.append(h('div', { class: 'con-end ok', text: t('console.liveEnded') }));
+    this.out.append(h('div', { class: 'con-end ok' }, h('span', { class: 'icon', html: icon('check') }), h('span', { text: t('console.liveEnded') })));
   }
 
   // input(): a field in the output; Enter sends, "End" sends EOF.

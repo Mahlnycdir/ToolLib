@@ -143,7 +143,7 @@ export async function renderNode(main, path, ctx) {
   // Copy, and run on this device: "Try it" with editable code, "Run check" with the node's check
   if (d.type === 'snippet' && d.code) {
     const row = h('div', { class: 'btn-row' },
-      h('button', { type: 'button', class: 'btn primary copy-main', onclick: () => copyWithToast(d.code) }, iconEl('copy'), h('span', { text: t('node.copyCode') })));
+      h('button', { type: 'button', class: 'btn small primary copy-main', onclick: () => copyWithToast(d.code) }, iconEl('copy'), h('span', { text: t('node.copyCode') })));
     box.append(row);
     const run = runControls(node, {
       canVerify: () => editable && !d.verified,

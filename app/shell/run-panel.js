@@ -1,26 +1,41 @@
-// Running a snippet: "Try it" opens an editable copy of its code, "Run check" runs its check. Both run in Python on
-// this device (app/services/python.js); the output appears in a console below. Editing never changes the node.
+// Running a snippet on this device (app/services/python.js). "Try it" opens the panel with the snippet's code,
+// "Run check" opens it on the check and runs it. Both can be edited; what you change stays on this device (until
+// "reset"), the node itself never changes. The output appears below the code it came from.
 import { h } from '../services/ui.js';
 import { icon } from '../services/icons.js';
+import { loadPref, removePref, savePref } from '../services/prefs.js';
 import { t, getLang } from '../i18n/i18n.js';
-import { fillPlaceholders, getNode, resolveNeeds, runParts } from '../services/nodes.js';
-import { nodeBySlug } from '../services/search.js';
+import { fillPlaceholders, getNode, needsOf, resolveNeeds, runParts } from '../services/nodes.js';
+import { indexState, nodeBySlug, onIndexChange } from '../services/search.js';
 import { detachSink, isBusy, isSink, onPythonChange, pythonState, runPython, stopPython } from '../services/python.js';
 import { ConsoleView } from './console.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const GUI_IMPORT = /^\s*(?:import|from)\s+(?:tkinter|PyQt[56]|PySide[26])\b/m;
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+// Right after a start the index may still be building; the needed snippets are looked up once it is there.
+function indexReady() {
+  if (indexState().ready) return Promise.resolve();
+  return new Promise((resolve) => {
+    const stop = onIndexChange((s) => { if (s.ready) { stop(); resolve(); } });
+  });
+}
 const loadBySlug = async (slug) => {
+  await indexReady();
   const d = nodeBySlug(slug);
   return d ? getNode(d.path) : null;
 };
+const trimEnd = (s) => s.replace(/\s+$/, '');
 
 function button(name, key, cls = '') {
   return h('button', { type: 'button', class: `btn small ${cls}` }, iconEl(name), h('span', { text: t(key) }));
 }
+function iconButton(name, key) {
+  return h('button', { type: 'button', class: 'icon-btn small', title: t(key), 'aria-label': t(key), html: icon(name) });
+}
 
 // The panels of the last few nodes: a view drawn again (after Sync, after "Mark as checked", or when you come back)
-// gets the same panel, with its code, its output and a program that may still run.
+// gets the same panel, with its output and a program that may still run.
 const kept = new Map();   // path -> { code, check, lang, opts, controls, dispose }
 const KEEP = 5;
 
@@ -45,38 +60,141 @@ export function runControls(node, options) {
   const entry = { code: parts.code, check: parts.check, lang: getLang(), opts: options };
   const opts = () => entry.opts;
 
-  const original = fillPlaceholders(parts.code).replace(/\s+$/, '');
-  let mode = 'code';        // what ran last: 'code' or 'check'
-  let needs = null;         // { deps, missing }, read when first needed
+  // The texts of both tabs: the node's own, and yours if you changed them (kept per node on this device).
+  const original = { code: trimEnd(fillPlaceholders(parts.code)), check: parts.check ? trimEnd(parts.check) : null };
+  const storeKey = `run.edit.${node.path}`;
+  const saved = loadPref(storeKey, null) || {};
+  const text = {
+    code: typeof saved.code === 'string' ? saved.code : original.code,
+    check: original.check === null ? null : typeof saved.check === 'string' ? saved.check : original.check,
+  };
+  const changed = (which) => text[which] !== null && text[which] !== original[which];
+  let tab = 'code';
+  let lastRun = null;       // { which, edited } of the run shown in the output
 
+  // ------------------------------------------------------------------ elements
   const tryBtn = button('edit', 'run.try');
   tryBtn.setAttribute('aria-expanded', 'false');
   const checkBtn = parts.check ? button('check', 'run.check') : null;
 
+  const tabs = {};
+  const tabRow = h('div', { class: 'run-tabs', role: 'tablist' });
+  for (const which of ['code', 'check']) {
+    if (which === 'check' && original.check === null) continue;
+    tabs[which] = h('button', { type: 'button', role: 'tab', class: 'run-tab', dataset: { tab: which } },
+      h('span', { text: t(`run.tab.${which}`) }), h('span', { class: 'run-dot', title: t('run.changed'), 'aria-label': t('run.changed') }));
+    tabs[which].addEventListener('click', () => { showTab(which); editor.focus(); });
+    tabRow.append(tabs[which]);
+  }
+  const hint = matchMedia('(pointer: coarse)').matches ? null
+    : h('span', { class: 'run-hint muted small', text: t('run.shortcut', { key: IS_MAC ? '⌘' : t('run.key.ctrl') }) });
   const editor = h('textarea', {
-    class: 'code-edit', spellcheck: 'false', autocapitalize: 'off', autocorrect: 'off', autocomplete: 'off', wrap: 'off',
-    'aria-label': t('run.editor'), rows: '4',
+    class: 'code-edit', spellcheck: 'false', autocapitalize: 'off', autocorrect: 'off', autocomplete: 'off', wrap: 'off', rows: '4',
   });
-  editor.value = original;
   const uses = h('p', { class: 'muted small run-uses', hidden: true });
-  const editBox = h('div', { class: 'run-edit', hidden: true },
-    h('div', { class: 'run-edit-head' }, h('span', { class: 'run-label', text: t('run.editor') }), h('span', { class: 'muted small', text: t('run.editor.hint') })),
-    editor, uses);
 
   const runBtn = button('play', 'run.run', 'primary');
   const stopBtn = button('stop', 'run.stop');
-  const resetBtn = button('undo', 'run.reset');
-  const clearBtn = button('eraser', 'run.clear');
+  const resetBtn = iconButton('undo', 'run.reset');
+  const clearBtn = iconButton('eraser', 'run.clear');
   const stateEl = h('span', { class: 'run-state muted small', 'aria-live': 'polite' });
-  const bar = h('div', { class: 'run-bar' }, runBtn, stopBtn, resetBtn, clearBtn, stateEl);
+  const bar = h('div', { class: 'run-bar' }, runBtn, stopBtn, stateEl, resetBtn, clearBtn);
   const con = new ConsoleView({ onFinished: finished });
-  const panel = h('section', { class: 'run-panel', hidden: true, 'aria-label': t('run.panel') }, editBox, bar, con.root);
+  const panel = h('section', { class: 'run-panel', hidden: true, 'aria-label': t('run.panel') },
+    h('div', { class: 'run-head' }, tabRow, hint), editor, uses, bar, con.root);
 
-  // The console receives the run. A view that is drawn again puts the panel back at once; when the panel stays away
-  // (you went to another view) while the program runs, the program is stopped.
+  // ------------------------------------------------------------------ tabs and editing
+  function persist() {
+    if (!changed('code') && !changed('check')) { removePref(storeKey); return; }
+    savePref(storeKey, { code: changed('code') ? text.code : undefined, check: changed('check') ? text.check : undefined });
+  }
+
+  function markTabs() {
+    for (const [which, el] of Object.entries(tabs)) {
+      el.classList.toggle('on', which === tab);
+      el.setAttribute('aria-selected', String(which === tab));
+      el.classList.toggle('changed', changed(which));
+    }
+    resetBtn.disabled = !changed(tab);
+    tryBtn.classList.toggle('changed', changed('code') || changed('check'));
+  }
+
+  function showTab(which) {
+    tab = which;
+    editor.value = text[which];
+    editor.setAttribute('aria-label', t(`run.tab.${which}`));
+    autosize();
+    markTabs();
+    showUses();
+  }
+
+  function autosize() {
+    const lines = editor.value.split('\n').length;
+    editor.rows = Math.max(3, Math.min(lines + 1, 30));
+  }
+
+  function open(which) {
+    panel.hidden = false;
+    if (which !== tab) showTab(which);
+    tryBtn.setAttribute('aria-expanded', 'true');
+    tryBtn.classList.add('on');
+  }
+
+  function close() {
+    panel.hidden = true;
+    tryBtn.setAttribute('aria-expanded', 'false');
+    tryBtn.classList.remove('on');
+  }
+
+  editor.addEventListener('input', () => {
+    text[tab] = editor.value;
+    autosize();
+    markTabs();
+    persist();
+  });
+
+  // Tab indents by four spaces (Esc, then Tab leaves the field); Ctrl/⌘+Enter runs.
+  let escaped = false;
+  editor.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { escaped = true; return; }
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); if (!runBtn.disabled) run(tab); return; }
+    if (e.key === 'Tab' && !escaped && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      if (!document.execCommand?.('insertText', false, '    ')) {
+        editor.setRangeText('    ', editor.selectionStart, editor.selectionEnd, 'end');
+        editor.dispatchEvent(new Event('input'));
+      }
+    }
+    escaped = false;
+  });
+
+  // ------------------------------------------------------------------ what the code needs
+  const needsCache = new Map();   // "a, b" -> { deps, missing }
+  async function needsFor(list) {
+    const key = list.join(',');
+    if (needsCache.has(key)) return needsCache.get(key);
+    const found = await resolveNeeds(list, loadBySlug);
+    if (!found.missing.length) needsCache.set(key, found);   // a missing snippet may come with the next Sync
+    return found;
+  }
+  // The snippets a run needs come from the check's "# needs:" line, also when you run the code.
+  const currentNeeds = () => needsOf(text.check ?? '');
+
+  async function showUses() {
+    const { deps } = await needsFor(currentNeeds());
+    uses.hidden = !deps.length;
+    uses.replaceChildren(h('span', { text: `${t('run.uses')} ` }));
+    deps.forEach(([slug], i) => {
+      const link = opts().nodeLink(slug);
+      if (i) uses.append(', ');
+      uses.append(link ? h('a', { href: link.href, text: link.label }) : h('code', { text: slug }));
+    });
+  }
+
+  // ------------------------------------------------------------------ running
   const sink = {
     started: () => con.started(),
-    write: (text, kind) => con.write(text, kind),
+    write: (s, kind) => con.write(s, kind),
     figure: (...a) => con.figure(...a),
     figureClosed: (key) => con.figureClosed(key),
     progress: (code, vars) => con.progress(code, vars),
@@ -86,6 +204,37 @@ export function runControls(node, options) {
     done: (result, ms) => con.done(result, ms),
     liveEnded: () => con.liveEnded(),
   };
+
+  async function run(which) {
+    open(which);
+    const { deps, missing } = await needsFor(currentNeeds());
+    lastRun = { which, edited: changed('code') || (which === 'check' && changed('check')) };
+    const spec = which === 'check'
+      ? { name: node.slug, code: text.code, deps, check: text.check }
+      : { name: node.slug, code: text.code, deps, check: null };
+    watch();
+    await runPython(spec, sink);
+    if (missing.length) con.note('run.missing', { names: missing.join(', ') }, 'warn');
+  }
+
+  function finished(result) {
+    if (!lastRun || lastRun.which !== 'check' || result.failed) return;
+    if (result.exit !== 0) { con.note(lastRun.edited ? 'run.checkFailedEdited' : 'run.checkFailed', {}, 'warn'); return; }
+    if (lastRun.edited) { con.note('run.checkEdited', {}, 'ok'); return; }
+    const row = con.note('run.checkPassed', {}, 'ok');
+    if (opts().canVerify()) {
+      const mark = button('check', 'run.markVerified');
+      mark.addEventListener('click', async () => {
+        mark.disabled = true;
+        if (await opts().onVerify()) mark.remove();
+        else mark.disabled = false;
+      });
+      row.append(mark);
+    }
+  }
+
+  // A program whose panel stays away (you went to another view) is stopped; a view that is just drawn again puts
+  // the panel back at once.
   let watcher = null;
   function watch() {
     clearInterval(watcher);
@@ -102,88 +251,25 @@ export function runControls(node, options) {
     }, 600);
   }
 
-  function finished(result) {
-    if (mode !== 'check' || result.failed) return;
-    if (result.exit !== 0) { con.note('run.checkFailed', {}, 'warn'); return; }
-    const row = con.note('run.checkPassed', {}, 'ok');
-    if (opts().canVerify()) {
-      const mark = button('check', 'run.markVerified');
-      mark.addEventListener('click', async () => {
-        mark.disabled = true;
-        if (await opts().onVerify()) mark.remove();
-        else mark.disabled = false;
-      });
-      row.append(mark);
-    }
-  }
-
-  async function loadNeeds() {
-    if (needs) return needs;
-    needs = await resolveNeeds(parts.needs, loadBySlug);
-    if (needs.deps.length) {
-      uses.hidden = false;
-      uses.replaceChildren(h('span', { text: `${t('run.uses')} ` }));
-      needs.deps.forEach(([slug], i) => {
-        const link = opts().nodeLink(slug);
-        if (i) uses.append(', ');
-        uses.append(link ? h('a', { href: link.href, text: link.label }) : h('code', { text: slug }));
-      });
-    }
-    return needs;
-  }
-
-  async function run(which) {
-    mode = which;
-    panel.hidden = false;
-    const { deps, missing } = await loadNeeds();
-    const spec = which === 'check'
-      ? { name: node.slug, code: parts.code, deps, check: parts.check }
-      : { name: node.slug, code: editor.value, deps, check: null };
-    watch();
-    await runPython(spec, sink);
-    if (missing.length) con.note('run.missing', { names: missing.join(', ') }, 'warn');
-  }
-
-  function showEditor(open) {
-    editBox.hidden = !open;
-    tryBtn.setAttribute('aria-expanded', String(open));
-    tryBtn.classList.toggle('on', open);
-    runBtn.hidden = !open;
-    resetBtn.hidden = !open;
-    if (open) {
-      panel.hidden = false;
-      loadNeeds();
-      autosize();
-    }
-  }
-
-  function autosize() {
-    const lines = editor.value.split('\n').length;
-    editor.rows = Math.max(4, Math.min(lines + 1, 30));
-  }
-
-  // Tab indents by four spaces (Esc, then Tab leaves the field); Ctrl/⌘+Enter runs.
-  let escaped = false;
-  editor.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { escaped = true; return; }
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); if (!runBtn.disabled) run('code'); return; }
-    if (e.key === 'Tab' && !escaped && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
-      e.preventDefault();
-      if (!document.execCommand?.('insertText', false, '    ')) editor.setRangeText('    ', editor.selectionStart, editor.selectionEnd, 'end');
-    }
-    escaped = false;
-  });
-  editor.addEventListener('input', autosize);
-
+  // ------------------------------------------------------------------ buttons
   tryBtn.addEventListener('click', () => {
-    const open = editBox.hidden;
-    showEditor(open);
-    if (open) panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    if (!panel.hidden && tab === 'code') { close(); return; }
+    open('code');
+    showTab('code');
+    panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   });
   checkBtn?.addEventListener('click', () => run('check'));
-  runBtn.addEventListener('click', () => run('code'));
+  runBtn.addEventListener('click', () => run(tab));
   stopBtn.addEventListener('click', () => stopPython());
-  resetBtn.addEventListener('click', () => { editor.value = original; autosize(); editor.focus(); });
+  resetBtn.addEventListener('click', () => {
+    text[tab] = original[tab];
+    editor.value = text[tab];
+    autosize();
+    markTabs();
+    persist();
+    showUses();
+    editor.focus();
+  });
   clearBtn.addEventListener('click', () => con.clear());
 
   const update = (s) => {
@@ -196,7 +282,7 @@ export function runControls(node, options) {
     stateEl.textContent = busy ? t(`run.state.${s.status === 'running' && s.animating ? 'live' : s.status}`) : '';
   };
   const unlisten = onPythonChange(update);
-  showEditor(false);
+  showTab('code');
   update(pythonState());
 
   entry.controls = { buttons: [tryBtn, checkBtn].filter(Boolean), panel };

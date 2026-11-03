@@ -2,7 +2,7 @@
 
 Persönliche Arbeitsoberfläche für Mac, iPhone und Linux: eine Web-App (PWA) auf GitHub Pages, dazu später ein Hub zu Hause. Das Wissen liegt getrennt im privaten Repository `knowledge`.
 
-Stand: Version 0.8.0, Stufe 2 (Python-Spickzettel als volles Modul) läuft. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte. Seit 0.8.0 laufen Snippets direkt in der App: Python mit numpy, scipy, matplotlib und sympy läuft im Browser, von Toollibs eigener Adresse.
+Stand: Version 0.8.1, Stufe 2 (Python-Spickzettel als volles Modul) läuft. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte. Seit 0.8.0 laufen Snippets direkt in der App: Python mit numpy, scipy, matplotlib und sympy läuft im Browser, von Toollibs eigener Adresse.
 
 ## Aufbau
 
@@ -72,8 +72,12 @@ Das ist die erste Änderung am Wissen direkt aus Toollib. Knoten mit fehlerhafte
 
 Jedes Snippet hat zwei Knöpfe neben „Code kopieren“:
 
-- **Ausprobieren** öffnet den Code in einem Eingabefeld. Ändern, ergänzen, dann „Ausführen“ (oder Strg/⌘+Enter). Der Knoten selbst bleibt unverändert; „Originalcode“ setzt das Feld zurück. Braucht das Snippet andere Snippets (Zeile `# needs:` im Check), lädt es deren Definitionen mit: Importe, Funktionen, Klassen und Konstanten in GROSSBUCHSTABEN.
-- **Check ausführen** führt den Check des Knotens aus, genau wie `check_nodes.py` in der Testumgebung: erst die Definitionen der benötigten Snippets, dann die des Snippets, dann der Check. Ist er bestanden und der Knoten noch ungeprüft, bietet die Ausgabe gleich „Als geprüft markieren“ an.
+- **Ausprobieren** öffnet ein Feld mit dem Code des Snippets. Ändern, ergänzen, dann „Ausführen“ (oder Strg/⌘+Enter). Die Ausgabe steht direkt darunter.
+- **Check ausführen** öffnet dasselbe Feld auf dem Reiter „Check“ und führt ihn aus, genau wie `check_nodes.py` in der Testumgebung: erst die Definitionen der benötigten Snippets, dann die des Snippets (aus dem Reiter „Code“), dann der Check. Ist er unverändert bestanden und der Knoten noch ungeprüft, bietet die Ausgabe gleich „Als geprüft markieren“ an.
+
+Beide Reiter lassen sich bearbeiten. Was du änderst, bleibt auf diesem Gerät gespeichert, auch wenn du die Ansicht verlässt oder die App neu startest; ein Punkt am Reiter zeigt es an, ↺ holt die Fassung des Knotens zurück. Der Knoten selbst ändert sich dabei nie. Braucht das Snippet andere Snippets (Zeile `# needs:` im Check), lädt es deren Definitionen mit: Importe, Funktionen, Klassen und Konstanten in GROSSBUCHSTABEN.
+
+Gängige Bibliotheken brauchen keine Import-Zeile: Wer `np`, `plt`, `quad`, `math` usw. benutzt, ohne sie zu definieren, bekommt den Import automatisch (`AUTO` in `app/services/toollib_snippets.py`), und die Ausgabe nennt ihn. `sp` bleibt außen vor, weil es mal scipy.sparse, mal sympy ist.
 
 Die Ausgabe zeigt `print`, Fehler mit Traceback, ein Eingabefeld für `input()` und Abbildungen von matplotlib. Animationen (`FuncAnimation`, `plt.pause`) laufen im selben Bild weiter, bis „Stopp“ sie beendet. „Stopp“ während eines laufenden Programms beendet Python ganz; es startet beim nächsten Ausführen neu.
 

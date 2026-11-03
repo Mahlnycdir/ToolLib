@@ -17,3 +17,11 @@ export function savePref(key, value) {
     // private mode or storage full: the setting just won't survive a reload
   }
 }
+
+export function removePref(key) {
+  try {
+    localStorage.removeItem(PREFIX + key);
+  } catch {
+    // nothing stored
+  }
+}

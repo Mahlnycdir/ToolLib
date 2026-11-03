@@ -220,7 +220,9 @@ function onMessage(msg) {
 }
 
 function notify(d) {
-  if (d.type === 'not-bundled') {
+  if (d.type === 'auto-imports') {
+    sink?.note('python.autoImports', { lines: d.lines.join(' · ') }, 'auto');
+  } else if (d.type === 'not-bundled') {
     const fresh = d.packages.filter((p) => !reported.has(p));
     fresh.forEach((p) => reported.add(p));
     if (fresh.length) sink?.note('python.notBundled', { names: fresh.join(', ') }, 'warn');

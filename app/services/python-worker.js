@@ -212,6 +212,8 @@ async function doRun(msg) {
     removeTree(dir);
     pyodide.FS.mkdirTree(dir);
     snippets.prepare(JSON.stringify(msg.spec), dir);
+    const autos = JSON.parse(snippets.auto_imports());
+    if (autos.length) post({ type: 'notify', data: { type: 'auto-imports', lines: autos } });
     await loadImports();
     if (snippets.define()) result = JSON.parse(rt.run_file(dir, 'main.py', '[]'));
   } catch (e) {
