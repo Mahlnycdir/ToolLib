@@ -1,9 +1,9 @@
 // Reading the knowledge: the view of one node and the Python cheatsheet with all snippets.
-import { h, toast, copyText } from '../services/ui.js';
+import { h, toast, copyText, confirmDialog } from '../services/ui.js';
 import { loadPref, savePref } from '../services/prefs.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
-import { getNode, linksOf, localize, setVerified, sourcesOf, summary, titleOf } from '../services/nodes.js';
+import { getNode, isOwn, linksOf, localize, readNodeText, replaceBlock, setVerified, sourcesOf, summary, titleOf, writeNode } from '../services/nodes.js';
 import { allNodes, bestProblem, indexState, nodeByPath, nodeBySlug, onIndexChange, refreshNode, searchNodes } from '../services/search.js';
 import { githubRepo, isConfigured, noteChange, repoUrl } from '../services/sync.js';
 import { paintAccent } from './modules.js';
@@ -64,6 +64,29 @@ async function changeVerified(path, verified) {
   return true;
 }
 
+// Your version of the code or the check goes into the node file; only that block changes. Sync uploads it.
+async function takeOver(path, which, code) {
+  if (!code.trim()) return false;
+  const ok = await confirmDialog(t('run.takeOver.title'), t(which === 'code' ? 'run.takeOver.code' : 'run.takeOver.check'), { okLabel: t('run.takeOver.ok') });
+  if (!ok) return false;
+  try {
+    const text = await readNodeText(path);
+    const next = replaceBlock(text, which, code);
+    if (next == null) throw new Error('no code block');
+    if (next !== text) {
+      await writeNode(path, next);
+      await refreshNode(path);
+      await noteChange(path, 'edited');
+    }
+  } catch (e) {
+    console.warn('Could not change the node', e);
+    toast(t('node.verify.failed'), 'error', 5000);
+    return false;
+  }
+  toast(t(isConfigured() ? 'run.takeOver.done' : 'snippet.savedLocal'), 'ok', 3500);
+  return true;
+}
+
 // ------------------------------------------------------------------ node view
 export async function renderNode(main, path, ctx) {
   const { isCurrent, go, onSync } = ctx;
@@ -94,11 +117,12 @@ export async function renderNode(main, path, ctx) {
   const d = summary(node);
   const other = lang === 'de' ? (d.title_de && d.title !== d.title_de ? d.title : '') : d.title_de;
 
-  // Head: kind, title, the title in the other language, status
+  // Head: kind, title, the title in the other language. A checked node looks like any other: no mark.
+  const own = isOwn(node.meta);
   const chips = h('div', { class: 'node-chips' }, h('span', { class: 'chip', text: typeLabel(d.type) }));
   if (d.group) chips.append(h('span', { class: 'chip', text: groupLabel(d.group) }));
   for (const a of d.area) chips.append(h('span', { class: 'chip', text: a }));
-  if (node.meta.verified === true) chips.append(h('span', { class: 'chip chip-ok' }, iconEl('check'), h('span', { text: t('node.verified') })));
+  if (own) chips.append(h('span', { class: 'chip chip-own' }, iconEl('edit'), h('span', { text: t('node.own') })));
   const editable = !node.conflict && !node.error;
   box.append(h('header', { class: 'node-head' },
     typeTile(d.type, 'big'),
@@ -153,10 +177,21 @@ export async function renderNode(main, path, ctx) {
         return true;
       },
       nodeLink: onNodeLink,
+      canChange: () => editable,
+      onTakeOver: (which, text) => takeOver(path, which, text),
+      onSaveAs: ({ code, check }) => {
+        savePref('snippet.draft', { from: path, fromTitle: nodeTitle(d, lang), group: d.group, links: [d.slug], code, check: check || '' });
+        go('#/new');
+      },
+      redraw,
     });
     if (run) {
       row.append(...run.buttons);
       box.append(run.panel);
+    }
+    if (own && editable) {
+      row.append(h('button', { type: 'button', class: 'btn small edit-own', onclick: () => go(`#/edit/${path.split('/').map(encodeURIComponent).join('/')}`) },
+        iconEl('edit'), h('span', { text: t('node.edit') })));
     }
   }
 
@@ -192,7 +227,7 @@ export async function renderNode(main, path, ctx) {
       if (await changeVerified(path, false)) await redraw();
       else undo.disabled = false;
     });
-    foot.append(h('p', { class: 'muted small' }, iconEl('check'), h('span', { text: ` ${t('node.verifiedByYou')} · ` }), undo));
+    foot.append(h('p', { class: 'muted small' }, undo));
   }
   const gh = githubRepo(repoUrl());
   foot.append(h('p', { class: 'muted small' }, h('code', { class: 'path', text: path }),
@@ -217,9 +252,13 @@ export function renderCheatsheet(main, mod, { go }) {
     b.addEventListener('click', () => { show = id; savePref('cheatsheet.show', id); draw(); });
     seg.append(b);
   }
-  main.append(head, h('div', { class: 'filter-row' }, iconEl('search'), input), h('div', { class: 'cheat-tools' }, seg, progress), list);
+  const newBtn = h('button', { type: 'button', class: 'btn small new-snippet', onclick: () => go('#/new') }, iconEl('plus'), h('span', { text: t('cheatsheet.new') }));
+  const tools = h('div', { class: 'cheat-tools' }, seg, progress);
+  main.append(head, h('div', { class: 'filter-row' }, iconEl('search'), input), h('div', { class: 'cheat-bar' }, tools, newBtn), list);
 
-  const wanted = (d) => show === 'all' || (show === 'open' ? !d.verified : d.verified);
+  // Checking is for drafts (by Claude or an import). Once none is left, the filter, the bar and the marks go away.
+  let checking = true;
+  const wanted = (d) => !checking || show === 'all' || (show === 'open' ? !d.verified : d.verified);
   const lead = (d) => {
     const q = input.value.trim();
     const problem = q ? bestProblem(d, q, getLang()) : '';
@@ -228,11 +267,15 @@ export function renderCheatsheet(main, mod, { go }) {
   const row = (d) => h('div', { class: 'snip-row' },
     h('a', { class: 'snip-main', href: nodeHref(d.path) },
       h('span', { class: 'snip-title' }, h('span', { text: nodeTitle(d) }),
-        d.verified ? h('span', { class: 'snip-ok', title: t('node.verified'), 'aria-label': t('node.verified'), html: icon('check') }) : null),
+        !d.verified ? h('span', { class: 'snip-open', text: t('cheatsheet.unverified') }) : null,
+        d.source === 'you' ? h('span', { class: 'snip-own', title: t('node.own'), 'aria-label': t('node.own'), html: icon('edit') }) : null),
       h('span', { class: 'snip-lead muted', text: lead(d) })),
     d.code ? h('button', { type: 'button', class: 'icon-btn', title: t('node.copyCode'), 'aria-label': `${t('node.copyCode')}: ${nodeTitle(d)}`, html: icon('copy'), onclick: () => copyWithToast(d.code) }) : null);
 
-  function drawTools(snippets) {
+  function drawTools(all) {
+    const snippets = all.filter((d) => d.source !== 'you');
+    checking = snippets.some((d) => !d.verified);
+    tools.hidden = !checking;
     for (const b of seg.children) {
       const on = b.dataset.show === show;
       b.classList.toggle('on', on);
@@ -277,7 +320,8 @@ export function renderCheatsheet(main, mod, { go }) {
       if (!items.length) continue;
       list.append(h('section', { class: 'card snip-card' }, h('h2', {}, groupLabel(g), h('span', { class: 'count', text: String(items.length) })), items.map(row)));
     }
-    if (!snippets.length && !recipes.length) list.append(h('p', { class: 'muted', text: t(show === 'done' ? 'cheatsheet.noneDone' : show === 'open' ? 'cheatsheet.noneOpen' : 'cheatsheet.none') }));
+    const view = checking ? show : 'all';
+    if (!snippets.length && !recipes.length) list.append(h('p', { class: 'muted', text: t(view === 'done' ? 'cheatsheet.noneDone' : view === 'open' ? 'cheatsheet.noneOpen' : 'cheatsheet.none') }));
   }
   // The filter belongs to this history entry: Back from a node brings it back, a new visit starts empty.
   input.value = history.state?.cheatFilter || '';

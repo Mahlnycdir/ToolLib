@@ -191,7 +191,11 @@ async function run() {
 // What changed on this device and why, e.g. { "nodes/snippets/py-for-in.md": "verified" }. The next sync
 // names it in the commit message ("Sync from Mac: verified py-for-in"), so GitHub's history stays readable.
 export function noteChange(path, what) {
-  savePref('sync.notes', { ...loadPref('sync.notes', {}), [path]: what });
+  const notes = loadPref('sync.notes', {});
+  const before = notes[path];
+  if (before === 'added' && what === 'removed') delete notes[path];   // it never reached GitHub
+  else notes[path] = before === 'added' && what === 'edited' ? 'added' : what;
+  savePref('sync.notes', notes);
   return refreshPending();
 }
 

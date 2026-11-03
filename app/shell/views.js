@@ -23,7 +23,7 @@ const STAGE = [
   { key: 'stage2.groups2', done: false },
   { key: 'stage2.run', done: true },
   { key: 'stage2.kobra', done: false },
-  { key: 'stage2.own', done: false },
+  { key: 'stage2.own', done: true },
 ];
 
 const card = (title, ...children) => h('section', { class: 'card' }, title ? h('h2', { text: title }) : null, ...children);

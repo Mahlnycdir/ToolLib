@@ -112,6 +112,15 @@ export async function refreshNode(path) {
   return d;
 }
 
+// After a node was deleted on this device: take it out of the index.
+export function forgetNode(path) {
+  if (mini?.has(path)) mini.discard(path);
+  const d = byPath.get(path);
+  byPath.delete(path);
+  if (d && bySlug.get(d.slug)?.path === path) bySlug.delete(d.slug);
+  state.count = byPath.size;
+}
+
 // The problem phrase of a node that shares the most words with the query; coverage = share of the query's words.
 function matchProblem(d, q, lang = 'en') {
   let phrase = '';

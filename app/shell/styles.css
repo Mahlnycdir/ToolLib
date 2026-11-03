@@ -546,3 +546,25 @@ dl.keys dd { margin: 0; }
 .python-status .ic { width: 16px; height: 16px; color: var(--ok); }
 .icon-btn.small { width: 34px; height: 34px; border-radius: 9px; }
 .icon-btn.small .ic { width: 18px; height: 18px; }
+
+/* ---- 0.9.0: your own snippets, the snippet form, checking marks only while there are drafts */
+.cheat-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: -6px 0 16px; }
+.cheat-bar .cheat-tools { margin: 0; }
+.cheat-tools[hidden] { display: none; }
+.cheat-bar .new-snippet { margin-left: auto; }
+.snip-open { display: inline-block; padding: 0 7px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 18px; color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, white); }
+.snip-own { display: inline-flex; color: var(--muted); }
+.snip-own .ic { width: 14px; height: 14px; }
+.chip-own .ic { width: 14px; height: 14px; }
+.snippet-form .card { display: grid; gap: 14px; }
+.snippet-form label { display: grid; gap: 6px; font-size: 14px; font-weight: 600; }
+.snippet-form .field-hint { margin-top: -2px; font-weight: 400; }
+.snippet-form textarea.field { min-height: 72px; resize: vertical; font: inherit; line-height: 1.45; }
+.snippet-form .code-edit { border: 1px solid var(--border); border-radius: 10px; font-weight: 400; }
+.snippet-form .req { color: var(--danger); font-weight: 600; }
+.snippet-form .form-error { color: var(--danger); font-size: 13px; font-weight: 500; }
+.snippet-form .form-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 24px; }
+.snippet-form .form-actions .danger { margin-left: auto; }
+.snippet-form select.field { appearance: auto; }
+.snippet-form textarea.field { height: auto; padding: 10px 12px; }
+.run-bar [hidden] { display: none; }

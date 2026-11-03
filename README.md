@@ -2,7 +2,7 @@
 
 Persönliche Arbeitsoberfläche für Mac, iPhone und Linux: eine Web-App (PWA) auf GitHub Pages, dazu später ein Hub zu Hause. Das Wissen liegt getrennt im privaten Repository `knowledge`.
 
-Stand: Version 0.8.2, Stufe 2 (Python-Spickzettel als volles Modul) läuft. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte. Seit 0.8.0 laufen Snippets direkt in der App: Python mit numpy, scipy, matplotlib und sympy läuft im Browser, von Toollibs eigener Adresse.
+Stand: Version 0.9.0, Stufe 2 (Python-Spickzettel als volles Modul) läuft. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte. Seit 0.8.0 laufen Snippets direkt in der App: Python mit numpy, scipy, matplotlib und sympy läuft im Browser, von Toollibs eigener Adresse. Seit 0.9.0 legst du eigene Snippets an und änderst Code und Check bestehender Knoten.
 
 ## Aufbau
 
@@ -26,7 +26,8 @@ toollib/                 dieses Repository, öffentlich
                          toollib_snippets.py (baut aus Snippet, benötigten Snippets und Check ein Programm)
     shell/               shell.js (Befehlszeile, Modulleiste, Statuszeile), views.js, modules.js, styles.css,
                          node-view.js (Knoten-Ansicht, Python-Spickzettel), markdown.js (sicherer Markdown-Leser),
-                         run-panel.js (Ausprobieren, Check ausführen), console.js (Ausgabe, input(), Abbildungen)
+                         run-panel.js (Ausprobieren, Check ausführen), console.js (Ausgabe, input(), Abbildungen),
+                         snippet-form.js (eigene Snippets anlegen, bearbeiten, löschen)
   tools/                 Hilfsprogramme: import-snippets, build-vendor, fetch-pyodide
 ```
 
@@ -68,6 +69,15 @@ Der Token bleibt im Speicher dieses Geräts und geht nur an den Proxy und an Git
 Knoten, die Claude oder ein Import angelegt hat, tragen `verified: false` und zeigen den Hinweis „Ungeprüft“. Darunter steht der Knopf „Als geprüft markieren“. Er ändert in der Datei auf dem Gerät genau eine Zeile (`verified: true`), sonst nichts. Die Statuszeile zeigt dann „Abgleich: 1 zum Hochladen“, und der nächste Sync lädt die Änderung mit einer lesbaren Commit-Nachricht hoch, z. B. `Sync from Mac: verified py-for-in`. Weil nur eine Zeile anders ist, verbindet Sync das auch mit Änderungen, die gleichzeitig auf einem anderen Gerät an derselben Datei entstanden sind. Rückgängig geht es unten in der Ansicht mit „Als ungeprüft markieren“.
 
 Das ist die erste Änderung am Wissen direkt aus Toollib. Knoten mit fehlerhaften Kopfdaten und Konfliktkopien bekommen den Knopf nicht.
+
+Ein geprüfter Knoten sieht aus wie jeder andere: kein Hinweis, kein Häkchen, unten nur der Link „Als ungeprüft markieren“. Im Spickzettel tragen die noch ungeprüften Snippets ein kleines „ungeprüft“; Auswahl (Alle · Zu prüfen · Geprüft) und Balken stehen nur da, solange es Entwürfe gibt.
+
+## Eigene Snippets
+
+- **Neu:** „Neues Snippet“ im Spickzettel oder in der Befehlszeile öffnet ein Formular: Titel (in der Sprache der App, der andere optional), Gruppe, „Hilft bei“ (ein Problem pro Zeile, so wie du suchst), Beschreibung, Stichworte, Code und Check. Ein Entwurf bleibt auf dem Gerät, bis du speicherst oder abbrichst.
+- **Aus Ausprobieren:** ＋ in der Leiste übernimmt Code und Check ins Formular; die Gruppe und ein Link kommen vom Snippet, von dem du ausgehst.
+- Gespeichert wird `nodes/snippets/<name>.md` mit `source: you` (Format in der README von Knowledge); Sync lädt es hoch, mit „added …“ in der Commit-Nachricht. Eigene Snippets tragen „Eigenes Snippet“ und den Knopf „Bearbeiten“ (dort auch „Löschen“).
+- **Bestehende Knoten ändern:** Hast du im Feld Code oder Check geändert, erscheint „In den Knoten übernehmen“. Es ersetzt nur diesen Block in der Datei; unveränderte Zeilen behalten ihre Platzhalter. Sync lädt es mit „edited …“ hoch.
 
 ## Ausführen
 

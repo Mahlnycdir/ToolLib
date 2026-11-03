@@ -1,5 +1,6 @@
 // The shell: command bar, module bar, workspace and status bar.
-// Routes live in the URL hash: #/home, #/settings (or #/settings/<section>), #/m/<module id>, #/n/<path of a node>.
+// Routes live in the URL hash: #/home, #/settings (or #/settings/<section>), #/m/<module id>, #/n/<path of a node>,
+// #/new (a new snippet of yours) and #/edit/<path> (change one of yours).
 import { h, toast, modal, closeTopModal } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, getLang, setLang, onLangChange } from '../i18n/i18n.js';
@@ -9,6 +10,7 @@ import { applyUpdate, checkForUpdate, onPwaChange, pwaState } from '../services/
 import { isConfigured, onSyncChange, phaseText, refreshPending, syncKnowledge, syncState } from '../services/sync.js';
 import { bestProblem, buildIndex, indexState, nodeByPath, onIndexChange, searchNodes } from '../services/search.js';
 import { copyWithToast, nodeHref, nodeLead, nodeTitle, recentPaths, renderCheatsheet, renderNode, typeAccent, typeIcon, typeLabel } from './node-view.js';
+import { renderSnippetForm } from './snippet-form.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -29,6 +31,10 @@ export function startShell(root) {
     if (location.hash.startsWith('#/n/')) {
       try { return { kind: 'node', path: location.hash.slice(4).split('/').map(decodeURIComponent).join('/') }; } catch { /* broken address */ }
     }
+    if (location.hash.startsWith('#/edit/')) {
+      try { return { kind: 'form', mode: 'edit', path: location.hash.slice(7).split('/').map(decodeURIComponent).join('/') }; } catch { /* broken address */ }
+    }
+    if (location.hash === '#/new') return { kind: 'form', mode: 'new' };
     const [, kind, id] = location.hash.split('/');
     if (kind === 'settings') return { kind: 'settings', section: id };
     if (kind === 'm' && moduleById(id)) return { kind: 'module', mod: moduleById(id) };
@@ -68,10 +74,11 @@ export function startShell(root) {
     shownEntry = entry;
     main.replaceChildren();
     const nodeType = route.kind === 'node' ? nodeByPath(route.path)?.type : null;
-    paintAccent(main, route.kind === 'module' ? route.mod.id : route.kind === 'node' ? typeAccent(nodeType) : 'shell');
+    paintAccent(main, route.kind === 'module' ? route.mod.id : route.kind === 'node' ? typeAccent(nodeType) : route.kind === 'form' ? 'cheatsheet' : 'shell');
     if (route.kind === 'settings') renderSettings(main, { onChange: refresh, onCheckUpdate: runUpdateCheck, onSync: runSync, section: route.section });
     else if (route.kind === 'module' && route.mod.id === 'cheatsheet') renderCheatsheet(main, route.mod, { go });
     else if (route.kind === 'module') renderModule(main, route.mod);
+    else if (route.kind === 'form') renderSnippetForm(main, { mode: route.mode, path: route.path, go, isCurrent: () => token === renderToken });
     else if (route.kind === 'node') {
       renderNode(main, route.path, { isCurrent: () => token === renderToken, go, onSync: runSync }).then(() => restoreScroll(entry, token));
     } else renderHome(main, { onSync: runSync, onSetup: () => go('#/settings/sync') });
@@ -102,7 +109,7 @@ export function startShell(root) {
     rail.append(railButton({ id: 'home', iconName: 'home', label: t('nav.home'), active: route.kind === 'home', accentId: 'shell', onclick: () => go('#/home') }));
     const list = h('div', { class: 'rail-modules' });
     for (const m of MODULES) {
-      const active = (route.kind === 'module' && route.mod.id === m.id) || (route.kind === 'node' && typeAccent(nodeByPath(route.path)?.type) === m.id);
+      const active = (route.kind === 'module' && route.mod.id === m.id) || (route.kind === 'node' && typeAccent(nodeByPath(route.path)?.type) === m.id) || (route.kind === 'form' && m.id === 'cheatsheet');
       list.append(railButton({ id: m.id, iconName: m.icon, label: t(`module.${m.id}.name`), active, accentId: m.id, onclick: () => go(`#/m/${m.id}`) }));
     }
     rail.append(list);
@@ -168,6 +175,7 @@ export function startShell(root) {
     list.splice(2, 0, isConfigured()
       ? { label: t('cmd.sync'), keys: 'sync abgleichen abgleich git github pull push holen hochladen knowledge wissen', icon: 'refresh', run: runSync }
       : { label: t('cmd.syncSetup'), keys: 'sync abgleichen abgleich einrichten setup git github token knowledge wissen', icon: 'refresh', run: () => go('#/settings/sync') });
+    list.push({ label: t('cmd.newSnippet'), keys: 'new neu neues snippet anlegen erstellen create own eigenes schreiben', icon: 'plus', accent: 'cheatsheet', run: () => go('#/new') });
     list.push({ label: t('cmd.update'), keys: 'update aktualisieren version', icon: 'cloudDown', run: runUpdateCheck });
     list.push({ label: t('cmd.help'), keys: 'help hilfe shortcuts tastenkürzel keyboard', icon: 'info', run: showHelp });
     return list;

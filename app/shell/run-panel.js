@@ -34,6 +34,34 @@ function iconButton(name, key) {
   return h('button', { type: 'button', class: 'icon-btn small', title: t(key), 'aria-label': t(key), html: icon(name) });
 }
 
+// Keys of a code field: Tab indents by four spaces (Esc, then Tab leaves the field); Ctrl/⌘+Enter runs.
+export function enableCodeKeys(editor, { onRun } = {}) {
+  let escaped = false;
+  editor.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { escaped = true; return; }
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && onRun) { e.preventDefault(); onRun(); return; }
+    if (e.key === 'Tab' && !escaped && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      if (!document.execCommand?.('insertText', false, '    ')) {
+        editor.setRangeText('    ', editor.selectionStart, editor.selectionEnd, 'end');
+        editor.dispatchEvent(new Event('input'));
+      }
+    }
+    escaped = false;
+  });
+}
+
+// Forgets what you changed in the panel of a node (both tabs, or one), e.g. after it went into the node.
+export function forgetEdits(path, which = null) {
+  const key = `run.edit.${path}`;
+  const saved = loadPref(key, null);
+  const next = which && saved ? { ...saved, [which]: undefined } : null;
+  if (next && (typeof next.code === 'string' || typeof next.check === 'string')) savePref(key, next);
+  else removePref(key);
+  kept.get(path)?.dispose();
+  kept.delete(path);
+}
+
 // The panels of the last few nodes: a view drawn again (after Sync, after "Mark as checked", or when you come back)
 // gets the same panel, with its output and a program that may still run.
 const kept = new Map();   // path -> { code, check, lang, opts, controls, dispose }
@@ -43,6 +71,8 @@ const KEEP = 5;
 // or null when the node has no Python code.
 //   canVerify(): whether "Mark as checked" may be offered; onVerify(): marks it, resolves to true on success
 //   nodeLink(slug): { href, label } of another node or null
+//   canChange(): whether your version may go into the node; onTakeOver(which, text): writes it, true on success
+//   onSaveAs({ code, check }): opens the form for a new snippet with this code; redraw(): draws the view again
 export function runControls(node, options) {
   const parts = runParts(node);
   if (!parts.code) return null;
@@ -73,7 +103,7 @@ export function runControls(node, options) {
   let lastRun = null;       // { which, edited } of the run shown in the output
 
   // ------------------------------------------------------------------ elements
-  const tryBtn = button('edit', 'run.try');
+  const tryBtn = button('terminal', 'run.try');
   tryBtn.setAttribute('aria-expanded', 'false');
   const checkBtn = parts.check ? button('check', 'run.check') : null;
 
@@ -95,10 +125,12 @@ export function runControls(node, options) {
 
   const runBtn = button('play', 'run.run', 'primary');
   const stopBtn = button('stop', 'run.stop');
+  const takeBtn = button('upload', 'run.takeOver');
+  const saveAsBtn = iconButton('plus', 'run.saveAs');
   const resetBtn = iconButton('undo', 'run.reset');
   const clearBtn = iconButton('eraser', 'run.clear');
   const stateEl = h('span', { class: 'run-state muted small', 'aria-live': 'polite' });
-  const bar = h('div', { class: 'run-bar' }, runBtn, stopBtn, stateEl, resetBtn, clearBtn);
+  const bar = h('div', { class: 'run-bar' }, runBtn, stopBtn, takeBtn, stateEl, saveAsBtn, resetBtn, clearBtn);
   const con = new ConsoleView({ onFinished: finished });
   const panel = h('section', { class: 'run-panel', hidden: true, 'aria-label': t('run.panel') },
     h('div', { class: 'run-head' }, tabRow, hint), editor, uses, bar, con.root);
@@ -116,6 +148,7 @@ export function runControls(node, options) {
       el.classList.toggle('changed', changed(which));
     }
     resetBtn.disabled = !changed(tab);
+    takeBtn.hidden = !changed(tab) || !opts().canChange?.();
     tryBtn.classList.toggle('changed', changed('code') || changed('check'));
   }
 
@@ -153,20 +186,7 @@ export function runControls(node, options) {
     persist();
   });
 
-  // Tab indents by four spaces (Esc, then Tab leaves the field); Ctrl/⌘+Enter runs.
-  let escaped = false;
-  editor.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { escaped = true; return; }
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); if (!runBtn.disabled) run(tab); return; }
-    if (e.key === 'Tab' && !escaped && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
-      e.preventDefault();
-      if (!document.execCommand?.('insertText', false, '    ')) {
-        editor.setRangeText('    ', editor.selectionStart, editor.selectionEnd, 'end');
-        editor.dispatchEvent(new Event('input'));
-      }
-    }
-    escaped = false;
-  });
+  enableCodeKeys(editor, { onRun: () => { if (!runBtn.disabled) run(tab); } });
 
   // ------------------------------------------------------------------ what the code needs
   const needsCache = new Map();   // "a, b" -> { deps, missing }
@@ -271,6 +291,16 @@ export function runControls(node, options) {
     editor.focus();
   });
   clearBtn.addEventListener('click', () => con.clear());
+  takeBtn.addEventListener('click', async () => {
+    const which = tab;
+    takeBtn.disabled = true;
+    const ok = await opts().onTakeOver?.(which, text[which]);
+    takeBtn.disabled = false;
+    if (!ok) return;
+    forgetEdits(node.path, which);   // the node holds your version now; the view draws a fresh panel
+    opts().redraw?.();
+  });
+  saveAsBtn.addEventListener('click', () => opts().onSaveAs?.({ code: text.code, check: text.check }));
 
   const update = (s) => {
     const mine = isSink(sink);
