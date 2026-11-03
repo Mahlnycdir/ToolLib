@@ -1,12 +1,14 @@
 // The shell: command bar, module bar, workspace and status bar.
-// Routes live in the URL hash: #/home, #/settings (or #/settings/<section>), #/m/<module id>.
+// Routes live in the URL hash: #/home, #/settings (or #/settings/<section>), #/m/<module id>, #/n/<path of a node>.
 import { h, toast, modal, closeTopModal } from '../services/ui.js';
 import { icon } from '../services/icons.js';
-import { t, setLang, onLangChange } from '../i18n/i18n.js';
+import { t, getLang, setLang, onLangChange } from '../i18n/i18n.js';
 import { ACCENTS, MODULES, moduleById, paintAccent, setAccent } from './modules.js';
 import { formatTime, renderHome, renderModule, renderSettings } from './views.js';
 import { applyUpdate, checkForUpdate, onPwaChange, pwaState } from '../services/pwa.js';
 import { isConfigured, onSyncChange, phaseText, syncKnowledge, syncState } from '../services/sync.js';
+import { buildIndex, indexState, nodeByPath, onIndexChange, searchNodes } from '../services/search.js';
+import { copyWithToast, nodeHref, nodeLead, nodeTitle, recentPaths, renderCheatsheet, renderNode, typeAccent, typeIcon, typeLabel } from './node-view.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -24,6 +26,9 @@ export function startShell(root) {
 
   // ---------------------------------------------------------------- routing
   function currentRoute() {
+    if (location.hash.startsWith('#/n/')) {
+      try { return { kind: 'node', path: location.hash.slice(4).split('/').map(decodeURIComponent).join('/') }; } catch { /* broken address */ }
+    }
     const [, kind, id] = location.hash.split('/');
     if (kind === 'settings') return { kind: 'settings', section: id };
     if (kind === 'm' && moduleById(id)) return { kind: 'module', mod: moduleById(id) };
@@ -36,13 +41,18 @@ export function startShell(root) {
     else location.hash = hash;
   }
 
+  let renderToken = 0;
   function render() {
     const route = currentRoute();
+    const token = ++renderToken;
     setDrawer(false); // also when the route changes from outside, e.g. the back button
     main.replaceChildren();
-    paintAccent(main, route.kind === 'module' ? route.mod.id : 'shell');
+    const nodeType = route.kind === 'node' ? nodeByPath(route.path)?.type : null;
+    paintAccent(main, route.kind === 'module' ? route.mod.id : route.kind === 'node' ? typeAccent(nodeType) : 'shell');
     if (route.kind === 'settings') renderSettings(main, { onChange: refresh, onCheckUpdate: runUpdateCheck, onSync: runSync, section: route.section });
+    else if (route.kind === 'module' && route.mod.id === 'cheatsheet') renderCheatsheet(main, route.mod, { go });
     else if (route.kind === 'module') renderModule(main, route.mod);
+    else if (route.kind === 'node') renderNode(main, route.path, { isCurrent: () => token === renderToken, go, onSync: runSync });
     else renderHome(main, { onSync: runSync, onSetup: () => go('#/settings/sync') });
     renderRail(route);
     main.scrollTop = 0;
@@ -71,7 +81,8 @@ export function startShell(root) {
     rail.append(railButton({ id: 'home', iconName: 'home', label: t('nav.home'), active: route.kind === 'home', accentId: 'shell', onclick: () => go('#/home') }));
     const list = h('div', { class: 'rail-modules' });
     for (const m of MODULES) {
-      list.append(railButton({ id: m.id, iconName: m.icon, label: t(`module.${m.id}.name`), active: route.kind === 'module' && route.mod.id === m.id, accentId: m.id, onclick: () => go(`#/m/${m.id}`) }));
+      const active = (route.kind === 'module' && route.mod.id === m.id) || (route.kind === 'node' && typeAccent(nodeByPath(route.path)?.type) === m.id);
+      list.append(railButton({ id: m.id, iconName: m.icon, label: t(`module.${m.id}.name`), active, accentId: m.id, onclick: () => go(`#/m/${m.id}`) }));
     }
     rail.append(list);
     rail.append(h('div', { class: 'rail-spacer' }));
@@ -161,24 +172,58 @@ export function startShell(root) {
     return scored.sort((a, b) => b.score - a.score).slice(0, 8).map((s) => s.c);
   }
 
+  // Hits from the knowledge come first; a command with a word that starts with the query moves to the top.
+  function entries(query) {
+    const q = query.trim();
+    const cmds = match(query);
+    const lang = getLang();
+    const nodes = (q ? searchNodes(q, { limit: 8 }) : recentPaths().map(nodeByPath).filter(Boolean).slice(0, 4)).map((d) => ({
+      node: d, label: nodeTitle(d, lang), detail: [typeLabel(d.type), nodeLead(d, lang)].filter(Boolean).join(' · '),
+      icon: typeIcon(d.type), accent: typeAccent(d.type), run: () => go(nodeHref(d.path)),
+    }));
+    const ql = q.toLowerCase();
+    const strong = q && cmds.length && cmds[0].label.toLowerCase().split(/\s+/).some((w) => w.startsWith(ql));
+    return strong ? [...cmds.slice(0, 3), ...nodes] : [...nodes, ...cmds.slice(0, nodes.length ? 3 : 8)];
+  }
+
+  function footText() {
+    const s = indexState();
+    if (!s.ready || s.building) return t('commandbar.indexing');
+    if (!s.hasKnowledge) return t('commandbar.noKnowledge');
+    return t('commandbar.indexed', { count: s.count });
+  }
+
   function showResults() {
-    shown = match(input.value);
+    shown = entries(input.value);
     selected = Math.min(selected, Math.max(shown.length - 1, 0));
     results.replaceChildren();
+    let section = null;
     shown.forEach((c, i) => {
+      const kind = c.node ? (input.value.trim() ? 'hits' : 'recent') : 'commands';
+      if (kind !== section) {
+        section = kind;
+        results.append(h('div', { class: 'cmd-sec', text: t(`commandbar.${kind}`) }));
+      }
       const lead = c.swatch ? h('span', { class: 'swatch small', style: { background: c.swatch } }) : iconEl(c.icon, 'tile small');
       if (c.accent) paintAccent(lead, c.accent);
-      const row = h('div', { class: `cmd-row${i === selected ? ' sel' : ''}`, role: 'option', id: `cmd-opt-${i}`, 'aria-selected': String(i === selected) },
-        lead, h('span', { text: c.label }));
+      const text = c.detail ? h('span', { class: 'cmd-text' }, h('span', { class: 'cmd-label', text: c.label }), h('span', { class: 'cmd-detail', text: c.detail })) : h('span', { class: 'cmd-label', text: c.label });
+      const row = h('div', { class: `cmd-row${i === selected ? ' sel' : ''}`, role: 'option', id: `cmd-opt-${i}`, 'aria-selected': String(i === selected) }, lead, text);
+      if (c.node?.code) {
+        const copy = h('button', { type: 'button', class: 'icon-btn cmd-copy', title: t('node.copyCode'), 'aria-label': `${t('node.copyCode')}: ${c.label}`, html: icon('copy') });
+        copy.addEventListener('pointerdown', (e) => e.preventDefault());
+        copy.addEventListener('click', (e) => { e.stopPropagation(); copyWithToast(c.node.code); });
+        row.append(copy);
+      }
       row.addEventListener('pointerdown', (e) => e.preventDefault());
       row.addEventListener('click', () => runAt(i));
       results.append(row);
     });
     if (!shown.length) results.append(h('div', { class: 'cmd-empty', text: t('commandbar.empty') }));
-    results.append(h('div', { class: 'cmd-foot', text: t('commandbar.knowledgeSoon') }));
+    results.append(h('div', { class: 'cmd-foot', text: footText() }));
     input.setAttribute('aria-activedescendant', shown.length ? `cmd-opt-${selected}` : '');
     app.classList.add('cmd-open');
     input.setAttribute('aria-expanded', 'true');
+    results.querySelector('.cmd-row.sel')?.scrollIntoView({ block: 'nearest' });
   }
 
   function hideResults() {
@@ -202,6 +247,7 @@ export function startShell(root) {
   input.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); selected = Math.min(selected + 1, shown.length - 1); showResults(); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); selected = Math.max(selected - 1, 0); showResults(); }
+    else if (e.key === 'Enter' && e.shiftKey && shown[selected]?.node?.code) { e.preventDefault(); copyWithToast(shown[selected].node.code); }
     else if (e.key === 'Enter') { e.preventDefault(); runAt(selected); }
     else if (e.key === 'Escape') { e.preventDefault(); input.value = ''; hideResults(); input.blur(); }
   });
@@ -218,6 +264,7 @@ export function startShell(root) {
       [isMac ? '⌘K  /' : 'Ctrl K  /', t('help.focus')],
       ['↑ ↓', t('help.choose')],
       ['Enter', t('help.run')],
+      ['⇧ Enter', t('help.copy')],
       ['Esc', t('help.close')],
     ];
     modal({
@@ -254,7 +301,11 @@ export function startShell(root) {
 
   // While a sync runs only the status bar and the Sync buttons change; afterwards Home shows the new numbers.
   let wasBusy = false;
+  let lastKey = JSON.stringify(syncState().last);
   onSyncChange((s) => {
+    const key = JSON.stringify(s.last);
+    if (key !== lastKey && !s.busy) buildIndex(); // after a sync or after removing the local copy
+    lastKey = key;
     renderStatus();
     for (const b of document.querySelectorAll('[data-sync-btn]')) {
       b.disabled = s.busy;
@@ -328,7 +379,16 @@ export function startShell(root) {
   window.addEventListener('hashchange', render);
   onLangChange(refresh);
 
+  // The index is built in the background; views that show knowledge are drawn again once it is ready.
+  onIndexChange((s) => {
+    if (s.building) return;
+    if (app.classList.contains('cmd-open')) showResults();
+    const kind = currentRoute().kind;
+    if (kind === 'home' || kind === 'node') render();
+  });
+
   renderCmd();
   renderStatus();
   render();
+  buildIndex();
 }

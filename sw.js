@@ -1,6 +1,6 @@
 // Service worker: keeps the whole app in a cache so Toollib starts without a network.
 // Raise VERSION with every release; the shell then offers "Reload" for the update.
-const VERSION = '0.4.1';
+const VERSION = '0.5.0';
 const CACHE = `toollib-${VERSION}`;
 
 const FILES = [
@@ -21,11 +21,16 @@ const FILES = [
   './app/services/pwa.js',
   './app/services/storage.js',
   './app/services/sync.js',
+  './app/services/nodes.js',
+  './app/services/search.js',
   './app/shell/shell.js',
   './app/shell/views.js',
   './app/shell/modules.js',
+  './app/shell/node-view.js',
+  './app/shell/markdown.js',
   './app/shell/styles.css',
   './vendor/git.js',
+  './vendor/search.js',
 ];
 
 self.addEventListener('install', (event) => {

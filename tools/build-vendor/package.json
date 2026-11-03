@@ -1,15 +1,19 @@
 {
   "name": "toollib-build-vendor",
   "private": true,
-  "description": "Bundles the libraries behind Toollib's storage and sync services into vendor/git.js.",
+  "description": "Bundles the libraries behind Toollib's services into vendor/git.js and vendor/search.js.",
   "scripts": {
-    "build": "esbuild entry.js --bundle --format=esm --minify --target=es2020,safari15 --inject:buffer-shim.js --legal-comments=none --outfile=out/git.js"
+    "build": "npm run build:git && npm run build:search",
+    "build:git": "esbuild entry.js --bundle --format=esm --minify --target=es2020,safari15 --inject:buffer-shim.js --legal-comments=none --outfile=out/git.js",
+    "build:search": "esbuild entry-search.js --bundle --format=esm --minify --target=es2020,safari15 --legal-comments=none --outfile=out/search.js"
   },
   "devDependencies": {
     "@isomorphic-git/lightning-fs": "4.10.3",
     "buffer": "6.0.3",
     "diff3": "0.0.3",
     "esbuild": "0.28.2",
-    "isomorphic-git": "1.44.3"
+    "isomorphic-git": "1.44.3",
+    "js-yaml": "4.1.1",
+    "minisearch": "7.2.0"
   }
 }

@@ -6,6 +6,7 @@ import { ACCENTS, MODULES, SHELL, accentOf, setAccent, paintAccent } from './mod
 import { isStandalone, platform, pwaState } from '../services/pwa.js';
 import { storageInfo } from '../services/storage.js';
 import { loadPref } from '../services/prefs.js';
+import { recentList } from './node-view.js';
 import {
   explainSyncError, isConfigured, kobraSettings, knowledgeStats, pendingChanges, phaseText, removeLocalCopy,
   saveSyncSetting, syncSettings, syncState, testConnection,
@@ -13,7 +14,7 @@ import {
 
 // Progress of the foundation; bump DONE when a step is delivered.
 const STEPS = 5;
-const DONE = 4;
+const DONE = 5;
 
 const card = (title, ...children) => h('section', { class: 'card' }, title ? h('h2', { text: title }) : null, ...children);
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
@@ -63,7 +64,7 @@ export function renderHome(main, { onSync, onSetup }) {
 
   const grid = h('div', { class: 'grid-2' },
     card(t('home.projects.title'), h('p', { class: 'muted', text: t('home.projects.empty') })),
-    card(t('home.recent.title'), h('p', { class: 'muted', text: t('home.recent.empty') })));
+    card(t('home.recent.title'), recentList() || h('p', { class: 'muted', text: t('home.recent.empty') })));
   main.append(grid);
 }
 

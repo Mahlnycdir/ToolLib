@@ -201,6 +201,23 @@ export function openSheet(title, content, { onClose, full = false, actions } = {
   return { close, body, sheet };
 }
 
+// Copies text to the clipboard; falls back to a hidden text field for older browsers. Returns true on success.
+export async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch { /* fall back below */ }
+  const ta = h('textarea', { readonly: '', style: { position: 'fixed', top: '-1000px', left: '0', opacity: '0' } });
+  ta.value = text;
+  document.body.append(ta);
+  ta.select();
+  ta.setSelectionRange(0, text.length);
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { ok = false; }
+  ta.remove();
+  return ok;
+}
+
 export function debounce(fn, ms) {
   let t;
   const d = (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };

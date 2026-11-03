@@ -2,7 +2,7 @@
 
 Persönliche Arbeitsoberfläche für Mac, iPhone und Linux: eine Web-App (PWA) auf GitHub Pages, dazu später ein Hub zu Hause. Das Wissen liegt getrennt im privaten Repository `knowledge`.
 
-Stand: Basis, Schritt 4 von 5 (Version 0.4.1). Der Rahmen läuft als installierbare App, startet offline und holt das Wissen mit einem Tipp auf Sync auf das Gerät.
+Stand: Basis fertig (Version 0.5.0). Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz.
 
 ## Aufbau
 
@@ -13,12 +13,15 @@ toollib/                 dieses Repository, öffentlich
   sw.js                  Service Worker: Offline-Cache und Updates (VERSION erhöhen)
   icons/                 App-Icons
   vendor/git.js          isomorphic-git, LightningFS und diff3 als ein Modul (gebaut mit tools/build-vendor)
+  vendor/search.js       MiniSearch und js-yaml als ein Modul
   app/
     main.js              Start: Texte laden, Rahmen bauen, Service Worker anmelden
     i18n/                strings.json (jeder Satz auf Englisch und Deutsch), i18n.js mit t()
     services/            ui.js und icons.js aus Kobra, prefs.js, pwa.js,
-                         storage.js (Dateien auf dem Gerät), sync.js (Abgleich mit GitHub)
-    shell/               shell.js (Befehlszeile, Modulleiste, Statuszeile), views.js, modules.js, styles.css
+                         storage.js (Dateien auf dem Gerät), sync.js (Abgleich mit GitHub),
+                         nodes.js (Knoten lesen: Kopfdaten, Sprachblöcke, Quellen), search.js (Suchindex)
+    shell/               shell.js (Befehlszeile, Modulleiste, Statuszeile), views.js, modules.js, styles.css,
+                         node-view.js (Knoten-Ansicht, Python-Spickzettel), markdown.js (sicherer Markdown-Leser)
   tools/                 Hilfsprogramme: import-snippets, build-vendor
 ```
 
@@ -43,6 +46,14 @@ Wurde dieselbe Datei hier und auf GitHub geändert, verbindet Sync die Änderung
 4. Sync tippen.
 
 Der Token bleibt im Speicher dieses Geräts und geht nur an den Proxy und an GitHub.
+
+## Suchen, lesen, kopieren
+
+- Befehlszeile (⌘K oder `/`, auf dem iPhone unten): Treffer aus dem Wissen stehen oben, darunter passende Befehle. Die Suche verzeiht Tippfehler, findet Wortanfänge und kennt englische und deutsche Namen (title, title_de, aliases, tags, Text).
+- Enter öffnet einen Knoten, ⇧ Enter oder das Kopier-Symbol kopiert ein Snippet sofort. Platzhalter wie `${x}` werden beim Kopieren zu `x`.
+- Die Knoten-Ansicht zeigt den Text in der gewählten Sprache, Code und Formeln (als LaTeX) mit Kopierknopf, verwandte Knoten, die Quellen mit Link und Fundstelle sowie einen Link zur Datei auf GitHub.
+- Modul Python-Spickzettel: alle Snippets nach Gruppen, mit Filter und Kopierknopf.
+- Der Suchindex entsteht beim Start und nach jedem Sync im Speicher; bei einigen tausend Knoten dauert das unter einer Sekunde.
 
 ## Lokal ansehen
 
