@@ -253,7 +253,6 @@ dl.keys dd { margin: 0; }
 .row-input .field { flex: 1; min-width: 0; }
 .set-field { display: block; margin-top: 14px; }
 .field-hint { display: block; font-size: 13px; color: var(--muted); margin-top: 6px; }
-.test-result { margin: 8px 0 0; min-height: 1.4em; }
 .know-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .know-count { font-size: 22px; font-weight: 700; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; }
@@ -367,3 +366,11 @@ dl.keys dd { margin: 0; }
   * { transition: none !important; }
 }
 .card > .btn, .card > .error-text + .btn { margin-top: 10px; }
+.checks { list-style: none; margin: 10px 0 0; padding: 0; font-size: 14px; }
+.check { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; }
+.check > .icon { flex: none; margin-top: 2px; }
+.check > .icon .ic { width: 16px; height: 16px; }
+.check.ok > .icon { color: var(--ok); }
+.check.warn > .icon { color: var(--warn); }
+.check.fail { color: var(--danger); }
+.check.info, .check.busy { color: var(--muted); }

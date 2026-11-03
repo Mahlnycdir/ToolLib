@@ -195,20 +195,20 @@ function syncCard({ onSync }) {
   const device = field('device', t('settings.sync.device'), { type: 'text', placeholder: s.device }, t('settings.sync.device.hint'));
   device.input.value = loadPref('sync.device', ''); // the placeholder shows the automatic name
 
-  const result = h('p', { class: 'muted small test-result', role: 'status' });
+  const result = h('ul', { class: 'checks', role: 'status' });
   const test = h('button', { type: 'button', class: 'btn' }, iconEl('link'), h('span', { text: t('settings.sync.test') }));
+  const line = (status, text) => h('li', { class: `check ${status}` },
+    iconEl({ ok: 'check', warn: 'warn', fail: 'close', info: 'info', busy: 'refresh' }[status] || 'info', status === 'busy' ? 'spin' : ''),
+    h('span', { text }));
   test.addEventListener('click', async () => {
     saveAll();
-    result.className = 'muted small test-result';
-    result.textContent = t('settings.sync.testing');
+    result.replaceChildren(line('busy', t('settings.sync.testing')));
     test.disabled = true;
     try {
-      const r = await testConnection();
-      result.className = `small test-result ${r.canPush ? 'ok-text' : 'warn-text'}`;
-      result.textContent = t(r.canPush ? 'settings.sync.test.ok' : 'settings.sync.test.readOnly', { branch: syncSettings().branch || r.defaultBranch || '?' });
+      const lines = await testConnection();
+      result.replaceChildren(...lines.map((l) => line(l.status, l.text)));
     } catch (e) {
-      result.className = 'small test-result error-text';
-      result.textContent = explainSyncError(e);
+      result.replaceChildren(line('fail', explainSyncError(e)));
     } finally {
       test.disabled = false;
     }

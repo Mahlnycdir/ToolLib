@@ -38,12 +38,21 @@ export function defaultDevice() {
   return 'Browser';
 }
 
-// "ente/knowledge" becomes https://github.com/ente/knowledge.git; full addresses stay as they are.
+// "ente/knowledge", "github.com/ente/knowledge" and the address of the GitHub page all become
+// https://github.com/ente/knowledge.git; other full addresses stay as they are.
 export function repoUrl(repo = syncSettings().repo) {
-  const r = String(repo || '').trim();
+  const r = String(repo || '').trim().replace(/\/+$/, '');
+  const gh = r.match(/^(?:https?:\/\/)?(?:www\.)?github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?$/i);
+  if (gh) return `https://github.com/${gh[1]}/${gh[2]}.git`;
   if (/^[\w.-]+\/[\w.-]+$/.test(r)) return `https://github.com/${r.replace(/\.git$/, '')}.git`;
   if (/^https?:\/\/\S+$/.test(r)) return r;
   return '';
+}
+
+// { owner, name } for repositories on github.com, otherwise null.
+export function githubRepo(url = repoUrl()) {
+  const m = String(url).match(/^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+?)\.git$/);
+  return m ? { owner: m[1], name: m[2] } : null;
 }
 
 export const isConfigured = () => !!repoUrl();
@@ -116,6 +125,9 @@ export function explainSyncError(e) {
 function remoteOpts(s) {
   const o = { http, onProgress: (p) => setPhase(p.phase, p.loaded, p.total) };
   if (s.proxy) o.corsProxy = s.proxy.replace(/\/+$/, '');
+  // The token goes along with every request. For a private repository GitHub may answer "not found"
+  // to a request without credentials instead of asking for them, so waiting for onAuth is not enough.
+  if (s.token) o.headers = { Authorization: `Basic ${btoa(`x-access-token:${s.token}`)}` };
   o.onAuth = () => (s.token ? { username: 'x-access-token', password: s.token } : { cancel: true });
   o.onAuthFailure = () => ({ cancel: true });
   return o;
@@ -368,19 +380,81 @@ function timestamp(d = new Date()) {
 }
 
 // ------------------------------------------------------------------ connection test and local copy
-// Checks reading and writing. Returns { branches, defaultBranch, canPush }.
+// Checks step by step where a connection fails and returns a list of { status: 'ok'|'warn'|'fail', text }.
+// For GitHub it first asks GitHub's REST API directly (it allows requests from any web page): is the token valid,
+// does it see the repository, may it read contents? Then it talks Git through the proxy, for reading and writing.
 export async function testConnection() {
   const s = syncSettings();
   const url = repoUrl(s.repo);
   if (!url) throw new SyncError('notConfigured');
   if (!navigator.onLine) throw new SyncError('offline');
+  const out = [];
+  const add = (status, key, vars) => out.push({ status, text: t(key, vars) });
+  const gh = githubRepo(url);
+  let apiSeesRepo = false;
+
+  if (gh) {
+    const repo = `${gh.owner}/${gh.name}`;
+    if (!s.token) {
+      add('fail', 'check.token.none');
+    } else {
+      const api = async (path) => {
+        const res = await fetch(`https://api.github.com${path}`, {
+          headers: { Authorization: `Bearer ${s.token}`, Accept: 'application/vnd.github+json' },
+          cache: 'no-store',
+        });
+        let body = null;
+        try { body = await res.json(); } catch { /* no body */ }
+        return { status: res.status, body };
+      };
+      let user = null;
+      try { user = await api('/user'); } catch { add('warn', 'check.api.skip'); }
+      if (user) try {
+        if (user.status === 401) { add('fail', 'check.token.bad'); return out; }
+        if (user.status === 200) add('ok', 'check.token.ok', { login: user.body?.login || '?' });
+        const info = await api(`/repos/${repo}`);
+        if (info.status !== 200) {
+          add('fail', 'check.repo.missing', { repo });
+          try {
+            const list = await api('/user/repos?per_page=100&sort=updated');
+            const names = Array.isArray(list.body) ? list.body.map((r) => r.full_name).slice(0, 12) : [];
+            out.push({ status: 'info', text: names.length ? t('check.repo.sees', { list: names.join(', ') }) : t('check.repo.seesNone') });
+          } catch { /* no list */ }
+          return out;
+        }
+        apiSeesRepo = true;
+        add('ok', 'check.repo.ok', { repo: info.body?.full_name || repo });
+        if (info.body && info.body.private === false) add('warn', 'check.repo.public', { repo });
+        const commits = await api(`/repos/${repo}/commits?per_page=1`);
+        if (commits.status === 409) add('warn', 'check.contents.empty');
+        else if (commits.status !== 200) { add('fail', 'check.contents.bad'); return out; }
+        else add('ok', 'check.contents.ok');
+      } catch {
+        add('warn', 'check.api.skip');
+      }
+    }
+  }
+
+  // Git itself, through the proxy for GitHub.
+  if (gh && !s.proxy) { add('fail', 'check.git.noProxy'); return out; }
   const opts = { url, ...remoteOpts(s) };
-  const info = await git.getRemoteInfo(opts);
+  let info;
+  try {
+    info = await git.getRemoteInfo(opts);
+  } catch (e) {
+    const m = `${e?.code || ''} ${e?.message || e}`;
+    if (/Failed to fetch|NetworkError|Load failed|CORS|network connection/i.test(m)) add('fail', gh ? 'check.git.unreachable' : 'sync.err.network');
+    else if (/\b404\b/.test(m)) add('fail', apiSeesRepo ? 'check.git.notFound' : 'sync.err.notFound');
+    else if (/UserCanceledError|\b401\b|\b403\b/.test(m)) add('fail', s.token ? 'sync.err.auth' : 'sync.err.noToken');
+    else out.push({ status: 'fail', text: m.trim().split('\n')[0] });
+    return out;
+  }
   const branches = Object.keys(info.refs?.heads || {});
-  const defaultBranch = (info.HEAD || '').replace(/^refs\/heads\//, '') || branches[0] || '';
-  let canPush = false;
-  try { await git.getRemoteInfo({ ...opts, forPush: true }); canPush = true; } catch { /* read only */ }
-  return { branches, defaultBranch, canPush };
+  const branch = s.branch || (info.HEAD || '').replace(/^refs\/heads\//, '') || branches[0] || '?';
+  if (s.branch && !branches.includes(s.branch)) add('fail', 'sync.err.branch');
+  else add('ok', gh ? 'check.git.ok' : 'check.git.okDirect', { branch });
+  try { await git.getRemoteInfo({ ...opts, forPush: true }); add('ok', 'check.write.ok'); } catch { add('warn', 'check.write.bad'); }
+  return out;
 }
 
 export const hasLocalCopy = () => exists(`${dir}/.git`);

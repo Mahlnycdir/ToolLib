@@ -2,7 +2,7 @@
 
 Persönliche Arbeitsoberfläche für Mac, iPhone und Linux: eine Web-App (PWA) auf GitHub Pages, dazu später ein Hub zu Hause. Das Wissen liegt getrennt im privaten Repository `knowledge`.
 
-Stand: Basis, Schritt 4 von 5. Der Rahmen läuft als installierbare App, startet offline und holt das Wissen mit einem Tipp auf Sync auf das Gerät.
+Stand: Basis, Schritt 4 von 5 (Version 0.4.1). Der Rahmen läuft als installierbare App, startet offline und holt das Wissen mit einem Tipp auf Sync auf das Gerät.
 
 ## Aufbau
 
