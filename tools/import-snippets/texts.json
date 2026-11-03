@@ -1,0 +1,561 @@
+{
+  "groups": {
+    "Ablauf": { "slug": "control-flow" },
+    "Funktionen & Klassen": { "slug": "functions-classes" },
+    "Fehler & Dateien": { "slug": "errors-files" },
+    "Daten": { "slug": "data" },
+    "Grafische Oberflächen": { "slug": "gui" },
+    "Wissenschaft": { "slug": "science" },
+    "Importe": { "slug": "imports" }
+  },
+
+  "translate": {
+    "bedingung": "condition",
+    "andere": "other",
+    "liste1": "list1",
+    "liste2": "list2",
+    "liste": "items",
+    "element": "item",
+    "elemente": "items",
+    "schluessel": "key",
+    "wert": "value",
+    "Wert": "Value",
+    "werte": "values",
+    "daten": "data",
+    "xdaten": "xdata",
+    "ydaten": "ydata",
+    "eingabe": "entry",
+    "parameter": "params",
+    "Beschreibung": "Description",
+    "Punkt": "Point",
+    "Kind": "Child",
+    "Eltern": "Parent",
+    "Nachricht": "Message",
+    "Fehler": "Error",
+    "fehler": "errors",
+    "inhalt": "content",
+    "zeile": "line",
+    "ausgabe": "output",
+    "Zahl eingeben": "Enter a number",
+    "zahl": "number",
+    "zaehler": "counter",
+    "paare": "pairs",
+    "Mein Fenster": "My window",
+    "Hallo": "Hello",
+    "Klick mich": "Click me",
+    "Klick": "Click",
+    "Geklickt": "Clicked",
+    "Alter": "Age",
+    "beschriftung": "label",
+    "schritt": "step",
+    "Frage": "Question",
+    "Wirklich fortfahren?": "Really continue?",
+    "Fenster": "Window",
+    "knopf": "button",
+    "geklickt": "on_click",
+    "Leinwand": "PaintArea",
+    "Messung": "measurement",
+    "loesung": "solution",
+    "modell": "model",
+    "kovarianz": "covariance",
+    "ausdruck": "expr"
+  },
+
+  "snippets": {
+    "if": {
+      "slug": "py-if",
+      "title": "If statement",
+      "title_de": "Bedingung (if)",
+      "aliases": ["condition"],
+      "en": "Runs a block only when a condition is true.",
+      "de": "Führt einen Block nur aus, wenn eine Bedingung wahr ist.",
+      "pitfalls_en": ["Compare with ==, assign with =.", "Empty containers, 0 and None count as false."],
+      "pitfalls_de": ["Vergleichen mit ==, zuweisen mit =.", "Leere Container, 0 und None gelten als falsch."]
+    },
+    "ifelse": {
+      "slug": "py-if-else",
+      "title": "If … else",
+      "title_de": "Entweder–oder (if … else)",
+      "aliases": ["else"],
+      "en": "Chooses between two blocks.",
+      "de": "Wählt zwischen zwei Blöcken."
+    },
+    "ifelif": {
+      "slug": "py-if-elif-else",
+      "title": "If … elif … else",
+      "title_de": "Mehrere Fälle (if … elif … else)",
+      "aliases": ["elif", "else if", "Fallunterscheidung"],
+      "en": "Checks several conditions in order; the first true one wins.",
+      "de": "Prüft mehrere Bedingungen der Reihe nach; die erste wahre gewinnt."
+    },
+    "forrange": {
+      "slug": "py-for-range",
+      "title": "Counting loop (for … range)",
+      "title_de": "Zählschleife (for … range)",
+      "aliases": ["loop", "Schleife"],
+      "en": "Repeats a block for i = 0, 1, …, n−1.",
+      "de": "Wiederholt einen Block für i = 0, 1, …, n−1.",
+      "pitfalls_en": ["range(10) stops at 9; range(a, b) excludes b."],
+      "pitfalls_de": ["range(10) endet bei 9; range(a, b) schließt b aus."]
+    },
+    "forin": {
+      "slug": "py-for-in",
+      "title": "Loop over items (for … in)",
+      "title_de": "Über Elemente laufen (for … in)",
+      "aliases": ["loop", "Schleife", "iterate"],
+      "en": "Visits each item of a list, string or other iterable.",
+      "de": "Geht jedes Element einer Liste, eines Strings oder eines anderen Iterables durch.",
+      "pitfalls_en": ["Do not add or remove items of the list you are looping over; loop over a copy instead."],
+      "pitfalls_de": ["Keine Elemente zur Liste hinzufügen oder entfernen, über die man gerade läuft; besser über eine Kopie laufen."]
+    },
+    "forenum": {
+      "slug": "py-for-enumerate",
+      "title": "Loop with index (enumerate)",
+      "title_de": "Schleife mit Index (enumerate)",
+      "aliases": ["index"],
+      "en": "Gives index and item together, starting at 0 (or at start=1).",
+      "de": "Liefert Index und Element zusammen, ab 0 (oder ab start=1)."
+    },
+    "forzip": {
+      "slug": "py-for-zip",
+      "title": "Parallel loop (zip)",
+      "title_de": "Parallele Schleife (zip)",
+      "en": "Walks through two lists side by side.",
+      "de": "Läuft zwei Listen nebeneinander durch.",
+      "pitfalls_en": ["zip stops at the shorter list; strict=True raises an error on different lengths."],
+      "pitfalls_de": ["zip hört bei der kürzeren Liste auf; strict=True meldet bei verschiedenen Längen einen Fehler."]
+    },
+    "fordict": {
+      "slug": "py-for-dict-items",
+      "title": "Loop over a dictionary (items)",
+      "title_de": "Über ein Dictionary laufen (items)",
+      "aliases": ["dict", "dictionary", "Wörterbuch"],
+      "en": "Gives each key together with its value.",
+      "de": "Liefert jeden Schlüssel zusammen mit seinem Wert."
+    },
+    "while": {
+      "slug": "py-while",
+      "title": "While loop",
+      "title_de": "Solange-Schleife (while)",
+      "aliases": ["loop", "Schleife"],
+      "en": "Repeats a block as long as a condition holds.",
+      "de": "Wiederholt einen Block, solange eine Bedingung gilt.",
+      "pitfalls_en": ["Change something inside the loop that eventually makes the condition false, or it never ends."],
+      "pitfalls_de": ["In der Schleife muss sich etwas ändern, das die Bedingung irgendwann falsch macht, sonst endet sie nie."]
+    },
+    "whiletrue": {
+      "slug": "py-while-true-break",
+      "title": "Endless loop with exit (while True … break)",
+      "title_de": "Endlosschleife mit Ausstieg (while True … break)",
+      "aliases": ["break", "input loop"],
+      "en": "Runs until break, here when the user types q.",
+      "de": "Läuft bis zum break, hier sobald man q eingibt."
+    },
+    "match": {
+      "slug": "py-match-case",
+      "title": "Pattern matching (match … case)",
+      "title_de": "Mustervergleich (match … case)",
+      "aliases": ["switch", "case"],
+      "en": "Compares a value against several patterns; case _ catches everything else.",
+      "de": "Vergleicht einen Wert mit mehreren Mustern; case _ fängt alles Übrige.",
+      "pitfalls_en": ["Needs Python 3.10 or newer."],
+      "pitfalls_de": ["Braucht Python 3.10 oder neuer."]
+    },
+
+    "def": {
+      "slug": "py-def",
+      "title": "Function (def)",
+      "title_de": "Funktion (def)",
+      "aliases": ["function", "docstring"],
+      "en": "Defines a reusable function with a docstring.",
+      "de": "Definiert eine wiederverwendbare Funktion mit Docstring.",
+      "pitfalls_en": ["Never use a mutable default such as def f(x=[]); use None and create the list inside."],
+      "pitfalls_de": ["Nie einen veränderlichen Standardwert wie def f(x=[]) verwenden; besser None und die Liste in der Funktion anlegen."]
+    },
+    "deftyped": {
+      "slug": "py-def-typed",
+      "title": "Function with type hints",
+      "title_de": "Funktion mit Typangaben",
+      "aliases": ["type hints", "annotations", "Typen"],
+      "en": "Annotates parameter and return types. Python does not enforce them, but editors and checkers use them.",
+      "de": "Gibt Typen für Parameter und Rückgabe an. Python erzwingt sie nicht, aber Editoren und Prüfprogramme nutzen sie."
+    },
+    "lambda": {
+      "slug": "py-lambda",
+      "title": "Lambda (short function)",
+      "title_de": "Kurzfunktion (lambda)",
+      "aliases": ["anonymous function"],
+      "en": "A one-line function without a name, handy as key= in sorted or as a callback.",
+      "de": "Eine einzeilige Funktion ohne Namen, praktisch als key= in sorted oder als Rückruf."
+    },
+    "class": {
+      "slug": "py-class",
+      "title": "Class with __init__ and __repr__",
+      "title_de": "Klasse mit __init__ und __repr__",
+      "aliases": ["Klasse", "object", "Objekt"],
+      "en": "Bundles data and methods; __repr__ gives a readable print.",
+      "de": "Bündelt Daten und Methoden; __repr__ sorgt für eine lesbare Ausgabe."
+    },
+    "dataclass": {
+      "slug": "py-dataclass",
+      "title": "Dataclass",
+      "title_de": "Datenklasse (@dataclass)",
+      "en": "Generates __init__, __repr__ and comparisons from the list of fields.",
+      "de": "Erzeugt __init__, __repr__ und Vergleiche aus der Liste der Felder.",
+      "pitfalls_en": ["Mutable defaults need field(default_factory=list)."],
+      "pitfalls_de": ["Veränderliche Standardwerte brauchen field(default_factory=list)."]
+    },
+    "subclass": {
+      "slug": "py-subclass",
+      "title": "Subclass (inheritance)",
+      "title_de": "Unterklasse (Vererbung)",
+      "aliases": ["inheritance", "super"],
+      "en": "Extends a class; super().__init__ runs the parent's setup first.",
+      "de": "Erweitert eine Klasse; super().__init__ führt zuerst die Einrichtung der Elternklasse aus."
+    },
+    "property": {
+      "slug": "py-property",
+      "title": "Property with setter",
+      "title_de": "Eigenschaft mit Setter (@property)",
+      "aliases": ["getter", "setter"],
+      "en": "Reads and writes an attribute through methods, for example to check values.",
+      "de": "Liest und schreibt ein Attribut über Methoden, etwa um Werte zu prüfen.",
+      "pitfalls_en": ["Store the value under another name such as self._name, otherwise the setter calls itself forever."],
+      "pitfalls_de": ["Den Wert unter einem anderen Namen wie self._name speichern, sonst ruft sich der Setter endlos selbst auf."]
+    },
+    "main": {
+      "slug": "py-main",
+      "title": "Script entry point (__main__)",
+      "title_de": "Startpunkt eines Skripts (__main__)",
+      "aliases": ["entry point", "Startpunkt"],
+      "en": "Runs main() only when the file is started directly, not when it is imported.",
+      "de": "Führt main() nur aus, wenn die Datei direkt gestartet wird, nicht beim Importieren."
+    },
+
+    "try": {
+      "slug": "py-try-except",
+      "title": "Catch errors (try … except)",
+      "title_de": "Fehler abfangen (try … except)",
+      "aliases": ["exception", "Ausnahme"],
+      "en": "Catches a specific error and handles it instead of crashing.",
+      "de": "Fängt einen bestimmten Fehler ab und behandelt ihn, statt abzustürzen.",
+      "pitfalls_en": ["Catch the narrowest error you expect; a bare except also hides typos."],
+      "pitfalls_de": ["Den engsten erwarteten Fehler abfangen; ein nacktes except verdeckt auch Tippfehler."]
+    },
+    "tryfinally": {
+      "slug": "py-try-finally",
+      "title": "Clean up with finally",
+      "title_de": "Aufräumen mit finally",
+      "aliases": ["cleanup"],
+      "en": "finally always runs, error or not, for example to close a connection.",
+      "de": "finally läuft immer, mit oder ohne Fehler, etwa um eine Verbindung zu schließen."
+    },
+    "raise": {
+      "slug": "py-raise",
+      "title": "Raise an error",
+      "title_de": "Fehler auslösen (raise)",
+      "aliases": ["exception", "ValueError"],
+      "en": "Stops with an error and a message when an input is invalid.",
+      "de": "Bricht mit einem Fehler und einer Meldung ab, wenn eine Eingabe ungültig ist."
+    },
+    "readfile": {
+      "slug": "py-read-file",
+      "title": "Read a text file",
+      "title_de": "Textdatei lesen",
+      "aliases": ["open", "file", "Datei"],
+      "en": "Reads the whole file into one string; with closes it automatically.",
+      "de": "Liest die ganze Datei in einen String; with schließt sie automatisch.",
+      "pitfalls_en": ["Always pass encoding=\"utf-8\"; the default differs between systems."],
+      "pitfalls_de": ["Immer encoding=\"utf-8\" angeben; der Standard ist je nach System verschieden."]
+    },
+    "readlines": {
+      "slug": "py-read-lines",
+      "title": "Read a file line by line",
+      "title_de": "Datei Zeile für Zeile lesen",
+      "aliases": ["lines", "Zeilen"],
+      "en": "Handles large files without loading them completely; strip() removes the line break.",
+      "de": "Verarbeitet große Dateien, ohne sie ganz zu laden; strip() entfernt den Zeilenumbruch."
+    },
+    "writefile": {
+      "slug": "py-write-file",
+      "title": "Write a text file",
+      "title_de": "Textdatei schreiben",
+      "aliases": ["save", "speichern"],
+      "en": "Writes text to a file.",
+      "de": "Schreibt Text in eine Datei.",
+      "pitfalls_en": ["\"w\" overwrites the file; \"a\" appends."],
+      "pitfalls_de": ["\"w\" überschreibt die Datei; \"a\" hängt an."]
+    },
+    "csvread": {
+      "slug": "py-read-csv",
+      "title": "Read a CSV file",
+      "title_de": "CSV-Datei lesen",
+      "rename": { "zeile": "row" },
+      "aliases": ["csv", "table", "Tabelle"],
+      "en": "Reads rows as dictionaries whose keys come from the header line.",
+      "de": "Liest Zeilen als Dictionaries, deren Schlüssel aus der Kopfzeile kommen.",
+      "pitfalls_en": ["Open with newline=\"\" so line breaks inside fields survive.", "All values arrive as strings; convert numbers yourself."],
+      "pitfalls_de": ["Mit newline=\"\" öffnen, damit Umbrüche in Feldern erhalten bleiben.", "Alle Werte kommen als Strings; Zahlen selbst umwandeln."]
+    },
+    "jsonrw": {
+      "slug": "py-json-read-write",
+      "title": "Read and write JSON",
+      "title_de": "JSON lesen und schreiben",
+      "en": "Loads a JSON file into Python objects and writes them back, indented.",
+      "de": "Lädt eine JSON-Datei in Python-Objekte und schreibt sie eingerückt zurück.",
+      "pitfalls_en": ["ensure_ascii=False keeps umlauts readable in the file."],
+      "pitfalls_de": ["ensure_ascii=False lässt Umlaute in der Datei lesbar."]
+    },
+
+    "listcomp": {
+      "slug": "py-list-comprehension",
+      "title": "List comprehension",
+      "title_de": "Listen-Abstraktion",
+      "aliases": ["comprehension"],
+      "en": "Builds a new list from an old one in a single line.",
+      "de": "Baut aus einer Liste in einer Zeile eine neue."
+    },
+    "listcompif": {
+      "slug": "py-list-comprehension-filter",
+      "title": "List comprehension with filter",
+      "title_de": "Listen-Abstraktion mit Filter",
+      "aliases": ["filter", "comprehension"],
+      "en": "Keeps only the items that pass the condition.",
+      "de": "Behält nur die Elemente, die die Bedingung erfüllen."
+    },
+    "dictcomp": {
+      "slug": "py-dict-comprehension",
+      "title": "Dict comprehension",
+      "title_de": "Dict-Abstraktion",
+      "aliases": ["dictionary", "comprehension"],
+      "en": "Builds a dictionary from pairs in a single line.",
+      "de": "Baut ein Dictionary aus Paaren in einer Zeile."
+    },
+    "sorted": {
+      "slug": "py-sorted-key",
+      "title": "Sort with a key",
+      "title_de": "Sortieren mit key",
+      "aliases": ["sort", "sortieren"],
+      "en": "Sorts by a computed value, here the second element of each entry.",
+      "de": "Sortiert nach einem berechneten Wert, hier dem zweiten Element jedes Eintrags.",
+      "pitfalls_en": ["sorted returns a new list; list.sort() sorts in place and returns None."],
+      "pitfalls_de": ["sorted gibt eine neue Liste zurück; list.sort() sortiert an Ort und Stelle und gibt None zurück."]
+    },
+    "fstring": {
+      "slug": "py-f-string",
+      "title": "Formatted output (f-string)",
+      "title_de": "Formatierte Ausgabe (f-String)",
+      "aliases": ["format", "print"],
+      "en": "Inserts values into text; :.2f shows two decimals.",
+      "de": "Setzt Werte in Text ein; :.2f zeigt zwei Nachkommastellen."
+    },
+    "inputint": {
+      "slug": "py-input-int",
+      "title": "Read a number from input",
+      "title_de": "Zahl einlesen",
+      "aliases": ["input", "Eingabe"],
+      "en": "Asks for an input and converts it to an integer.",
+      "de": "Fragt nach einer Eingabe und wandelt sie in eine ganze Zahl um.",
+      "pitfalls_en": ["int() raises ValueError for text like \"abc\"; catch it with try … except."],
+      "pitfalls_de": ["int() wirft bei Text wie \"abc\" einen ValueError; mit try … except abfangen."]
+    },
+    "counter": {
+      "slug": "py-counter",
+      "title": "Count items (Counter)",
+      "title_de": "Zählen (Counter)",
+      "aliases": ["count", "frequency", "Häufigkeit"],
+      "en": "Counts how often each item occurs and lists the most common ones.",
+      "de": "Zählt, wie oft jedes Element vorkommt, und zeigt die häufigsten."
+    },
+
+    "tkapp": {
+      "slug": "py-tkinter-window",
+      "title": "tkinter window",
+      "title_de": "tkinter-Fenster",
+      "aliases": ["gui", "window"],
+      "en": "A minimal window with a label and a button.",
+      "de": "Ein kleinstes Fenster mit Beschriftung und Knopf.",
+      "pitfalls_en": ["mainloop() blocks; code after it runs only when the window closes."],
+      "pitfalls_de": ["mainloop() blockiert; Code danach läuft erst, wenn das Fenster zu ist."]
+    },
+    "tkclass": {
+      "slug": "py-tkinter-app-class",
+      "title": "tkinter app as a class",
+      "title_de": "tkinter-App als Klasse",
+      "aliases": ["gui"],
+      "en": "Structures a larger app: widgets in __init__, actions as methods.",
+      "de": "Strukturiert eine größere App: Elemente in __init__, Aktionen als Methoden."
+    },
+    "tkgrid": {
+      "slug": "py-tkinter-grid-form",
+      "title": "tkinter form (grid)",
+      "title_de": "tkinter-Formular (grid)",
+      "rename": { "zeile": "row" },
+      "aliases": ["form", "Formular", "grid"],
+      "en": "Lays out labels and entry fields as a table; column 1 stretches.",
+      "de": "Ordnet Beschriftungen und Eingabefelder als Tabelle an; Spalte 1 dehnt sich.",
+      "pitfalls_en": ["Do not mix grid and pack in the same container."],
+      "pitfalls_de": ["grid und pack nicht im selben Container mischen."]
+    },
+    "tkcanvas": {
+      "slug": "py-tkinter-canvas-animation",
+      "title": "tkinter animation (Canvas)",
+      "title_de": "tkinter-Animation (Canvas)",
+      "aliases": ["animation", "canvas"],
+      "en": "Moves a ball that bounces off the walls; after() schedules the next frame about every 16 ms.",
+      "de": "Bewegt einen Ball, der an den Wänden abprallt; after() plant das nächste Bild etwa alle 16 ms.",
+      "pitfalls_en": ["Never use time.sleep in a GUI, it freezes the window; use after()."],
+      "pitfalls_de": ["In einer Oberfläche nie time.sleep nutzen, das Fenster friert ein; after() verwenden."]
+    },
+    "tkmsg": {
+      "slug": "py-tkinter-messagebox",
+      "title": "Message box (yes/no)",
+      "title_de": "Hinweis und Frage (messagebox)",
+      "aliases": ["dialog", "Dialog"],
+      "en": "Shows a yes/no question and continues only on yes.",
+      "de": "Zeigt eine Ja/Nein-Frage und macht nur bei Ja weiter."
+    },
+    "qtapp": {
+      "slug": "py-pyqt-window",
+      "title": "PyQt window",
+      "title_de": "PyQt-Fenster",
+      "aliases": ["gui", "qt"],
+      "en": "A minimal PyQt5 window with a label and a button that changes the text.",
+      "de": "Ein kleinstes PyQt5-Fenster mit Beschriftung und einem Knopf, der den Text ändert."
+    },
+    "qtpaint": {
+      "slug": "py-pyqt-paint",
+      "title": "PyQt drawing area",
+      "title_de": "PyQt-Zeichenfläche",
+      "aliases": ["draw", "zeichnen", "QPainter"],
+      "en": "Draws on a widget in paintEvent with QPainter.",
+      "de": "Zeichnet in paintEvent mit QPainter auf ein Widget.",
+      "pitfalls_en": ["Call update() to redraw; never call paintEvent directly."],
+      "pitfalls_de": ["Zum Neuzeichnen update() aufrufen, nie paintEvent direkt."]
+    },
+
+    "np": {
+      "slug": "py-numpy-linspace",
+      "title": "NumPy array from a function",
+      "title_de": "NumPy-Array aus einer Funktion",
+      "aliases": ["numpy", "array", "linspace"],
+      "en": "Creates evenly spaced points and applies a function to all of them at once.",
+      "de": "Erzeugt gleichmäßig verteilte Punkte und wendet eine Funktion auf alle auf einmal an.",
+      "pitfalls_en": ["linspace includes the end point; arange usually does not."],
+      "pitfalls_de": ["linspace enthält den Endpunkt, arange meist nicht."]
+    },
+    "plot": {
+      "slug": "py-matplotlib-plot",
+      "title": "Line plot (matplotlib)",
+      "title_de": "Diagramm (matplotlib)",
+      "aliases": ["plot", "graph", "Grafik"],
+      "en": "Plots y over x with axis labels, legend and grid.",
+      "de": "Zeichnet y über x mit Achsenbeschriftung, Legende und Gitter."
+    },
+    "subplots": {
+      "slug": "py-matplotlib-subplots",
+      "title": "Several plots (subplots)",
+      "title_de": "Mehrere Diagramme (subplots)",
+      "aliases": ["histogram", "Histogramm", "figure"],
+      "en": "Two plots stacked in one figure: a curve and a histogram.",
+      "de": "Zwei Diagramme untereinander in einer Abbildung: eine Kurve und ein Histogramm."
+    },
+    "ode": {
+      "slug": "py-solve-ode",
+      "title": "Solve an ODE (solve_ivp)",
+      "title_de": "Differentialgleichung lösen (solve_ivp)",
+      "aliases": ["ODE", "DGL", "initial value problem", "Anfangswertproblem", "oscillator", "Oszillator"],
+      "en": "Solves an initial value problem y' = f(t, y). Higher orders become a first-order system, here x'' = −ω² x with y = (x, v).",
+      "de": "Löst ein Anfangswertproblem y' = f(t, y). Höhere Ordnungen werden ein System erster Ordnung, hier x'' = −ω² x mit y = (x, v).",
+      "pitfalls_en": ["rhs gets t first, then y.", "Without t_eval the solver picks few time points.", "For stiff equations use method=\"Radau\" or \"BDF\"."],
+      "pitfalls_de": ["rhs bekommt zuerst t, dann y.", "Ohne t_eval wählt der Löser nur wenige Zeitpunkte.", "Für steife Gleichungen method=\"Radau\" oder \"BDF\" wählen."]
+    },
+    "fit": {
+      "slug": "py-curve-fit",
+      "title": "Fit a curve (curve_fit)",
+      "title_de": "Kurve anpassen (curve_fit)",
+      "aliases": ["fit", "regression", "Ausgleichsrechnung"],
+      "en": "Fits model parameters to data and estimates their errors from the covariance matrix.",
+      "de": "Passt Modellparameter an Daten an und schätzt ihre Fehler aus der Kovarianzmatrix.",
+      "pitfalls_en": ["Give a sensible start guess p0; exponential models often fail without one."],
+      "pitfalls_de": ["Einen sinnvollen Startwert p0 angeben; Exponentialmodelle scheitern ohne oft."]
+    },
+    "sympy": {
+      "slug": "py-sympy",
+      "title": "Symbolic math (SymPy)",
+      "title_de": "Symbolisch rechnen (SymPy)",
+      "aliases": ["derivative", "Ableitung", "integral", "Integral", "CAS"],
+      "en": "Differentiates and integrates an expression exactly.",
+      "de": "Leitet einen Ausdruck exakt ab und integriert ihn.",
+      "pitfalls_en": ["Use sp.sin, sp.exp and sp.oo, not functions from math or NumPy."],
+      "pitfalls_de": ["sp.sin, sp.exp und sp.oo verwenden, nicht die Funktionen aus math oder NumPy."]
+    },
+    "random": {
+      "slug": "py-random-numbers",
+      "title": "Random numbers (NumPy)",
+      "title_de": "Zufallszahlen (NumPy)",
+      "aliases": ["random", "Zufall", "seed"],
+      "en": "Draws normally distributed numbers with a fixed seed, so results can be repeated.",
+      "de": "Zieht normalverteilte Zahlen mit festem Startwert, damit sich Ergebnisse wiederholen lassen."
+    },
+
+    "imp_np": {
+      "slug": "py-import-numpy",
+      "title": "Import NumPy",
+      "title_de": "NumPy importieren",
+      "aliases": ["numpy"],
+      "en": "Standard import of NumPy as np.",
+      "de": "Üblicher Import von NumPy als np."
+    },
+    "imp_plt": {
+      "slug": "py-import-matplotlib",
+      "title": "Import matplotlib",
+      "title_de": "matplotlib importieren",
+      "aliases": ["matplotlib", "pyplot"],
+      "en": "Standard import of pyplot as plt.",
+      "de": "Üblicher Import von pyplot als plt."
+    },
+    "imp_tk": {
+      "slug": "py-import-tkinter",
+      "title": "Import tkinter",
+      "title_de": "tkinter importieren",
+      "aliases": ["tkinter"],
+      "en": "tkinter with the themed widgets ttk and the dialogs.",
+      "de": "tkinter mit den modernen Elementen ttk und den Dialogen."
+    },
+    "imp_qt": {
+      "slug": "py-import-pyqt5",
+      "title": "Import PyQt5",
+      "title_de": "PyQt5 importieren",
+      "aliases": ["qt", "pyqt"],
+      "en": "Common PyQt5 classes for widgets, core and graphics.",
+      "de": "Übliche PyQt5-Klassen für Widgets, Kern und Grafik.",
+      "pitfalls_en": ["The wildcard import hides where names come from; fine for quick tests, not for larger programs."],
+      "pitfalls_de": ["Der Stern-Import verschleiert, woher Namen kommen; gut für schnelle Tests, nicht für größere Programme."]
+    },
+    "imp_math": {
+      "slug": "py-import-math-random",
+      "title": "Import math and random",
+      "title_de": "math und random importieren",
+      "aliases": ["math", "random"],
+      "en": "Math functions and random numbers from the standard library.",
+      "de": "Mathefunktionen und Zufallszahlen aus der Standardbibliothek."
+    },
+    "imp_pd": {
+      "slug": "py-import-pandas",
+      "title": "Import pandas",
+      "title_de": "pandas importieren",
+      "aliases": ["pandas", "dataframe"],
+      "en": "Standard import of pandas as pd.",
+      "de": "Üblicher Import von pandas als pd."
+    },
+    "imp_path": {
+      "slug": "py-import-pathlib",
+      "title": "Import Path (pathlib)",
+      "title_de": "Path importieren (pathlib)",
+      "aliases": ["path", "Pfad", "pathlib"],
+      "en": "File paths as objects: Path(\"data\") / \"file.txt\".",
+      "de": "Dateipfade als Objekte: Path(\"data\") / \"file.txt\"."
+    }
+  }
+}
