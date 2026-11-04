@@ -288,6 +288,8 @@
   "run.checkFailedEdited": { "en": "Check failed · with your changes (↺ brings back the node’s version)", "de": "Check fehlgeschlagen · mit deinen Änderungen (↺ holt die Fassung des Knotens zurück)" },
   "run.markVerified": { "en": "Mark as checked", "de": "Als geprüft markieren" },
   "run.guiLater": { "en": "Opens a window (tkinter or Qt). That runs here once Kobra moves in; until then use Kobra.", "de": "Öffnet ein Fenster (tkinter oder Qt). Das läuft hier erst nach Kobras Umzug, bis dahin in Kobra." },
+  "run.terminal": { "en": "A command for the terminal: copy it and run it there.", "de": "Ein Befehl fürs Terminal: kopieren und dort ausführen." },
+  "run.desktopOnly": { "en": "Needs Python on your computer: threads and processes don’t run in the browser.", "de": "Braucht Python auf deinem Rechner: Threads und Prozesse laufen im Browser nicht." },
   "run.state.loading": { "en": "Python is loading", "de": "Python lädt" },
   "run.state.running": { "en": "Running", "de": "Läuft" },
   "run.state.live": { "en": "Animation running", "de": "Animation läuft" },
@@ -340,6 +342,7 @@
   "python.stopped": { "en": "Stopped · Python restarts next time", "de": "Gestoppt · Python startet beim nächsten Mal neu" },
   "python.liveStopped": { "en": "Animation stopped", "de": "Animation gestoppt" },
   "python.guiLater": { "en": "Windows (tkinter, Qt) come later, with Kobra.", "de": "Fenster (tkinter, Qt) kommen später, mit Kobra." },
+  "python.desktopOnly": { "en": "Threads don’t run in the browser. Run this with Python on your computer.", "de": "Threads laufen im Browser nicht. Führe das mit Python auf deinem Rechner aus." },
 
   "type.snippet": { "en": "Snippet", "de": "Snippet" },
   "type.formula": { "en": "Formula", "de": "Formel" },
@@ -372,6 +375,10 @@
   "group.animation": { "en": "Animation", "de": "Animation" },
   "group.lattice": { "en": "Lattice & Monte Carlo", "de": "Gitter & Monte Carlo" },
   "group.sympy": { "en": "SymPy", "de": "SymPy" },
+  "group.data-structures": { "en": "Data structures", "de": "Datenstrukturen" },
+  "group.debugging": { "en": "Debugging", "de": "Fehlersuche" },
+  "group.threading": { "en": "Threads & processes", "de": "Threads & Prozesse" },
+  "group.git": { "en": "Git", "de": "Git" },
   "group.other": { "en": "Other", "de": "Sonstiges" },
 
   "cheatsheet.filter": { "en": "Filter snippets", "de": "Snippets filtern" },

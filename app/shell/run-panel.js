@@ -75,10 +75,11 @@ const KEEP = 5;
 //   onSaveAs({ code, check }): opens the form for a new snippet with this code; redraw(): draws the view again
 export function runControls(node, options) {
   const parts = runParts(node);
-  if (!parts.code) return null;
-  if (GUI_IMPORT.test(parts.code)) {
-    return { buttons: [], panel: h('p', { class: 'run-later muted small' }, iconEl('window'), h('span', { text: t('run.guiLater') })) };
-  }
+  // Instead of "Try it": a short line why this one does not run here (copying works as always)
+  const elsewhere = (name, key) => ({ buttons: [], panel: h('p', { class: 'run-later muted small' }, iconEl(name), h('span', { text: t(key) })) });
+  if (!parts.code) return String(node.meta.language || '') === 'shell' ? elsewhere('terminal', 'run.terminal') : null;
+  if (String(node.meta.runs || '') === 'desktop') return elsewhere('server', 'run.desktopOnly');
+  if (GUI_IMPORT.test(parts.code)) return elsewhere('window', 'run.guiLater');
   const prev = kept.get(node.path);
   if (prev && prev.code === parts.code && prev.check === parts.check && prev.lang === getLang()) {
     prev.opts = options;

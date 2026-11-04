@@ -191,7 +191,14 @@ function onMessage(msg) {
       break;
     case 'progress': sink?.progress(msg.code, msg.vars); break;
     case 'stdout': sink?.write(msg.text, 'out'); break;
-    case 'stderr': sink?.write(msg.text, 'err'); break;
+    case 'stderr':
+      sink?.write(msg.text, 'err');
+      // Pyodide has no threads (and asyncio.run needs stack switching, which not every browser has)
+      if (!reported.has('<threads>') && /can't start new thread|stack switching not supported/.test(msg.text)) {
+        reported.add('<threads>');
+        sink?.note('python.desktopOnly', {}, 'warn');
+      }
+      break;
     case 'gui': handleGuiOps(msg.ops); break;
     case 'sync-req': onSyncRequest(msg.id, msg.kind); break;
     case 'sync-lost':

@@ -23,7 +23,7 @@ export const typeIcon = (type) => TYPE_ICON[type] || 'file';
 export const typeAccent = (type) => TYPE_ACCENT[type] || 'shell';
 export const typeLabel = (type) => (t(`type.${type}`) === `type.${type}` ? type : t(`type.${type}`));
 export const groupLabel = (group) => (t(`group.${group}`) === `group.${group}` ? group : t(`group.${group}`));
-export const GROUP_ORDER = ['control-flow', 'functions-classes', 'errors-files', 'data', 'numpy', 'scipy', 'matplotlib', 'animation', 'lattice', 'sympy', 'gui', 'science', 'imports'];
+export const GROUP_ORDER = ['control-flow', 'functions-classes', 'errors-files', 'data', 'data-structures', 'numpy', 'scipy', 'matplotlib', 'animation', 'lattice', 'sympy', 'debugging', 'threading', 'gui', 'git', 'science', 'imports'];
 const inCheatsheet = (d) => d && (d.type === 'snippet' || d.type === 'recipe') && !d.conflict;
 const problemsOf = (d, lang = getLang()) => (lang === 'de' && d.problems_de.length ? d.problems_de : d.problems.length ? d.problems : d.problems_de);
 

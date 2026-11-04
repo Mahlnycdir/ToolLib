@@ -2,7 +2,7 @@
 
 Persönliche Arbeitsoberfläche für Mac, iPhone und Linux: eine Web-App (PWA) auf GitHub Pages, dazu später ein Hub zu Hause. Das Wissen liegt getrennt im privaten Repository `knowledge`.
 
-Stand: Version 0.9.0, Stufe 2 (Python-Spickzettel als volles Modul) läuft. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte. Seit 0.8.0 laufen Snippets direkt in der App: Python mit numpy, scipy, matplotlib und sympy läuft im Browser, von Toollibs eigener Adresse. Seit 0.9.0 legst du eigene Snippets an und änderst Code und Check bestehender Knoten.
+Stand: Version 0.10.0, Stufe 2 (Python-Spickzettel als volles Modul) läuft, sieben von acht Punkten sind erledigt. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte. Seit 0.8.0 laufen Snippets direkt in der App: Python mit numpy, scipy, matplotlib und sympy läuft im Browser, von Toollibs eigener Adresse. Seit 0.9.0 legst du eigene Snippets an und änderst Code und Check bestehender Knoten. Seit 0.10.0 gibt es die Gruppen Datenstrukturen, Fehlersuche, Threads & Prozesse und Git.
 
 ## Aufbau
 
@@ -93,6 +93,8 @@ Gängige Bibliotheken brauchen keine Import-Zeile: Wer `np`, `plt`, `quad`, `mat
 Die Ausgabe zeigt `print`, Fehler mit Traceback, ein Eingabefeld für `input()` und Abbildungen von matplotlib. Animationen (`FuncAnimation`, `plt.pause`) laufen im selben Bild weiter, bis „Stopp“ sie beendet. „Stopp“ während eines laufenden Programms beendet Python ganz; es startet beim nächsten Ausführen neu.
 
 Python ist Pyodide 314.0.7 (Python 3.14) mit numpy, scipy, matplotlib und sympy. Alles liegt in `vendor/pyodide/` und kommt von Toollibs eigener Adresse, kein Code verlässt das Gerät. Beim ersten Ausführen lädt der Kern (etwa 14 MB), jedes Paket erst, wenn ein Snippet es importiert. Einstellungen › Python › „Für offline speichern“ holt alles auf einmal (43 MB); danach laufen Snippets auch ohne Netz. Python liegt in einem eigenen Cache (`toollib-python-<version>`), der App-Updates übersteht.
+
+Nicht im Browser: Threads und Prozesse (Pyodide kann keine starten) und `asyncio.run` in manchen Browsern. Snippets mit `runs: desktop` zeigen deshalb statt „Ausprobieren“ einen Hinweis; versucht eigener Code einen Thread zu starten, sagt die Ausgabe dasselbe. Git-Snippets (`language: shell`) sind Befehle fürs Terminal und werden nur kopiert. NumPy meldet im Browser weder NaN noch inf (keine RuntimeWarning, `np.errstate` greift nicht); das Snippet „Finden, wo NaN oder inf entsteht“ zeigt, wie man trotzdem die Stelle findet.
 
 Noch nicht: Fenster von tkinter und Qt (kommen mit Kobras Fensteransicht) und Pakete außerhalb der vier (z. B. pandas); die Ausgabe sagt dann, warum.
 
