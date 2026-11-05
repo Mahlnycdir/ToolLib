@@ -110,7 +110,7 @@ export function startShell(root) {
     const list = h('div', { class: 'rail-modules' });
     for (const m of MODULES) {
       const active = (route.kind === 'module' && route.mod.id === m.id) || (route.kind === 'node' && typeAccent(nodeByPath(route.path)?.type) === m.id) || (route.kind === 'form' && m.id === 'cheatsheet');
-      list.append(railButton({ id: m.id, iconName: m.icon, label: t(`module.${m.id}.name`), active, accentId: m.id, onclick: () => go(`#/m/${m.id}`) }));
+      list.append(railButton({ id: m.id, iconName: m.icon, label: t(`module.${m.id}.name`), active, accentId: m.id, onclick: () => (m.href ? location.assign(m.href) : go(`#/m/${m.id}`)) }));
     }
     rail.append(list);
     rail.append(h('div', { class: 'rail-spacer' }));
@@ -167,7 +167,7 @@ export function startShell(root) {
     ];
     for (const m of MODULES) {
       const name = t(`module.${m.id}.name`);
-      list.push({ label: t('cmd.open', { module: name }), keys: `${m.id} module modul ${t(`module.${m.id}.desc`)}`, icon: m.icon, accent: m.id, run: () => go(`#/m/${m.id}`) });
+      list.push({ label: t('cmd.open', { module: name }), keys: `${m.id} module modul ${t(`module.${m.id}.desc`)}`, icon: m.icon, accent: m.id, run: () => (m.href ? location.assign(m.href) : go(`#/m/${m.id}`)) });
     }
     for (const a of ACCENTS) {
       list.push({ label: t('cmd.accent', { color: t(`accent.${a.id}`) }), keys: `accent akzent colour color farbe ${a.id}`, icon: 'palette', swatch: a.color, run: () => { setAccent('shell', a.id); refresh(); } });

@@ -2,7 +2,7 @@
 
 Persönliche Arbeitsoberfläche für Mac, iPhone und Linux: eine Web-App (PWA) auf GitHub Pages, dazu später ein Hub zu Hause. Das Wissen liegt getrennt im privaten Repository `knowledge`.
 
-Stand: Version 0.10.0, Stufe 2 (Python-Spickzettel als volles Modul) läuft, sieben von acht Punkten sind erledigt. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte. Seit 0.8.0 laufen Snippets direkt in der App: Python mit numpy, scipy, matplotlib und sympy läuft im Browser, von Toollibs eigener Adresse. Seit 0.9.0 legst du eigene Snippets an und änderst Code und Check bestehender Knoten. Seit 0.10.0 gibt es die Gruppen Datenstrukturen, Fehlersuche, Threads & Prozesse und Git.
+Stand: Version 0.11.0, Stufe 2 (Python-Spickzettel als volles Modul) ist fertig. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte. Seit 0.8.0 laufen Snippets direkt in der App: Python mit numpy, scipy, matplotlib und sympy läuft im Browser, von Toollibs eigener Adresse. Seit 0.9.0 legst du eigene Snippets an und änderst Code und Check bestehender Knoten. Seit 0.10.0 gibt es die Gruppen Datenstrukturen, Fehlersuche, Threads & Prozesse und Git. Seit 0.11.0 ist Kobra Teil von Toollib, mit den Bausteinen aus dem Spickzettel.
 
 ## Aufbau
 
@@ -97,6 +97,16 @@ Python ist Pyodide 314.0.7 (Python 3.14) mit numpy, scipy, matplotlib und sympy.
 Nicht im Browser: Threads und Prozesse (Pyodide kann keine starten) und `asyncio.run` in manchen Browsern. Snippets mit `runs: desktop` zeigen deshalb statt „Ausprobieren“ einen Hinweis; versucht eigener Code einen Thread zu starten, sagt die Ausgabe dasselbe. Git-Snippets (`language: shell`) sind Befehle fürs Terminal und werden nur kopiert. NumPy meldet im Browser weder NaN noch inf (keine RuntimeWarning, `np.errstate` greift nicht); das Snippet „Finden, wo NaN oder inf entsteht“ zeigt, wie man trotzdem die Stelle findet.
 
 Noch nicht: Fenster von tkinter und Qt (kommen mit Kobras Fensteransicht) und Pakete außerhalb der vier (z. B. pandas); die Ausgabe sagt dann, warum.
+
+## Kobra
+
+Kobra (die Python-IDE) liegt seit 0.11.0 fast unverändert in `kobra/` und öffnet sich über die Modulleiste oder die Befehlszeile („Kobra öffnen“). Oben links führt das T zurück zu Toollib.
+
+- Alles von Kobra ist dabei: Projekte, Editor mit Vervollständigung, Konsole mit `input()`, Fenster von tkinter und Qt, Pakete, Git.
+- Bausteine: der Knopf neben „Start“ oder ⌘/Strg+J. Sie kommen aus dem Spickzettel (das Wissen auf diesem Gerät, nach Sync); die Suche versteht Probleme in eigenen Worten wie die Befehlszeile. Ein Tipp fügt den Code an der Schreibmarke ein, Tab springt durch die Platzhalter, „im Spickzettel“ öffnet Erklärung, Beispiel und Stolperfallen. Ohne abgeglichenes Wissen zeigt Kobra seine eigenen Bausteine.
+- Python kommt aus `vendor/pyodide` (dafür jetzt auch micropip und jedi), Toollibs Service Worker liefert Kobra auch offline aus und trägt den Kanal für `input()` und Fenster (`kobra/__kobra__/`). Pakete außerhalb von `vendor/pyodide` lädt pip aus dem Netz.
+- Projekte: Git › Klonen mit Kobras Token (Einstellungen in Kobra). Im selben Browser auf dem Mac sieht Kobra in Toollib dieselben Projekte wie die eigenständige Kobra (gleiche Adresse); eine installierte App auf dem iPhone hat ihren eigenen Speicher.
+- Bewusst noch nicht angeglichen (fundament.md, „Später angleichen“): Kobras Texte sind deutsch und fest im Code, Kobra hat sein eigenes Aussehen und sein eigenes Python neben dem des Spickzettels, eigene Dienste für Speicher, Git und Einstellungen.
 
 ## Lokal ansehen
 

@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const WANTED = ['numpy', 'scipy', 'matplotlib', 'sympy'];
+const WANTED = ['numpy', 'scipy', 'matplotlib', 'sympy', 'micropip', 'jedi'];   // micropip, jedi: for Kobra (pip, completion)
 const CORE = ['pyodide.mjs', 'pyodide.asm.mjs', 'pyodide.asm.wasm', 'python_stdlib.zip', 'pyodide-lock.json'];
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');

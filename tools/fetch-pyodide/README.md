@@ -1,6 +1,6 @@
 # fetch-pyodide
 
-Holt Python für Toollib nach `vendor/pyodide/`: Pyodide (Python im Browser) mit numpy, scipy, matplotlib und sympy samt ihren Abhängigkeiten. Toollib lädt Python nur von der eigenen Adresse, kein fremder Server ist beteiligt.
+Holt Python für Toollib nach `vendor/pyodide/`: Pyodide (Python im Browser) mit numpy, scipy, matplotlib und sympy samt ihren Abhängigkeiten, seit 0.11.0 auch micropip und jedi für Kobra. Toollib lädt Python nur von der eigenen Adresse, kein fremder Server ist beteiligt.
 
 Nur nötig, wenn Pyodide aktualisiert werden soll. Die Dateien liegen fertig im Repository.
 

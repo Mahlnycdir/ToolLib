@@ -17,7 +17,7 @@ export const MODULES = [
   { id: 'cheatsheet', icon: 'book', accent: 'sky', step: 5 },
   { id: 'parts', icon: 'chip', accent: 'teal', step: null },
   { id: 'pins', icon: 'board', accent: 'green', step: null },
-  { id: 'kobra', icon: 'code', accent: 'yellow', step: null },
+  { id: 'kobra', icon: 'code', accent: 'yellow', step: null, href: 'kobra/' },   // Kobra as its own page (0.11.0)
   { id: 'kladde', icon: 'edit', accent: 'orange', step: null },
   { id: 'workmode', icon: 'chalkboard', accent: 'violet', step: null },
   { id: 'scraper', icon: 'globe', accent: 'blue', step: null },

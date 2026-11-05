@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="de" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Kobra">
+<meta name="theme-color" content="#121418">
+<meta name="description" content="Python-IDE für iPhone und iPad: Projekte, IntelliSense, Pakete, GUI-Emulator für tkinter und PyQt, Git.">
+<title>Kobra · Toollib</title>
+<link rel="icon" type="image/png" href="../icons/favicon-64.png">
+<link rel="stylesheet" href="styles.css">
+<link rel="modulepreload" href="vendor/vendor.js">
+</head>
+<body>
+<div id="app" class="app" data-view="code" data-side="files">
+  <header class="topbar">
+    <a id="btn-toollib" class="icon-btn" href="../" aria-label="Zurück zu Toollib" title="Zurück zu Toollib"><img src="../icons/favicon-64.png" alt="" width="22" height="22"></a>
+    <button id="btn-projects" class="icon-btn" type="button" aria-label="Projekte"></button>
+    <div class="title">
+      <span id="py-status" class="py-status s-loading" role="status" aria-label="Python lädt"></span>
+      <div class="title-text"><span id="proj-name">Kobra</span><span id="file-name"></span></div>
+    </div>
+    <button id="btn-blocks" class="icon-btn" type="button" aria-label="Bausteine aus dem Spickzettel" title="Bausteine aus dem Spickzettel (⌘/Strg+J)"></button>
+    <button id="btn-run" class="run-btn" type="button" aria-label="Programm starten"></button>
+    <button id="btn-more" class="icon-btn" type="button" aria-label="Weitere Befehle"></button>
+  </header>
+  <div id="update-banner" class="banner" hidden><span>Eine neue Version von Kobra ist bereit.</span><button class="btn small primary" type="button">Neu laden</button></div>
+  <main class="views">
+    <section class="view v-files" data-view="files" aria-label="Dateien">
+      <div class="view-head"><h2>Dateien</h2><div id="files-toolbar" class="toolbar"></div></div>
+      <div id="install-hint" class="hint-card" hidden>
+        <p><strong>Als App installieren:</strong> In Safari auf <em>Teilen</em> tippen, dann <em>Zum Home-Bildschirm</em>. So läuft Kobra im Vollbild, offline und deine Projekte bleiben dauerhaft gespeichert.</p>
+        <button class="close icon-btn small" type="button" aria-label="Hinweis schließen">×</button>
+      </div>
+      <div id="tree" class="tree" role="tree"></div>
+    </section>
+    <section class="view v-code" data-view="code" aria-label="Code">
+      <div id="tabs" class="file-tabs" role="tablist"></div>
+      <div class="editor-wrap">
+        <div id="editor" class="editor-host"></div>
+        <div id="editor-empty" class="editor-empty" hidden>
+          <p>Keine Datei geöffnet.</p>
+          <p class="muted">Wähle links unter <strong>Dateien</strong> eine Datei oder lege eine neue an.</p>
+        </div>
+      </div>
+      <div id="sig-bar" class="sig-bar" hidden></div>
+      <div id="keybar" class="keybar" role="toolbar" aria-label="Zusatztasten"></div>
+    </section>
+    <section class="view v-console" data-view="console" aria-label="Konsole">
+      <div class="view-head"><h2>Konsole</h2><div id="console-toolbar" class="toolbar"></div></div>
+      <div id="console-body" class="console"></div>
+    </section>
+    <section class="view v-packages" data-view="packages" aria-label="Pakete">
+      <div class="view-head"><h2>Pakete</h2></div>
+      <div id="packages-body" class="scroll-body"></div>
+    </section>
+    <section class="view v-git" data-view="git" aria-label="Versionskontrolle">
+      <div class="view-head"><h2>Versionskontrolle</h2></div>
+      <div id="git-body" class="scroll-body"></div>
+    </section>
+  </main>
+  <nav id="nav" class="bottom-nav" aria-label="Bereiche"></nav>
+</div>
+<div id="gui-layer" class="gui-layer" hidden></div>
+<button id="gui-pill" class="gui-pill" type="button" hidden></button>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

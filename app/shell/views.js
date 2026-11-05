@@ -22,7 +22,7 @@ const STAGE = [
   { key: 'stage2.groups', done: true },
   { key: 'stage2.groups2', done: true },
   { key: 'stage2.run', done: true },
-  { key: 'stage2.kobra', done: false },
+  { key: 'stage2.kobra', done: true },
   { key: 'stage2.own', done: true },
 ];
 

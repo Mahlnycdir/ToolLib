@@ -1,7 +1,7 @@
 // Service worker: keeps the whole app in a cache so Toollib starts without a network, keeps Python in a cache of
 // its own and carries input() from the Python worker to the page (the synchronous channel, from Kobra's sw.js).
 // Raise VERSION with every release; the shell then offers "Reload" for the update.
-const VERSION = '0.10.0';
+const VERSION = '0.11.0';
 const CACHE = `toollib-${VERSION}`;
 // Python (vendor/pyodide) is big and changes only with a new Pyodide version, so its cache survives app updates.
 // Keep PYODIDE equal to "pyodide" in vendor/pyodide/toollib-bundle.json.
@@ -43,6 +43,22 @@ const FILES = [
   './vendor/git.js',
   './vendor/search.js',
   './vendor/py-bundle.json',
+  // Kobra (0.11.0): fast unverändert in kobra/, läuft unter Toollibs Service Worker
+  './kobra/index.html',
+  './kobra/styles.css',
+  './kobra/worker.js',
+  './kobra/vendor/vendor.js',
+  './kobra/js/app.js',
+  './kobra/js/editor.js',
+  './kobra/js/git.js',
+  './kobra/js/gui.js',
+  './kobra/js/icons.js',
+  './kobra/js/packages.js',
+  './kobra/js/runner.js',
+  './kobra/js/snippets.js',
+  './kobra/js/spickzettel.js',
+  './kobra/js/storage.js',
+  './kobra/js/ui.js',
 ];
 
 self.addEventListener('install', (event) => {
@@ -137,8 +153,11 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
   const scope = new URL(self.registration.scope).pathname;
 
-  if (url.pathname.startsWith(`${scope}__toollib__/`)) {
-    const parts = url.pathname.slice(scope.length + '__toollib__/'.length).split('/');
+  // Kobra (kobra/) uses the same channel under its own name, kobra/__kobra__/
+  const channel = url.pathname.startsWith(`${scope}__toollib__/`) ? `${scope}__toollib__/`
+    : url.pathname.startsWith(`${scope}kobra/__kobra__/`) ? `${scope}kobra/__kobra__/` : null;
+  if (channel) {
+    const parts = url.pathname.slice(channel.length).split('/');
     if (parts[0] === 'ping') event.respondWith(new Response('pong', { headers: { 'Cache-Control': 'no-store' } }));
     else if (parts[0] === 'sync') event.respondWith(waitForValue(`${parts[1]}/${parts[2]}`));
     else if (parts[0] === 'events') event.respondWith(waitForEvents(parts[1], parseInt(url.searchParams.get('wait') || '0', 10)));
@@ -163,7 +182,8 @@ self.addEventListener('fetch', (event) => {
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
     if (req.mode === 'navigate') {
-      return (await cache.match('./index.html')) || fetch(req);
+      const page = url.pathname.startsWith(`${scope}kobra/`) ? './kobra/index.html' : './index.html';
+      return (await cache.match(page)) || fetch(req);
     }
     const hit = await cache.match(req, { ignoreSearch: true });
     if (hit) return hit;
