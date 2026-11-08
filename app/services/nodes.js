@@ -185,6 +185,11 @@ export function summary(node) {
     tags: asList(m.tags),
     group: m.group ? String(m.group) : '',
     area: asList(m.area),
+    // formulary (0.12.0): topic (second level), derived_from ("follows from"), conventions, order of a topic in its area
+    topics: asList(m.topic),
+    derived: asList(m.derived_from),
+    conventions: asList(m.conventions),
+    order: Number.isFinite(Number(m.order)) && m.order !== '' && m.order != null ? Number(m.order) : null,
     source: m.source ? String(m.source) : '',
     verified: m.verified !== false,
     conflict: node.conflict,

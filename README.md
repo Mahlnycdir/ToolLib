@@ -2,7 +2,7 @@
 
 Persönliche Arbeitsoberfläche für Mac, iPhone und Linux: eine Web-App (PWA) auf GitHub Pages, dazu später ein Hub zu Hause. Das Wissen liegt getrennt im privaten Repository `knowledge`.
 
-Stand: Version 0.11.0, Stufe 2 (Python-Spickzettel als volles Modul) ist fertig. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte. Seit 0.8.0 laufen Snippets direkt in der App: Python mit numpy, scipy, matplotlib und sympy läuft im Browser, von Toollibs eigener Adresse. Seit 0.9.0 legst du eigene Snippets an und änderst Code und Check bestehender Knoten. Seit 0.10.0 gibt es die Gruppen Datenstrukturen, Fehlersuche, Threads & Prozesse und Git. Seit 0.11.0 ist Kobra Teil von Toollib, mit den Bausteinen aus dem Spickzettel.
+Stand: Version 0.12.0, Stufe 3 (Formelsammlung) hat begonnen; Stufe 2 (Python-Spickzettel als volles Modul) ist fertig. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte. Seit 0.8.0 laufen Snippets direkt in der App: Python mit numpy, scipy, matplotlib und sympy läuft im Browser, von Toollibs eigener Adresse. Seit 0.9.0 legst du eigene Snippets an und änderst Code und Check bestehender Knoten. Seit 0.10.0 gibt es die Gruppen Datenstrukturen, Fehlersuche, Threads & Prozesse und Git. Seit 0.11.0 ist Kobra Teil von Toollib, mit den Bausteinen aus dem Spickzettel. Seit 0.12.0 sind Formeln gesetzt (KaTeX) und es gibt die Formelsammlung: verknüpfte Karten nach Bereich und Thema.
 
 ## Aufbau
 
@@ -16,6 +16,7 @@ toollib/                 dieses Repository, öffentlich
   vendor/search.js       MiniSearch und js-yaml als ein Modul
   vendor/pyodide/        Python im Browser (Pyodide) mit numpy, scipy, matplotlib, sympy (geholt mit tools/fetch-pyodide)
   vendor/py-bundle.json  Kobras Python-Bibliothek: Laufzeit, matplotlib-Backend, Nachbauten von tkinter und Qt
+  vendor/katex/          KaTeX 0.19.1 als ES-Modul, Stylesheet und woff2-Schriften (gebaut mit tools/build-vendor)
   app/
     main.js              Start: Texte laden, Rahmen bauen, Service Worker anmelden
     i18n/                strings.json (jeder Satz auf Englisch und Deutsch), i18n.js mit t()
@@ -28,6 +29,8 @@ toollib/                 dieses Repository, öffentlich
                          node-view.js (Knoten-Ansicht, Python-Spickzettel), markdown.js (sicherer Markdown-Leser),
                          run-panel.js (Ausprobieren, Check ausführen), console.js (Ausgabe, input(), Abbildungen),
                          snippet-form.js (eigene Snippets anlegen, bearbeiten, löschen)
+                         math.js (Formeln mit KaTeX, Makros aus Paper und Masterarbeit),
+                         formulary.js (Formelsammlung: Bereiche, Themen, Folgt aus / Führt zu, Symbole)
   tools/                 Hilfsprogramme: import-snippets, build-vendor, fetch-pyodide
 ```
 
@@ -107,6 +110,15 @@ Kobra (die Python-IDE) liegt seit 0.11.0 fast unverändert in `kobra/` und öffn
 - Python kommt aus `vendor/pyodide` (dafür jetzt auch micropip und jedi), Toollibs Service Worker liefert Kobra auch offline aus und trägt den Kanal für `input()` und Fenster (`kobra/__kobra__/`). Pakete außerhalb von `vendor/pyodide` lädt pip aus dem Netz.
 - Projekte: Git › Klonen mit Kobras Token (Einstellungen in Kobra). Im selben Browser auf dem Mac sieht Kobra in Toollib dieselben Projekte wie die eigenständige Kobra (gleiche Adresse); eine installierte App auf dem iPhone hat ihren eigenen Speicher.
 - Bewusst noch nicht angeglichen (fundament.md, „Später angleichen“): Kobras Texte sind deutsch und fest im Code, Kobra hat sein eigenes Aussehen und sein eigenes Python neben dem des Spickzettels, eigene Dienste für Speicher, Git und Einstellungen.
+
+## Formelsammlung
+
+Die Formelsammlung (Modulleiste oder Befehlszeile) zeigt die Karten des Wissens: Knoten vom Typ `formula`, `definition`, `theorem` und `convention`, nach Bereich (`area`, erste Ebene) und Thema (`topic`, zweite Ebene). Jedes Thema hat eine Übersichtskarte (`type: topic`), die seine Karten in Lesereihenfolge verlinkt.
+
+- Formeln in `$$ … $$` und `$ … $` setzt KaTeX (selbst gehostet in `vendor/katex`, lädt mit der ersten Formel, offline im Cache). „Kopieren“ gibt das LaTeX, wie es im Knoten steht. Die Makros aus Paper und Masterarbeit (`\gch`, `\psibar`, `\slashed`, `\ii`, `\dd`, `\tr`, `\expval` …) stehen in `app/shell/math.js`. KaTeX baut seine Elemente selbst, `\href` und Ähnliches bleiben aus (`trust: false`).
+- Eine Karte zeigt unter dem Text die Symbole (Feld `symbols`), „Folgt aus“ (`derived_from`), „Führt zu“ (Karten, die auf ihr aufbauen), ihre Konventionen und die Themen als Chips.
+- „Check ausführen“ gibt es auch bei Karten: Der Check läuft im Python auf dem Gerät, danach „Als geprüft markieren“ wie bei Snippets.
+- Format der Karten: README im Repository knowledge.
 
 ## Lokal ansehen
 

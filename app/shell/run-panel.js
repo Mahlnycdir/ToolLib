@@ -10,6 +10,8 @@ import { indexState, nodeBySlug, onIndexChange } from '../services/search.js';
 import { detachSink, isBusy, isSink, onPythonChange, pythonState, runPython, stopPython } from '../services/python.js';
 import { ConsoleView } from './console.js';
 
+const CHECK_ONLY = new Set(['formula', 'definition', 'theorem', 'term', 'convention']);
+
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const GUI_IMPORT = /^\s*(?:import|from)\s+(?:tkinter|PyQt[56]|PySide[26])\b/m;
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
@@ -75,9 +77,11 @@ const KEEP = 5;
 //   onSaveAs({ code, check }): opens the form for a new snippet with this code; redraw(): draws the view again
 export function runControls(node, options) {
   const parts = runParts(node);
+  // Cards of the formulary (0.12.0) have no code of their own, only a check: then there is just "Run check".
+  const checkOnly = !parts.code && !!parts.check && CHECK_ONLY.has(String(node.meta.type || ''));
   // Instead of "Try it": a short line why this one does not run here (copying works as always)
   const elsewhere = (name, key) => ({ buttons: [], panel: h('p', { class: 'run-later muted small' }, iconEl(name), h('span', { text: t(key) })) });
-  if (!parts.code) return String(node.meta.language || '') === 'shell' ? elsewhere('terminal', 'run.terminal') : null;
+  if (!parts.code && !checkOnly) return String(node.meta.language || '') === 'shell' ? elsewhere('terminal', 'run.terminal') : null;
   if (String(node.meta.runs || '') === 'desktop') return elsewhere('server', 'run.desktopOnly');
   if (GUI_IMPORT.test(parts.code)) return elsewhere('window', 'run.guiLater');
   const prev = kept.get(node.path);
@@ -112,6 +116,7 @@ export function runControls(node, options) {
   const tabRow = h('div', { class: 'run-tabs', role: 'tablist' });
   for (const which of ['code', 'check']) {
     if (which === 'check' && original.check === null) continue;
+    if (which === 'code' && checkOnly) continue;
     tabs[which] = h('button', { type: 'button', role: 'tab', class: 'run-tab', dataset: { tab: which } },
       h('span', { text: t(`run.tab.${which}`) }), h('span', { class: 'run-dot', title: t('run.changed'), 'aria-label': t('run.changed') }));
     tabs[which].addEventListener('click', () => { showTab(which); editor.focus(); });
@@ -313,10 +318,11 @@ export function runControls(node, options) {
     stateEl.textContent = busy ? t(`run.state.${s.status === 'running' && s.animating ? 'live' : s.status}`) : '';
   };
   const unlisten = onPythonChange(update);
-  showTab('code');
+  saveAsBtn.hidden = checkOnly;
+  showTab(checkOnly ? 'check' : 'code');
   update(pythonState());
 
-  entry.controls = { buttons: [tryBtn, checkBtn].filter(Boolean), panel };
+  entry.controls = { buttons: (checkOnly ? [checkBtn] : [tryBtn, checkBtn]).filter(Boolean), panel };
   entry.dispose = () => {
     unlisten();
     clearInterval(watcher);

@@ -9,12 +9,14 @@ export const ACCENTS = [
   { id: 'green', color: '#1e7e3a', ink: '#ffffff' },
   { id: 'orange', color: '#c2410c', ink: '#ffffff' },
   { id: 'violet', color: '#6d4aff', ink: '#ffffff' },
+  { id: 'rose', color: '#c0265e', ink: '#ffffff' },
   { id: 'yellow', color: '#f2c94c', ink: '#0f1f3d' },
 ];
 
 // step: the foundation step that brings the module; null = after the foundation
 export const MODULES = [
   { id: 'cheatsheet', icon: 'book', accent: 'sky', step: 5 },
+  { id: 'formulary', icon: 'vars', accent: 'rose', step: null },   // formulary, stage 3 (0.12.0)
   { id: 'parts', icon: 'chip', accent: 'teal', step: null },
   { id: 'pins', icon: 'board', accent: 'green', step: null },
   { id: 'kobra', icon: 'code', accent: 'yellow', step: null, href: 'kobra/' },   // Kobra as its own page (0.11.0)

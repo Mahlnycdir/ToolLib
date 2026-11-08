@@ -568,3 +568,29 @@ dl.keys dd { margin: 0; }
 .snippet-form select.field { appearance: auto; }
 .snippet-form textarea.field { height: auto; padding: 10px 12px; }
 .run-bar [hidden] { display: none; }
+
+/* Formulas set with KaTeX (0.12.0) */
+.md .math-inline.typeset { font: inherit; background: none; padding: 0; border-radius: 0; }
+.math-display { padding: 10px 14px; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; background: var(--panel); }
+.math-display .katex-display { margin: 0; }
+.math-display .katex { font-size: 1.12em; }
+.tex-error { white-space: pre-wrap; font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--danger); }
+.code-block.math { background: var(--panel); }
+
+/* Formulary (0.12.0) */
+.chip-topic { text-decoration: none; color: color-mix(in srgb, var(--accent) 80%, #0f1f3d) !important; border-color: color-mix(in srgb, var(--accent) 30%, white); }
+.card-links .related-link { align-items: baseline; }
+.card-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); transform: translateY(-1px); }
+.card-dot.type-convention { background: none; border: 2px solid var(--accent); width: 6px; height: 6px; }
+.card-dot.type-definition, .card-dot.type-term { border-radius: 2px; }
+.card-dot.type-theorem { border-radius: 0; transform: translateY(-1px) rotate(45deg); }
+.card-dot.type-topic { width: 10px; height: 10px; }
+.card-links .snip-open, .topic-row .snip-open { margin-left: 8px; }
+.formulary-count { margin: 0 0 10px; }
+.area-card h2 .area-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+.area-card.area-math h2 .area-dot { background: #6d4aff; }
+.area-card.area-numerics h2 .area-dot { background: #0f8078; }
+.area-card.area-electronics h2 .area-dot { background: #c2410c; }
+a.topic-row { display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 8px; text-decoration: none; color: inherit; }
+a.topic-row:hover { background: var(--panel-2); }
+table.symbols td:first-child { white-space: nowrap; }

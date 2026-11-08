@@ -1,7 +1,7 @@
 // Service worker: keeps the whole app in a cache so Toollib starts without a network, keeps Python in a cache of
 // its own and carries input() from the Python worker to the page (the synchronous channel, from Kobra's sw.js).
 // Raise VERSION with every release; the shell then offers "Reload" for the update.
-const VERSION = '0.11.0';
+const VERSION = '0.12.0';
 const CACHE = `toollib-${VERSION}`;
 // Python (vendor/pyodide) is big and changes only with a new Pyodide version, so its cache survives app updates.
 // Keep PYODIDE equal to "pyodide" in vendor/pyodide/toollib-bundle.json.
@@ -39,10 +39,35 @@ const FILES = [
   './app/shell/run-panel.js',
   './app/shell/snippet-form.js',
   './app/shell/markdown.js',
+  './app/shell/math.js',
+  './app/shell/formulary.js',
   './app/shell/styles.css',
   './vendor/git.js',
   './vendor/search.js',
   './vendor/py-bundle.json',
+  // KaTeX (0.12.0): formulas, offline
+  './vendor/katex/katex.js',
+  './vendor/katex/katex.min.css',
+  './vendor/katex/fonts/KaTeX_AMS-Regular.woff2',
+  './vendor/katex/fonts/KaTeX_Caligraphic-Bold.woff2',
+  './vendor/katex/fonts/KaTeX_Caligraphic-Regular.woff2',
+  './vendor/katex/fonts/KaTeX_Fraktur-Bold.woff2',
+  './vendor/katex/fonts/KaTeX_Fraktur-Regular.woff2',
+  './vendor/katex/fonts/KaTeX_Main-Bold.woff2',
+  './vendor/katex/fonts/KaTeX_Main-BoldItalic.woff2',
+  './vendor/katex/fonts/KaTeX_Main-Italic.woff2',
+  './vendor/katex/fonts/KaTeX_Main-Regular.woff2',
+  './vendor/katex/fonts/KaTeX_Math-BoldItalic.woff2',
+  './vendor/katex/fonts/KaTeX_Math-Italic.woff2',
+  './vendor/katex/fonts/KaTeX_SansSerif-Bold.woff2',
+  './vendor/katex/fonts/KaTeX_SansSerif-Italic.woff2',
+  './vendor/katex/fonts/KaTeX_SansSerif-Regular.woff2',
+  './vendor/katex/fonts/KaTeX_Script-Regular.woff2',
+  './vendor/katex/fonts/KaTeX_Size1-Regular.woff2',
+  './vendor/katex/fonts/KaTeX_Size2-Regular.woff2',
+  './vendor/katex/fonts/KaTeX_Size3-Regular.woff2',
+  './vendor/katex/fonts/KaTeX_Size4-Regular.woff2',
+  './vendor/katex/fonts/KaTeX_Typewriter-Regular.woff2',
   // Kobra (0.11.0): fast unverändert in kobra/, läuft unter Toollibs Service Worker
   './kobra/index.html',
   './kobra/styles.css',

@@ -13,17 +13,16 @@ import {
   saveSyncSetting, syncSettings, syncState, testConnection,
 } from '../services/sync.js';
 
-// Progress of the current stage: the Python cheatsheet as a full module. The foundation (5 steps) is done.
+// Progress of the current stage: the formulary (stage 3). The foundation and stage 2 are done.
 // Mark a point as done when it is delivered; ENTE decides the order of the open ones.
 const STAGE = [
-  { key: 'stage2.verify', done: true },
-  { key: 'stage2.sources', done: true },
-  { key: 'stage2.problems', done: true },
-  { key: 'stage2.groups', done: true },
-  { key: 'stage2.groups2', done: true },
-  { key: 'stage2.run', done: true },
-  { key: 'stage2.kobra', done: true },
-  { key: 'stage2.own', done: true },
+  { key: 'stage3.typeset', done: true },
+  { key: 'stage3.module', done: true },
+  { key: 'stage3.wave1', done: true },
+  { key: 'stage3.wave2', done: false },
+  { key: 'stage3.wave3', done: false },
+  { key: 'stage3.wave4', done: false },
+  { key: 'stage3.mathlib', done: false },
 ];
 
 const card = (title, ...children) => h('section', { class: 'card' }, title ? h('h2', { text: title }) : null, ...children);

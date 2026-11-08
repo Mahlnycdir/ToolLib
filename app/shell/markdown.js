@@ -1,12 +1,14 @@
 // A small Markdown renderer for nodes. It builds DOM elements directly and never sets innerHTML,
 // so text from the knowledge (later also from the web) cannot inject scripts.
 // Covers what nodes use: headings, paragraphs, lists, quotes, tables, code blocks with copy buttons,
-// formulas ($$ … $$ shown as LaTeX source for now), inline code, bold, italic, links and [[node]] links.
+// formulas ($$ … $$ and $ … $, set with KaTeX since 0.12.0; the copy button gives the LaTeX), inline code, bold,
+// italic, links and [[node]] links.
 import { h } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t } from '../i18n/i18n.js';
+import { typeset } from './math.js';
 
-const SECTION_KEYS = { example: 'section.example', examples: 'section.example', pitfalls: 'section.pitfalls', check: 'section.check', steps: 'section.steps' };
+const SECTION_KEYS = { example: 'section.example', examples: 'section.example', pitfalls: 'section.pitfalls', check: 'section.check', steps: 'section.steps', derivation: 'section.derivation' };
 const iconEl = (name) => h('span', { class: 'icon', html: icon(name) });
 
 // options: onCopy(text, label), onNodeLink(slug) → { label, open } or null
@@ -122,10 +124,11 @@ function codeBlock(code, lang, options) {
     pre);
 }
 
+// A display formula: set with KaTeX; the button copies the LaTeX as written in the node.
 function mathBlock(tex, options) {
   return h('div', { class: 'code-block math' },
     h('div', { class: 'code-head' }, h('span', { class: 'code-lang', text: 'LaTeX' }), copyButton(() => tex, 'LaTeX', options)),
-    h('pre', {}, h('code', { text: tex })));
+    typeset(h('div', { class: 'math-display' }), tex, true));
 }
 
 function table(rows, options) {
@@ -167,7 +170,7 @@ export function inline(text, options = {}) {
       frag.append(url ? h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, inline(m[4], options)) : m[4]);
     } else if (m[6] != null) frag.append(h('strong', {}, inline(m[6], options)));
     else if (m[7] != null) frag.append(h('em', {}, inline(m[7], options)));
-    else if (m[8] != null) frag.append(h('code', { class: 'math-inline', text: m[8] }));
+    else if (m[8] != null) frag.append(typeset(h('span', { class: 'math-inline', title: m[8] }), m[8], false));
     else if (m[9] != null) frag.append(h('a', { href: m[9], target: '_blank', rel: 'noopener noreferrer', text: m[9] }));
   }
   frag.append(text.slice(last));

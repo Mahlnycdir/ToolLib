@@ -9,6 +9,7 @@ import { formatTime, renderHome, renderModule, renderSettings } from './views.js
 import { applyUpdate, checkForUpdate, onPwaChange, pwaState } from '../services/pwa.js';
 import { isConfigured, onSyncChange, phaseText, refreshPending, syncKnowledge, syncState } from '../services/sync.js';
 import { bestProblem, buildIndex, indexState, nodeByPath, onIndexChange, searchNodes } from '../services/search.js';
+import { renderFormulary } from './formulary.js';
 import { copyWithToast, nodeHref, nodeLead, nodeTitle, recentPaths, renderCheatsheet, renderNode, typeAccent, typeIcon, typeLabel } from './node-view.js';
 import { renderSnippetForm } from './snippet-form.js';
 
@@ -77,6 +78,7 @@ export function startShell(root) {
     paintAccent(main, route.kind === 'module' ? route.mod.id : route.kind === 'node' ? typeAccent(nodeType) : route.kind === 'form' ? 'cheatsheet' : 'shell');
     if (route.kind === 'settings') renderSettings(main, { onChange: refresh, onCheckUpdate: runUpdateCheck, onSync: runSync, section: route.section });
     else if (route.kind === 'module' && route.mod.id === 'cheatsheet') renderCheatsheet(main, route.mod, { go });
+    else if (route.kind === 'module' && route.mod.id === 'formulary') renderFormulary(main, route.mod);
     else if (route.kind === 'module') renderModule(main, route.mod);
     else if (route.kind === 'form') renderSnippetForm(main, { mode: route.mode, path: route.path, go, isCurrent: () => token === renderToken });
     else if (route.kind === 'node') {

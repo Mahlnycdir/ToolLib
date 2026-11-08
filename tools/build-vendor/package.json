@@ -1,11 +1,12 @@
 {
   "name": "toollib-build-vendor",
   "private": true,
-  "description": "Bundles the libraries behind Toollib's services into vendor/git.js and vendor/search.js.",
+  "description": "Bundles the libraries behind Toollib's services into vendor/git.js, vendor/search.js and vendor/katex/katex.js.",
   "scripts": {
-    "build": "npm run build:git && npm run build:search",
+    "build": "npm run build:git && npm run build:search && npm run build:katex",
     "build:git": "esbuild entry.js --bundle --format=esm --minify --target=es2020,safari15 --inject:buffer-shim.js --legal-comments=none --outfile=out/git.js",
-    "build:search": "esbuild entry-search.js --bundle --format=esm --minify --target=es2020,safari15 --legal-comments=none --outfile=out/search.js"
+    "build:search": "esbuild entry-search.js --bundle --format=esm --minify --target=es2020,safari15 --legal-comments=none --outfile=out/search.js",
+    "build:katex": "esbuild entry-katex.js --bundle --format=esm --minify --target=es2020,safari15 --legal-comments=none --outfile=out/katex/katex.js && cp node_modules/katex/dist/katex.min.css out/katex/ && mkdir -p out/katex/fonts && cp node_modules/katex/dist/fonts/*.woff2 out/katex/fonts/ && cp node_modules/katex/LICENSE out/katex/"
   },
   "devDependencies": {
     "@isomorphic-git/lightning-fs": "4.10.3",
@@ -14,6 +15,7 @@
     "esbuild": "0.28.2",
     "isomorphic-git": "1.44.3",
     "js-yaml": "4.1.1",
+    "katex": "0.19.1",
     "minisearch": "7.2.0"
   }
 }

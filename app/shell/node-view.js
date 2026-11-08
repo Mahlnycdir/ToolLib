@@ -9,16 +9,17 @@ import { githubRepo, isConfigured, noteChange, repoUrl } from '../services/sync.
 import { paintAccent } from './modules.js';
 import { renderMarkdown } from './markdown.js';
 import { runControls } from './run-panel.js';
+import { CARD_TYPES, cardSections, shownElsewhere, topicChips } from './formulary.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 
 // ------------------------------------------------------------------ kinds of nodes
 const TYPE_ICON = {
-  snippet: 'code', recipe: 'list', formula: 'vars', convention: 'outline', definition: 'book', term: 'book', theorem: 'book',
+  snippet: 'code', recipe: 'list', topic: 'outline', formula: 'vars', convention: 'outline', definition: 'book', term: 'book', theorem: 'book',
   rule: 'warn', part: 'chip', device: 'chip', pin_map: 'board', tool: 'wand', note: 'edit', project: 'folder',
   card: 'chalkboard', clip: 'globe', research: 'search',
 };
-const TYPE_ACCENT = { snippet: 'cheatsheet', recipe: 'cheatsheet', part: 'parts', device: 'parts', rule: 'pins', pin_map: 'pins', card: 'workmode', clip: 'scraper', research: 'scraper' };
+const TYPE_ACCENT = { formula: 'formulary', convention: 'formulary', definition: 'formulary', theorem: 'formulary', term: 'formulary', topic: 'formulary', snippet: 'cheatsheet', recipe: 'cheatsheet', part: 'parts', device: 'parts', rule: 'pins', pin_map: 'pins', card: 'workmode', clip: 'scraper', research: 'scraper' };
 export const typeIcon = (type) => TYPE_ICON[type] || 'file';
 export const typeAccent = (type) => TYPE_ACCENT[type] || 'shell';
 export const typeLabel = (type) => (t(`type.${type}`) === `type.${type}` ? type : t(`type.${type}`));
@@ -121,7 +122,8 @@ export async function renderNode(main, path, ctx) {
   const own = isOwn(node.meta);
   const chips = h('div', { class: 'node-chips' }, h('span', { class: 'chip', text: typeLabel(d.type) }));
   if (d.group) chips.append(h('span', { class: 'chip', text: groupLabel(d.group) }));
-  for (const a of d.area) chips.append(h('span', { class: 'chip', text: a }));
+  for (const a of d.area) chips.append(h('span', { class: 'chip', text: t(`area.${a}`) === `area.${a}` ? a : t(`area.${a}`) }));
+  chips.append(...topicChips(d));
   if (own) chips.append(h('span', { class: 'chip chip-own' }, iconEl('edit'), h('span', { text: t('node.own') })));
   const editable = !node.conflict && !node.error;
   box.append(h('header', { class: 'node-head' },
@@ -195,11 +197,32 @@ export async function renderNode(main, path, ctx) {
     }
   }
 
+  // Cards of the formulary: run their check on this device, then mark them as verified (0.12.0)
+  if (CARD_TYPES.has(d.type) && d.type !== 'topic') {
+    const run = runControls(node, {
+      canVerify: () => editable && !d.verified,
+      onVerify: async () => {
+        if (!(await changeVerified(path, true))) return false;
+        await redraw();
+        return true;
+      },
+      nodeLink: onNodeLink,
+      canChange: () => editable,
+      onTakeOver: (which, text) => takeOver(path, which, text),
+      redraw,
+    });
+    if (run) box.append(h('div', { class: 'btn-row card-run' }, ...run.buttons), run.panel);
+  }
+
   // Body in the chosen language
   box.append(renderMarkdown(localize(node.body, lang), { onCopy: (text) => copyWithToast(text), onNodeLink }));
 
-  // Related nodes
-  const related = linksOf(node).map((slug) => nodeBySlug(slug)).filter((n) => n && n.path !== path);
+  // Formulary: symbols, follows from, leads to, conventions; for a topic the cards its text does not name
+  box.append(...cardSections(node, d, lang));
+
+  // Related nodes (without the ones listed above)
+  const elsewhere = shownElsewhere(node, d);
+  const related = linksOf(node).filter((slug) => !elsewhere.has(slug)).map((slug) => nodeBySlug(slug)).filter((n) => n && n.path !== path);
   if (related.length) {
     box.append(h('h2', { text: t('node.related') }),
       h('div', { class: 'related' }, related.map((n) => h('a', { class: 'related-link', href: nodeHref(n.path) }, typeTile(n.type, 'small'), h('span', { text: nodeTitle(n, lang) })))));
