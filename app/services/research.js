@@ -61,7 +61,7 @@ function timed(signal, ms) {
   return { signal: c.signal, done: () => { clearTimeout(id); signal?.removeEventListener('abort', stop); } };
 }
 
-async function readAnswer(res, req, viaWorker) {
+async function readAnswer(res, req, viaWorker, src) {
   if (viaWorker && !res.headers.get('X-Final-URL')) {
     // The fetcher itself answered: its own error, not the site's.
     let err = '';
@@ -73,7 +73,8 @@ async function readAnswer(res, req, viaWorker) {
   }
   if (res.status === 404 && req.one) return null;
   if (res.status === 429) throw new ResearchError('rate', { status: 429 });
-  if (res.status === 401 || res.status === 403) throw new ResearchError('key', { status: res.status });
+  // A refusal means a wrong key where a key is used; elsewhere the site refuses this address (DOAB refuses servers).
+  if (res.status === 401 || res.status === 403) throw new ResearchError(src?.keyed ? 'key' : 'blocked', { status: res.status });
   if (!res.ok) throw new ResearchError('http', { status: res.status });
   try {
     return req.as === 'text' ? await res.text() : await res.json();
@@ -83,6 +84,10 @@ async function readAnswer(res, req, viaWorker) {
 }
 
 const cache = new Map();   // url -> { time, data }
+
+// Sources that refused this device or your fetcher (403): not asked again until the app reloads or the test works.
+const blocked = new Set();
+export const isBlocked = (id) => blocked.has(id);
 
 // GET an address for a source: directly, or through the fetcher.
 export async function getFor(src, req, { settings = researchSettings(), signal, fresh = false } = {}) {
@@ -98,7 +103,7 @@ export async function getFor(src, req, { settings = researchSettings(), signal, 
     if (src.cors !== 'no') {
       try {
         const res = await fetch(req.url, { headers, signal: t.signal, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
-        data = await readAnswer(res, req, false);
+        data = await readAnswer(res, req, false, src);
         cache.set(req.url, { time: Date.now(), data });
         return data;
       } catch (e) {
@@ -116,7 +121,7 @@ export async function getFor(src, req, { settings = researchSettings(), signal, 
       if (t.signal.aborted) throw t.signal.reason instanceof ResearchError ? t.signal.reason : new ResearchError('aborted');
       throw new ResearchError('worker', { detail: 'unreachable' });
     }
-    data = await readAnswer(res, req, true);
+    data = await readAnswer(res, req, true, src);
     cache.set(req.url, { time: Date.now(), data });
     return data;
   } finally {
@@ -143,6 +148,7 @@ export function startSearch(raw, { onUpdate, only } = {}) {
   const runOne = async (src) => {
     const reqs = src.requests(query, settings, src.id === 'doab' ? 10 : LIMIT);
     if (!reqs.length) { status[src.id] = { state: 'skip', n: 0 }; return; }
+    if (blocked.has(src.id)) { status[src.id] = { state: 'error', n: 0, error: 'blocked', status: 403 }; return; }
     try {
       let n = 0;
       for (const req of reqs) {
@@ -155,6 +161,7 @@ export function startSearch(raw, { onUpdate, only } = {}) {
       works = mergeRecords(records);
     } catch (e) {
       if (ctrl.signal.aborted) return;
+      if (e instanceof ResearchError && e.code === 'blocked') blocked.add(src.id);
       status[src.id] = { state: 'error', n: 0, error: e instanceof ResearchError ? e.code : 'network', status: e.status || 0 };
     }
     emit();
@@ -191,7 +198,7 @@ export async function findVersions(work, { onUpdate, signal, settings = research
   let current = work;
   let added = 0;
   const failed = [];
-  await Promise.all(SOURCES.filter((s) => sourceOn(s.id, settings) && s.versionRequests).map(async (src) => {
+  await Promise.all(SOURCES.filter((s) => sourceOn(s.id, settings) && s.versionRequests && !blocked.has(s.id)).map(async (src) => {
     for (const req of src.versionRequests(current, settings)) {
       try {
         const data = await getFor(src, req, { settings, signal });
@@ -244,10 +251,12 @@ export async function testResearch(onLine) {
     checks.push((async () => {
       try {
         await getFor(src, req, { settings: s, fresh: true });
+        blocked.delete(id);
         set(id, 'ok', ok, { name: src.name, ...extra });
       } catch (e) {
         const code = e instanceof ResearchError ? e.code : 'network';
-        set(id, code === 'no-worker' ? 'info' : 'fail', `research.err.${code}`, { name: src.name, status: e.status || '' });
+        if (code === 'blocked') blocked.add(id);
+        set(id, code === 'no-worker' ? 'info' : code === 'rate' ? 'warn' : 'fail', `research.err.${code}`, { name: src.name, id, status: e.status || '' });
       }
     })());
   };

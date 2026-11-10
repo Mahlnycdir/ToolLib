@@ -14,6 +14,7 @@ import {
 } from '../services/sync.js';
 import { researchSettings, saveResearchSetting, setSourceOn, sourceOn, testResearch } from '../services/research.js';
 import { SOURCES } from '../services/research-sources.js';
+import { errorText } from './research-view.js';
 
 // Progress of the current stage: the formulary (stage 3). The foundation and stage 2 are done.
 // Mark a point as done when it is delivered; ENTE decides the order of the open ones.
@@ -287,7 +288,7 @@ function researchCard() {
   const result = h('ul', { class: 'checks', role: 'status' });
   const line = (l) => h('li', { class: `check ${l.status}` },
     iconEl({ ok: 'check', warn: 'warn', fail: 'close', info: 'info', busy: 'refresh' }[l.status] || 'info', l.status === 'busy' ? 'spin' : ''),
-    h('span', { text: t(l.key, l.vars) }));
+    h('span', { text: l.key.startsWith('research.err.') ? `${l.vars.name}: ${errorText(l.vars.id, l.key.slice(13), l.vars.status)}` : t(l.key, l.vars) }));
   const test = h('button', { type: 'button', class: 'btn' }, iconEl('link'), h('span', { text: t('settings.sync.test') }));
   test.addEventListener('click', async () => {
     for (const f of [worker, token, oa, s2]) saveResearchSetting(f.input.id.replace('research-', ''), f.input.value);

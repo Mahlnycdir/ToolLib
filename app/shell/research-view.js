@@ -39,6 +39,12 @@ const st = {
 let view = null;         // the mounted view: { root, draw* }
 
 const KIND_LABEL = { published: 'research.kind.published', accepted: 'research.kind.accepted', preprint: 'research.kind.preprint', other: 'research.kind.other' };
+// Why a source did not answer, in words for this source when there are any ("DOAB refuses servers").
+export function errorText(id, code, status = '') {
+  const own = `research.err.${code}.${id}`;
+  const text = t(own, { status: status || '' });
+  return (text !== own ? text : t(`research.err.${code}`, { status: status || '' })).replace(/\s+/g, ' ').trim();
+}
 export const versionLabel = (v) => `${t(KIND_LABEL[v.kind] || KIND_LABEL.other)} · ${t(v.free ? 'research.free' : 'research.paid')}`;
 const authorLine = (a, n = 3) => (a.length > n ? `${a.slice(0, n).join(', ')} ${t('research.etal')}` : a.join(', '));
 const currentFolder = () => folders().find((f) => f.path === st.folder) || null;
@@ -173,7 +179,7 @@ export function renderResearch(main) {
         else if (stat.state === 'none') text = '0';
         else if (stat.state === 'error') text = '!';
       }
-      const tip = on ? (stat?.state === 'error' ? t(`research.err.${stat.error}`, { name: src.name, status: stat.status || '' }) : stat?.state === 'skip' ? t('research.skip') : src.what[getLang()] || src.what.en) : t('research.sourceOff');
+      const tip = on ? (stat?.state === 'error' ? errorText(src.id, stat.error, stat.status) : stat?.state === 'skip' ? t('research.skip') : src.what[getLang()] || src.what.en) : t('research.sourceOff');
       const chip = h('button', { type: 'button', class: `rs-src ${state}`, title: `${src.name}: ${tip}`, 'aria-label': `${src.name}: ${tip}`, 'aria-pressed': String(on) },
         state === 'busy' ? iconEl('refresh', 'spin') : null, h('span', { text: src.name }), text ? h('span', { class: 'rs-src-n', text }) : null);
       chip.addEventListener('click', () => {
@@ -193,7 +199,7 @@ export function renderResearch(main) {
     const lines = [];
     if (!hasWorker(s) && (sourceOn('arxiv', s) || sourceOn('doab', s))) lines.push(['info', t('research.needWorker')]);
     if (!s.openalexKey && sourceOn('openalex', s)) lines.push(['info', t('research.needKey')]);
-    for (const [id, v] of errors) lines.push(['warn', `${sourceById(id).name}: ${t(`research.err.${v.error}`, { name: sourceById(id).name, status: v.status || '' })}`]);
+    for (const [id, v] of errors) lines.push(['warn', `${sourceById(id).name}: ${errorText(id, v.error, v.status)}`]);
     if (typeof navigator !== 'undefined' && navigator.onLine === false) lines.unshift(['warn', t('research.offline')]);
     for (const [kind, text] of lines.slice(0, 4)) {
       notice.append(h('p', { class: `rs-line ${kind}` }, iconEl(kind === 'warn' ? 'warn' : 'info'), h('span', { text }),

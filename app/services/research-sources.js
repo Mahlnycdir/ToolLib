@@ -66,7 +66,7 @@ function oaRecord(w, rank) {
 }
 
 const openalex = {
-  id: 'openalex', name: 'OpenAlex', home: 'https://openalex.org', cors: 'yes', what: { en: 'all disciplines, with the free copies Unpaywall knows', de: 'alle Fächer, mit den freien Fassungen aus Unpaywall' },
+  id: 'openalex', name: 'OpenAlex', home: 'https://openalex.org', cors: 'yes', keyed: true, what: { en: 'all disciplines, with the free copies Unpaywall knows', de: 'alle Fächer, mit den freien Fassungen aus Unpaywall' },
   key: (s) => (s.openalexKey ? `&api_key=${enc(s.openalexKey)}` : ''),
   requests(q, s, limit) {
     const k = this.key(s);
@@ -215,7 +215,7 @@ function s2Record(p, rank) {
 }
 
 const s2 = {
-  id: 's2', name: 'Semantic Scholar', home: 'https://www.semanticscholar.org', cors: 'try', gap: 1100, what: { en: 'all disciplines, links to free PDFs', de: 'alle Fächer, Links zu freien PDFs' },
+  id: 's2', name: 'Semantic Scholar', home: 'https://www.semanticscholar.org', cors: 'try', keyed: true, gap: 1100, what: { en: 'all disciplines, links to free PDFs', de: 'alle Fächer, Links zu freien PDFs' },
   headers: (s) => (s.s2Key ? { 'x-api-key': s.s2Key } : {}),
   requests(q, s, limit) {
     const one = (id) => [{ url: `https://api.semanticscholar.org/graph/v1/paper/${id}?fields=${S2_FIELDS}`, as: 'json', one: true, headers: this.headers(s) }];

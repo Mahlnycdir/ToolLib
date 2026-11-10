@@ -563,6 +563,8 @@
   "research.err.timeout": { "en": "took too long", "de": "brauchte zu lange" },
   "research.err.parse": { "en": "sent something Toollib cannot read", "de": "schickte etwas, das Toollib nicht lesen kann" },
   "research.err.aborted": { "en": "stopped", "de": "abgebrochen" },
+  "research.err.blocked.doab": { "en": "refuses addresses of servers, your fetcher included; it comes with the Mac helper (0.14.4). Until then OpenAlex and Crossref find free books too.", "de": "sperrt Adressen von Servern, auch deinen Holer; kommt mit dem Mac-Helfer (0.14.4). Bis dahin finden OpenAlex und Crossref freie Bücher auch." },
+  "research.err.rate.s2": { "en": "too many requests right now; without a key Semantic Scholar shares one small pool with everybody. A free key (settings) helps.", "de": "gerade zu viele Anfragen; ohne Schlüssel teilt Semantic Scholar einen kleinen Topf mit allen. Ein kostenloser Schlüssel (Einstellungen) hilft." },
   "research.test.busy": { "en": "{name}: testing …", "de": "{name}: wird geprüft …" },
   "research.test.ok": { "en": "{name} answers.", "de": "{name} antwortet." },
   "research.test.keyOk": { "en": "{name} answers with your key.", "de": "{name} antwortet mit deinem Schlüssel." },
