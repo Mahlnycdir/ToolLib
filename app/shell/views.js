@@ -20,7 +20,7 @@ const STAGE = [
   { key: 'stage3.module', done: true },
   { key: 'stage3.wave1', done: true },
   { key: 'stage3.choices', done: true },
-  { key: 'stage3.wave2', done: false },
+  { key: 'stage3.wave2', done: true },
   { key: 'stage3.wave3', done: false },
   { key: 'stage3.wave4', done: false },
   { key: 'stage3.mathlib', done: false },
