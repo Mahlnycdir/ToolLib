@@ -102,7 +102,8 @@ export function searchNodes(query, { limit = 8, filter } = {}) {
 // Quiet on purpose: views that show the node update themselves, the rest reads the new state when drawn.
 export async function refreshNode(path) {
   const node = await getNode(path);
-  if (!node || !mini) return node ? summary(node) : null;
+  if (!node) { forgetNode(path); return null; }   // deleted on this device or in another window
+  if (!mini) return summary(node);
   const d = summary(node);
   if (mini.has(path)) mini.replace(d);
   else mini.add(d);

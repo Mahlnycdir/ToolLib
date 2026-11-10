@@ -5,8 +5,9 @@ import { t, getLang, setLang } from '../i18n/i18n.js';
 import { ACCENTS, MODULES, SHELL, accentOf, setAccent, paintAccent } from './modules.js';
 import { isStandalone, platform, pwaState } from '../services/pwa.js';
 import { storageInfo } from '../services/storage.js';
-import { loadPref } from '../services/prefs.js';
-import { recentList } from './node-view.js';
+import { loadPref, savePref } from '../services/prefs.js';
+import { nodeHref, recentList } from './node-view.js';
+import { conflictActions } from './conflict-actions.js';
 import { pythonBundle, pythonStorage, removePython, storePython } from '../services/python.js';
 import {
   explainSyncError, isConfigured, kobraSettings, knowledgeStats, pendingChanges, phaseText, removeLocalCopy,
@@ -107,11 +108,16 @@ async function fillKnowledgeCard(box, { onSync, onSetup }) {
   box.append(chips);
   if (stats.conflicts.length) {
     const list = h('ul', { class: 'conflicts' });
+    const note = h('div', { class: 'note warn' });
     for (const copy of stats.conflicts) {
-      list.append(h('li', {}, h('code', { text: copy }), h('span', { class: 'muted small', text: t('home.knowledge.conflictOf', { path: originalOf(copy) }) })));
+      const li = h('li', {}, h('a', { href: nodeHref(copy), text: copy }), ' ',
+        h('span', { class: 'muted small', text: t('home.knowledge.conflictOf', { path: originalOf(copy) }) }),
+        conflictActions(copy, () => { li.remove(); if (!list.children.length) note.remove(); }));
+      list.append(li);
     }
-    box.append(h('div', { class: 'note warn' }, iconEl('warn'), h('div', {},
-      h('p', { text: t('home.knowledge.conflicts', { count: stats.conflicts.length }) }), list)));
+    note.append(iconEl('warn'), h('div', {},
+      h('p', { text: t('home.knowledge.conflicts', { count: stats.conflicts.length }) }), list));
+    box.append(note);
   }
   box.append(h('p', { class: 'muted small', text: t('home.knowledge.readSoon') }));
 }
@@ -248,7 +254,10 @@ function syncCard({ onSync }) {
     });
     box.insertBefore(h('div', { class: 'btn-row' }, take), repo.row);
   }
-  box.append(h('div', { class: 'btn-row' }, test, syncNow), result);
+  const auto = h('label', { class: 'set-check' }, h('input', { type: 'checkbox', id: 'sync-auto', checked: loadPref('sync.auto', true) !== false ? true : null }),
+    h('span', {}, h('b', { text: t('settings.sync.auto') }), h('span', { class: 'field-hint', text: t('settings.sync.auto.hint') })));
+  auto.firstChild.addEventListener('change', (e) => savePref('sync.auto', e.target.checked));
+  box.append(auto, h('div', { class: 'btn-row' }, test, syncNow), result);
   return box;
 }
 

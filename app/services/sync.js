@@ -138,8 +138,17 @@ const author = (s) => ({ name: s.name || `Toollib (${s.device})`, email: s.email
 // ------------------------------------------------------------------ sync
 let running = null;
 
-export function syncKnowledge() {
-  if (!running) running = run().finally(() => { running = null; });
+// Two windows of the app share one local copy: only one may sync at a time (Web Locks, Safari 15.4+).
+// A sync that starts by itself (auto) gives way; one you start waits its turn.
+export function syncKnowledge({ auto = false } = {}) {
+  if (!running) {
+    const go = () => run();
+    const locks = typeof navigator !== 'undefined' && navigator.locks;
+    running = (locks
+      ? locks.request('toollib-sync', { ifAvailable: auto }, (lock) => (lock ? go() : { skipped: true }))
+      : go()
+    ).finally(() => { running = null; });
+  }
   return running;
 }
 
@@ -247,6 +256,8 @@ async function update(s, url, cache) {
   for (let attempt = 0; attempt < 3; attempt++) {
     setPhase('fetch');
     await git.fetch({ fs, dir, remote: 'origin', ref: branch, singleBranch: true, tags: false, cache, ...remoteOpts(s) });
+    // Something may have been written while the fetch ran; it must be in a commit before files are replaced.
+    uploaded += await commitChanges(s, `Sync from ${s.device}`, cache);
     const local = await git.resolveRef({ fs, dir, ref: `refs/heads/${branch}` });
     let remote = null;
     try { remote = await git.resolveRef({ fs, dir, ref: `refs/remotes/origin/${branch}` }); } catch { /* branch not on GitHub yet */ }
@@ -333,7 +344,7 @@ async function combine(s, branch, base, local, remote, cache) {
       kept.push(path);
       continue;
     }
-    const merged = mergeText(await blobAt(base, path, cache), ours, await blob(other, cache));
+    const merged = mergeText(await blobAt(base, path, cache), ours, await blob(other, cache), path);
     if (merged != null) {
       await writeFile(target, merged, { noFlush: true });
       continue;
@@ -383,9 +394,12 @@ async function blobAt(commit, filepath, cache) {
 }
 
 // Line-by-line three-way merge like git's. Returns the merged text, or null if the same lines
-// changed on both sides or a file is not text.
+// changed on both sides or a file is not text. Folders and kept works (research/, clips/) do not stop
+// at a clash (0.14.1.1): lists such as "clips" are joined, a changed value of this device wins, and
+// two different notes are both kept.
 const LINES = /^.*(\r?\n|$)/gm;
-function mergeText(base, ours, theirs) {
+const JOINABLE = /^(research|clips)\/.*\.md$/;
+function mergeText(base, ours, theirs, path = '') {
   const dec = new TextDecoder('utf-8', { fatal: true });
   let o, a, b;
   try {
@@ -395,12 +409,41 @@ function mergeText(base, ours, theirs) {
   } catch {
     return null;
   }
+  const join = JOINABLE.test(path);
   let text = '';
   for (const part of diff3Merge(a.match(LINES), o.match(LINES), b.match(LINES))) {
-    if (part.conflict) return null;
-    text += part.ok.join('');
+    if (part.conflict) {
+      const fixed = join ? joinHunk(part.conflict, text) : null;
+      if (fixed == null) return null;
+      text += fixed;
+    } else {
+      text += part.ok.join('');
+    }
   }
   return text;
+}
+
+const eol = (l) => (l.endsWith('\n') ? l : `${l}\n`);
+const flowList = (v) => {
+  if (v === '[]') return [];
+  try { const x = JSON.parse(v); return Array.isArray(x) && x.every((e) => typeof e === 'string') ? x : null; } catch { return null; }
+};
+
+// One clash between this device (a) and GitHub (b). Returns the lines to keep, or null if there is no safe way.
+export function joinHunk({ a, b }, before) {
+  const inFront = (before.match(/^---\r?$/gm) || []).length < 2;   // the front matter has not been closed yet
+  if (!inFront) { // notes below the front matter: both stay, GitHub's first
+    const seen = new Set(b.map((l) => l.trim()).filter(Boolean));
+    return [...b, ...a.filter((l) => !l.trim() || !seen.has(l.trim()))].map(eol).join('');
+  }
+  if (a.length !== 1 || b.length !== 1) return null;
+  const ka = /^([A-Za-z_][\w-]*):\s*(.*?)\s*$/.exec(a[0]);
+  const kb = /^([A-Za-z_][\w-]*):\s*(.*?)\s*$/.exec(b[0]);
+  if (!ka || !kb || ka[1] !== kb[1]) return null;
+  const la = flowList(ka[2]);
+  const lb = flowList(kb[2]);
+  if (la && lb) return `${ka[1]}: [${[...new Set([...lb, ...la])].map((x) => JSON.stringify(x)).join(', ')}]\n`;
+  return eol(a[0]);
 }
 
 function conflictName(path, device, stamp) {

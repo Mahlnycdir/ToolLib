@@ -804,3 +804,10 @@ mark.rd-hl-atom, .katex-display > mark.rd-hl { display: block; }
   .rs-version { grid-template-columns: minmax(0, 1fr); }
   .rs-version-links { grid-column: 1; grid-row: auto; }
 }
+
+/* 0.14.1.1: sync setting, conflict copies */
+.set-check { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; cursor: pointer; }
+.set-check input { margin-top: 4px; }
+.set-check .field-hint { display: block; }
+.conflicts li { margin: 8px 0; }
+.conflict-actions { margin-top: 6px; flex-wrap: wrap; }

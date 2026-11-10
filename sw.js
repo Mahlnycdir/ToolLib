@@ -1,7 +1,7 @@
 // Service worker: keeps the whole app in a cache so Toollib starts without a network, keeps Python in a cache of
 // its own and carries input() from the Python worker to the page (the synchronous channel, from Kobra's sw.js).
 // Raise VERSION with every release; the shell then offers "Reload" for the update.
-const VERSION = '0.14.1';
+const VERSION = '0.14.1.1';
 const CACHE = `toollib-${VERSION}`;
 // Python (vendor/pyodide) is big and changes only with a new Pyodide version, so its cache survives app updates.
 // Keep PYODIDE equal to "pyodide" in vendor/pyodide/toollib-bundle.json.
@@ -52,6 +52,8 @@ const FILES = [
   './app/services/research-sources.js',
   './app/services/research-merge.js',
   './app/services/research-store.js',
+  './app/services/autosync.js',
+  './app/services/conflicts.js',
   './app/shell/research-view.js',
   // reader (0.14.1)
   './app/services/reader.js',
@@ -59,6 +61,7 @@ const FILES = [
   './app/services/reader-html.js',
   './app/services/reader-pdf.js',
   './app/shell/reader-marks.js',
+  './app/shell/conflict-actions.js',
   './app/shell/reader-view.js',
   './vendor/reader.js',
   './app/shell/styles.css',

@@ -4,8 +4,8 @@
 //   research/<name>.md  type: research, your research folder: title, question, the clips, your notes (source: you)
 // The folder lists its clips (clips: [..]); a clip can sit in several folders.
 import { KNOWLEDGE, exists } from './storage.js';
-import { parseNode, readNodeText, setField, slugify, writeNode, yamlValue } from './nodes.js';
-import { allNodes, nodeByPath, nodeBySlug, refreshNode } from './search.js';
+import { deleteNode, parseNode, readNodeText, setField, slugify, writeNode, yamlValue } from './nodes.js';
+import { allNodes, forgetNode, nodeByPath, nodeBySlug, refreshNode } from './search.js';
 import { noteChange } from './sync.js';
 import { announce } from './channel.js';
 import { normArxiv, normDoi, orderVersions } from './research-merge.js';
@@ -50,6 +50,14 @@ export async function createFolder({ title, question = '' }) {
   await writeNode(path, `${head.join('\n')}\n\n`);
   await written([path], 'added');
   return path;
+}
+
+// Deletes the folder only: the works you kept stay in clips/ (they can sit in other folders too).
+export async function deleteFolder(folderPath) {
+  await deleteNode(folderPath);
+  forgetNode(folderPath);
+  await noteChange(folderPath, 'removed');
+  announce([folderPath]);
 }
 
 async function changeClips(folderPath, change) {

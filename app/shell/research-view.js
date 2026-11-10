@@ -1,14 +1,14 @@
 // The research window (0.14.0): left your research folders, in the middle the hits of a search or what a folder
 // keeps, on the right the work you picked with all its versions and the notes of the folder. On the iPhone the three
 // areas are tabs. "Own window" opens the same view alone (index.html?solo=1). "Read" (0.14.1) turns the whole window into the reader.
-import { h, toast, copyText, debounce, loadPref, savePref, promptDialog } from '../services/ui.js';
+import { h, toast, copyText, debounce, loadPref, savePref, promptDialog, confirmDialog } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
 import { SOURCES, sourceById } from '../services/research-sources.js';
 import { bestFree, rankWorks, parseQuery, webUrl } from '../services/research-merge.js';
 import { findVersions, hasWorker, researchSettings, setSourceOn, sourceOn, startSearch } from '../services/research.js';
 import {
-  clipFor, clipsIn, createFolder, folderNotes, folders, foldersWith, keepWork, removeFromFolder, saveFolderNotes,
+  clipFor, clipsIn, createFolder, deleteFolder, folderNotes, folders, foldersWith, keepWork, removeFromFolder, saveFolderNotes,
   updateClipVersions, workFromClip,
 } from '../services/research-store.js';
 import { nodeByPath, onIndexChange } from '../services/search.js';
@@ -476,6 +476,21 @@ export function renderResearch(main) {
     });
   }
 
+  async function removeFolder(f) {
+    if (!(await confirmDialog(t('research.folder.delete'), t('research.folder.delete.confirm', { title: f.title, count: f.clips.length }), { okLabel: t('research.folder.delete'), danger: true }))) return;
+    try {
+      await deleteFolder(f.path);
+      st.folder = '';
+      savePref('research.folder', '');
+      st.list = 'hits';
+      st.kept = null;
+      view.drawAll();
+      toast(t('research.folder.deleted'), 'ok');
+    } catch (e) {
+      toast(t('snippet.failed', { error: e.message || String(e) }), 'error', 5000);
+    }
+  }
+
   // ---------------------------------------------------------------- notes of the folder
   function notesBox(f) {
     const box = h('section', { class: 'rs-notes' }, h('h3', {}, iconEl('folderOpen'), h('span', { text: f.title })));
@@ -484,7 +499,8 @@ export function renderResearch(main) {
     const state = h('span', { class: 'muted small rs-saved' });
     box.append(h('label', { class: 'set-field' }, h('span', { class: 'field-label', text: t('research.question') }), question),
       h('label', { class: 'set-field' }, h('span', { class: 'field-label', text: t('research.notes') }), notes),
-      h('div', { class: 'btn-row' }, h('a', { class: 'btn small', href: nodeHref(f.path) }, iconEl('search'), h('span', { text: t('research.folderNode') })), state));
+      h('div', { class: 'btn-row' }, h('a', { class: 'btn small', href: nodeHref(f.path) }, iconEl('search'), h('span', { text: t('research.folderNode') })),
+        h('button', { type: 'button', class: 'btn small rs-folder-delete', onclick: () => removeFolder(f) }, iconEl('trash'), h('span', { text: t('research.folder.delete') })), state));
     let loaded = false;
     folderNotes(f.path).then((n) => { question.value = n.question; notes.value = n.notes; loaded = true; }).catch(() => {});
     const save = async () => {

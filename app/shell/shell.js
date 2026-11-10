@@ -15,6 +15,7 @@ import { renderSnippetForm } from './snippet-form.js';
 import { queueSearch, renderResearch } from './research-view.js';
 import { parseQuery } from '../services/research-merge.js';
 import { onAnnounce } from '../services/channel.js';
+import { startAutoSync } from '../services/autosync.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -354,9 +355,10 @@ export function startShell(root) {
 
   // While a sync runs only the status bar and the Sync buttons change; afterwards Home shows the new numbers.
   let wasBusy = false;
-  let lastKey = JSON.stringify(syncState().last);
+  const syncKey = (l) => (l ? `${l.head}|${l.nodes}|${l.kind === 'cloned'}` : '');
+  let lastKey = syncKey(syncState().last);
   onSyncChange((s) => {
-    const key = JSON.stringify(s.last);
+    const key = syncKey(s.last);
     if (key !== lastKey && !s.busy) buildIndex(); // after a sync or after removing the local copy
     lastKey = key;
     renderStatus();
@@ -437,6 +439,9 @@ export function startShell(root) {
     const route = currentRoute();
     if (route.kind === 'node' && msg.paths.includes(route.path)) render();
   });
+
+  // Sync by itself (0.14.1.1): quiet, only a clash is reported
+  startAutoSync({ onDone: (r) => { if (r.conflicts.length) toast(t('sync.done.conflicts', { count: r.conflicts.length }), 'error', 6000); } });
 
   window.addEventListener('online', renderStatus);
   window.addEventListener('offline', renderStatus);

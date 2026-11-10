@@ -12,6 +12,7 @@ import { runControls } from './run-panel.js';
 import { CARD_TYPES, cardSections, shownElsewhere, topicChips } from './formulary.js';
 import { choiceBox, choiceState, decide, pickedNode } from './choice-box.js';
 import { markSpots } from '../services/choices.js';
+import { conflictActions } from './conflict-actions.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 
@@ -161,8 +162,9 @@ export async function renderNode(main, path, ctx) {
   if (node.error) box.append(h('div', { class: 'note warn' }, iconEl('warn'), h('p', { text: t('node.yamlError', { error: node.error }) })));
   if (node.conflict) {
     const original = path.replace(/\.conflict-[a-z0-9-]+(\.[^./]+)?$/, '$1');
-    box.append(h('div', { class: 'note warn' }, iconEl('warn'), h('p', {},
-      t('node.conflictCopy'), ' ', h('a', { href: nodeHref(original), text: original }))));
+    box.append(h('div', { class: 'note warn' }, iconEl('warn'), h('div', {},
+      h('p', {}, t('node.conflictCopy'), ' ', h('a', { href: nodeHref(original), text: original })),
+      conflictActions(path, (o) => go(nodeByPath(o) ? nodeHref(o) : '#/home')))));
   }
 
   const onNodeLink = (slug) => {
