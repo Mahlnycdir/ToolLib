@@ -2,7 +2,7 @@
 
 Persönliche Arbeitsoberfläche für Mac, iPhone und Linux: eine Web-App (PWA) auf GitHub Pages, dazu später ein Hub zu Hause. Das Wissen liegt getrennt im privaten Repository `knowledge`.
 
-Stand: Version 0.13.1, Stufe 3 (Formelsammlung) läuft, Welle 2 (mathematische Methoden) ist drin; Stufe 2 (Python-Spickzettel als volles Modul) ist fertig. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte. Seit 0.8.0 laufen Snippets direkt in der App: Python mit numpy, scipy, matplotlib und sympy läuft im Browser, von Toollibs eigener Adresse. Seit 0.9.0 legst du eigene Snippets an und änderst Code und Check bestehender Knoten. Seit 0.10.0 gibt es die Gruppen Datenstrukturen, Fehlersuche, Threads & Prozesse und Git. Seit 0.11.0 ist Kobra Teil von Toollib, mit den Bausteinen aus dem Spickzettel. Seit 0.12.0 sind Formeln gesetzt (KaTeX) und es gibt die Formelsammlung: verknüpfte Karten nach Bereich und Thema. Seit 0.13.0 legst du offene Konventionen selbst fest.
+Stand: Version 0.14.0, das Fenster Recherche ist da (Paper-Suche mit freien Fassungen, Recherche-Mappen); Stufe 3 (Formelsammlung) läuft, Welle 2 (mathematische Methoden) ist drin; Stufe 2 (Python-Spickzettel als volles Modul) ist fertig. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte. Seit 0.8.0 laufen Snippets direkt in der App: Python mit numpy, scipy, matplotlib und sympy läuft im Browser, von Toollibs eigener Adresse. Seit 0.9.0 legst du eigene Snippets an und änderst Code und Check bestehender Knoten. Seit 0.10.0 gibt es die Gruppen Datenstrukturen, Fehlersuche, Threads & Prozesse und Git. Seit 0.11.0 ist Kobra Teil von Toollib, mit den Bausteinen aus dem Spickzettel. Seit 0.12.0 sind Formeln gesetzt (KaTeX) und es gibt die Formelsammlung: verknüpfte Karten nach Bereich und Thema. Seit 0.13.0 legst du offene Konventionen selbst fest. Seit 0.14.0 sucht das Fenster Recherche Paper und Bücher in sieben offenen Quellen und merkt sie in Recherche-Mappen.
 
 ## Aufbau
 
@@ -24,14 +24,19 @@ toollib/                 dieses Repository, öffentlich
                          storage.js (Dateien auf dem Gerät), sync.js (Abgleich mit GitHub),
                          nodes.js (Knoten lesen: Kopfdaten, Sprachblöcke, Quellen; ein Feld ändern),
                          search.js (Suchindex), python.js und python-worker.js (Python ausführen, aus Kobra),
-                         toollib_snippets.py (baut aus Snippet, benötigten Snippets und Check ein Programm)
+                         toollib_snippets.py (baut aus Snippet, benötigten Snippets und Check ein Programm),
+                         research.js (Suche über alle Quellen, Holer, Einstellungen), research-sources.js (die Quellen),
+                         research-merge.js (Fassungen zusammenführen und ordnen), research-store.js (Funde und Mappen
+                         als Knoten), channel.js (Fenster sagen einander, welche Knoten sich geändert haben)
     shell/               shell.js (Befehlszeile, Modulleiste, Statuszeile), views.js, modules.js, styles.css,
                          node-view.js (Knoten-Ansicht, Python-Spickzettel), markdown.js (sicherer Markdown-Leser),
                          run-panel.js (Ausprobieren, Check ausführen), console.js (Ausgabe, input(), Abbildungen),
                          snippet-form.js (eigene Snippets anlegen, bearbeiten, löschen)
                          math.js (Formeln mit KaTeX, Makros aus Paper und Masterarbeit),
                          formulary.js (Formelsammlung: Bereiche, Themen, Folgt aus / Führt zu, Symbole),
-                         choice-box.js (offene Konventionen festlegen; Logik in services/choices.js)
+                         choice-box.js (offene Konventionen festlegen; Logik in services/choices.js),
+                         research-view.js (Fenster Recherche: Mappen, Treffer, Fassungen und Notizen)
+  fetch-proxy/           der Holer für die Recherche: Cloudflare Worker (worker.js) und Anleitung (README.md)
   tools/                 Hilfsprogramme: import-snippets, build-vendor, fetch-pyodide
 ```
 
@@ -122,6 +127,18 @@ Die Formelsammlung (Modulleiste oder Befehlszeile) zeigt die Karten des Wissens:
 - Offene Konventionen (0.13.0): Legt das Paper eine Konvention nicht fest, trägt die Karte `choices` und im Text Stellen `\choice{id}{…}{…}` mit dem Text für jede Möglichkeit. Die Karte zeigt einen Kasten „Konvention offen“: Du wählst, siehst Formeln, Text und Check mit deiner Wahl (markiert) und lässt den Check laufen. „Festlegen und als geprüft markieren“ schreibt die Wahl in die Karte und in alle Karten mit derselben Konvention (die bleiben ungeprüft) und legt `nodes/conventions/<id>.md` mit `decided` an. Die Formelsammlung zählt die offenen Konventionen und listet sie oben. Logik in `app/services/choices.js`, Kasten in `app/shell/choice-box.js`.
 - Format der Karten: README im Repository knowledge.
 
+## Recherche
+
+Das Fenster Recherche (Modulleiste, Befehlszeile oder „Paper suchen“ in der Befehlszeile) sucht Paper und Bücher in sieben offenen Quellen zugleich: OpenAlex, Crossref, arXiv, Semantic Scholar, Europe PMC (Medizin und Pflege), DOAJ (Open-Access-Zeitschriften) und DOAB (Open-Access-Bücher). Alle sind kostenlos und legal; Schattenbibliotheken fragt Toollib nicht.
+
+- Eingabe: Wörter, ein Titel, eine DOI, eine arXiv-ID, eine PMID oder PMC-Nummer, eine ISBN. Eine DOI oder arXiv-ID in der Befehlszeile führt direkt hierher.
+- Toollib führt die Treffer derselben Arbeit zusammen (gleiche DOI, arXiv-ID oder PMID, sonst gleicher Titel mit gemeinsamem Autor) und ordnet ihre Fassungen: frei veröffentlicht, dann angenommene Fassung, dann Preprint, dann andere freie Kopien, zuletzt die nicht freien. Die Reihenfolge der Treffer kommt aus allen Quellen zusammen (Reciprocal Rank Fusion); freie Volltexte und die Wörter der Suche im Titel rücken nach oben.
+- Hat ein Treffer keine freie Fassung, sucht Toollib beim Öffnen nach dem Titel weiter: ein arXiv-Preprint eines bezahlten Artikels, die veröffentlichte Fassung eines Preprints, eine Kopie in PubMed Central. Bei einer DOI oder arXiv-ID passiert das sofort.
+- Merken legt einen Knoten `clips/<name>.md` an (`type: clip`, `source: scraper`, ungeprüft) mit allen Fassungen, der Zusammenfassung und, wenn du willst, „Hilft bei“ in deinen Worten. Eine Recherche-Mappe `research/<name>.md` (`type: research`, `source: you`) hält deine Frage, deine Notizen und die Liste ihrer Funde. Beides ist nach Sync offline durchsuchbar.
+- Auf dem iPhone sind die drei Bereiche Reiter; auf Mac und Linux öffnet „Eigenes Fenster“ die Recherche allein (`index.html?solo=1`).
+- Einstellungen › Recherche: der Holer (`fetch-proxy/`, für arXiv und DOAB, die Browser nicht direkt lesen dürfen), der kostenlose OpenAlex-Schlüssel (ohne ihn teilt OpenAlex ein kleines Tagesbudget mit allen in deinem Netz), wahlweise ein Semantic-Scholar-Schlüssel, die Quellen an und aus, „Verbindung testen“.
+- Später: der Leser (0.14.1), Schreiben in eigene Bibliotheken (0.14.2), Websites durchgehen (0.14.3), Mac-Helfer mit PDF-Ordner und SearXNG (0.14.4).
+
 ## Lokal ansehen
 
 Im Ordner des Repositories:
@@ -140,7 +157,7 @@ Die leere Datei `.nojekyll` sorgt dafür, dass GitHub Pages alle Dateien unverä
 
 ## Regeln
 
-- Keine Tracker und keine Anfragen an fremde Server; Schriften und Bibliotheken kommen mit ins Repository. Einzige Ausnahme ist der Abgleich: Er spricht über deinen eigenen Git-Proxy mit GitHub, und nur wenn du Sync tippst.
+- Keine Tracker und keine Anfragen an fremde Server; Schriften und Bibliotheken kommen mit ins Repository. Ausnahmen: Der Abgleich spricht über deinen eigenen Git-Proxy mit GitHub, nur wenn du Sync tippst; die Recherche fragt die offenen Quellen direkt oder über deinen Holer, nur wenn du suchst, und schickt nichts über dich mit.
 - Oberfläche auf Englisch, umstellbar auf Deutsch.
 - In dieses Repository kommt nur Code, nie Inhalte aus `knowledge`: Dieses Repository und die Seite sind öffentlich.
 - Fremde Bibliotheken nur in Versionen, die mindestens zwei Wochen alt sind (auch Pyodide).

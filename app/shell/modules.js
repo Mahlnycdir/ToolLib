@@ -22,7 +22,7 @@ export const MODULES = [
   { id: 'kobra', icon: 'code', accent: 'yellow', step: null, href: 'kobra/' },   // Kobra as its own page (0.11.0)
   { id: 'kladde', icon: 'edit', accent: 'orange', step: null },
   { id: 'workmode', icon: 'chalkboard', accent: 'violet', step: null },
-  { id: 'scraper', icon: 'globe', accent: 'blue', step: null },
+  { id: 'scraper', icon: 'globe', accent: 'blue', step: null },     // research window (0.14.0)
 ];
 
 export const SHELL = { id: 'shell', icon: 'home', accent: 'blue' };

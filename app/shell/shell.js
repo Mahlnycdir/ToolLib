@@ -8,10 +8,13 @@ import { ACCENTS, MODULES, moduleById, paintAccent, setAccent } from './modules.
 import { formatTime, renderHome, renderModule, renderSettings } from './views.js';
 import { applyUpdate, checkForUpdate, onPwaChange, pwaState } from '../services/pwa.js';
 import { isConfigured, onSyncChange, phaseText, refreshPending, syncKnowledge, syncState } from '../services/sync.js';
-import { bestProblem, buildIndex, indexState, nodeByPath, onIndexChange, searchNodes } from '../services/search.js';
+import { bestProblem, buildIndex, indexState, nodeByPath, onIndexChange, refreshNode, searchNodes } from '../services/search.js';
 import { renderFormulary } from './formulary.js';
 import { copyWithToast, nodeHref, nodeLead, nodeTitle, recentPaths, renderCheatsheet, renderNode, typeAccent, typeIcon, typeLabel } from './node-view.js';
 import { renderSnippetForm } from './snippet-form.js';
+import { queueSearch, renderResearch } from './research-view.js';
+import { parseQuery } from '../services/research-merge.js';
+import { onAnnounce } from '../services/channel.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -25,6 +28,12 @@ export function startShell(root) {
   const scrim = h('div', { class: 'scrim', onclick: () => setDrawer(false) });
   app.append(rail, cmd, main, status, scrim);
   root.replaceChildren(app);
+  // The research window on its own (index.html?solo=1): only the workspace, no module bar.
+  const solo = new URLSearchParams(location.search).has('solo');
+  if (solo) {
+    app.classList.add('solo');
+    if (!location.hash || location.hash === '#/' || location.hash === '#/home') history.replaceState(history.state, '', '#/m/scraper');
+  }
   paintAccent(document.documentElement, 'shell');
 
   // ---------------------------------------------------------------- routing
@@ -74,11 +83,13 @@ export function startShell(root) {
     const entry = entryId();
     shownEntry = entry;
     main.replaceChildren();
+    delete main.dataset.view;
     const nodeType = route.kind === 'node' ? nodeByPath(route.path)?.type : null;
     paintAccent(main, route.kind === 'module' ? route.mod.id : route.kind === 'node' ? typeAccent(nodeType) : route.kind === 'form' ? 'cheatsheet' : 'shell');
     if (route.kind === 'settings') renderSettings(main, { onChange: refresh, onCheckUpdate: runUpdateCheck, onSync: runSync, section: route.section });
     else if (route.kind === 'module' && route.mod.id === 'cheatsheet') renderCheatsheet(main, route.mod, { go });
     else if (route.kind === 'module' && route.mod.id === 'formulary') renderFormulary(main, route.mod);
+    else if (route.kind === 'module' && route.mod.id === 'scraper') renderResearch(main, route.mod);
     else if (route.kind === 'module') renderModule(main, route.mod);
     else if (route.kind === 'form') renderSnippetForm(main, { mode: route.mode, path: route.path, go, isCurrent: () => token === renderToken });
     else if (route.kind === 'node') {
@@ -219,7 +230,13 @@ export function startShell(root) {
     });
     const ql = q.toLowerCase();
     const strong = q && cmds.length && cmds[0].label.toLowerCase().split(/\s+/).some((w) => w.startsWith(ql));
-    return strong ? [...cmds.slice(0, 3), ...nodes] : [...nodes, ...cmds.slice(0, nodes.length ? 3 : 8)];
+    const list = strong ? [...cmds.slice(0, 3), ...nodes] : [...nodes, ...cmds.slice(0, nodes.length ? 3 : 8)];
+    // Search the literature for what you typed (0.14.0); a DOI or an arXiv id comes first.
+    if (q.length >= 3) {
+      const research = { label: t('cmd.research', { query: q }), keys: '', icon: 'globe', accent: 'scraper', run: () => { queueSearch(q); go('#/m/scraper'); } };
+      if (parseQuery(q).kind !== 'text') list.unshift(research); else list.push(research);
+    }
+    return list;
   }
 
   function footText() {
@@ -410,6 +427,16 @@ export function startShell(root) {
   vv?.addEventListener('resize', fitViewport);
   window.addEventListener('resize', fitViewport);
   fitViewport();
+
+  // Another window (the research window) changed nodes: take them into the index here too.
+  onAnnounce(async (msg) => {
+    if (msg.kind !== 'nodes' || !Array.isArray(msg.paths)) return;
+    for (const p of msg.paths) await refreshNode(p);
+    refreshPending();
+    window.dispatchEvent(new CustomEvent('toollib:nodes', { detail: msg.paths }));
+    const route = currentRoute();
+    if (route.kind === 'node' && msg.paths.includes(route.path)) render();
+  });
 
   window.addEventListener('online', renderStatus);
   window.addEventListener('offline', renderStatus);

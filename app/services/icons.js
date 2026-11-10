@@ -22,6 +22,8 @@ const P = {
   redo: '<path d="m15 7.5 4.5 4.5-4.5 4.5"/><path d="M19.5 12h-10a5 5 0 0 0 0 10H12"/>',
   tab: '<path d="M4 12h12M12 7.5l4.5 4.5L12 16.5M20 6v12"/>',
   dedent: '<path d="M20 12H8M12 7.5 7.5 12l4.5 4.5M4 6v12"/>',
+  external: '<path d="M13.5 4.5h6v6M19.5 4.5l-8.5 8.5"/><path d="M10 5.5H6A1.5 1.5 0 0 0 4.5 7v11A1.5 1.5 0 0 0 6 19.5h11a1.5 1.5 0 0 0 1.5-1.5v-4"/>',
+  bookmark: '<path d="M7 3.5h10a.5.5 0 0 1 .5.5v16.5L12 16.8l-5.5 3.7V4a.5.5 0 0 1 .5-.5z"/>',
   search: '<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5.5 5.5"/>',
   blocks: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><path d="M17 14v6M14 17h6"/>',
   book: '<path d="M4.5 5.5A2 2 0 0 1 6.5 3.5H19v14H6.5a2 2 0 0 0-2 2z"/><path d="M4.5 19.5a2 2 0 0 0 2 2H19v-4"/>',

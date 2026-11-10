@@ -12,6 +12,8 @@ import {
   explainSyncError, isConfigured, kobraSettings, knowledgeStats, pendingChanges, phaseText, removeLocalCopy,
   saveSyncSetting, syncSettings, syncState, testConnection,
 } from '../services/sync.js';
+import { researchSettings, saveResearchSetting, setSourceOn, sourceOn, testResearch } from '../services/research.js';
+import { SOURCES } from '../services/research-sources.js';
 
 // Progress of the current stage: the formulary (stage 3). The foundation and stage 2 are done.
 // Mark a point as done when it is delivered; ENTE decides the order of the open ones.
@@ -142,6 +144,7 @@ export function renderSettings(main, { onChange, onCheckUpdate, onSync, section 
   main.append(card(t('settings.language'), seg));
 
   main.append(syncCard({ onSync }));
+  main.append(researchCard());
   main.append(deviceCard({ onChange }));
   main.append(pythonCard());
 
@@ -246,6 +249,61 @@ function syncCard({ onSync }) {
   }
   box.append(h('div', { class: 'btn-row' }, test, syncNow), result);
   return box;
+}
+
+// Research (0.14.0): your fetcher for the sites the browser may not read directly, the free keys, the sources.
+function researchCard() {
+  const s = researchSettings();
+  const field = (key, label, attrs, hint, link) => {
+    const input = h('input', { class: 'field', id: `research-${key}`, value: s[key] || '', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', ...attrs });
+    input.addEventListener('change', () => saveResearchSetting(key, input.value));
+    const hintEl = hint ? h('span', { class: 'field-hint' }, h('span', { text: hint }), link ? ' ' : null,
+      link ? h('a', { href: link.href, target: '_blank', rel: 'noopener noreferrer', text: link.text }) : null) : null;
+    return { input, row: h('label', { class: 'set-field', for: `research-${key}` }, h('span', { class: 'field-label', text: label }), input, hintEl) };
+  };
+  const worker = field('worker', t('settings.research.worker'), { type: 'url', placeholder: 'https://toollib-fetch.yourname.workers.dev', inputmode: 'url' }, t('settings.research.worker.hint'));
+  const token = field('token', t('settings.research.token'), { type: 'password', autocomplete: 'off' }, t('settings.research.token.hint'));
+  const show = h('button', { type: 'button', class: 'btn small', text: t('settings.sync.show') });
+  show.addEventListener('click', () => {
+    const hidden = token.input.type === 'password';
+    token.input.type = hidden ? 'text' : 'password';
+    show.textContent = t(hidden ? 'settings.sync.hide' : 'settings.sync.show');
+  });
+  const tokenRow = h('div', { class: 'row-input' });
+  token.input.before(tokenRow);
+  tokenRow.append(token.input, show);
+  const oa = field('openalexKey', t('settings.research.openalex'), { type: 'password', autocomplete: 'off' }, t('settings.research.openalex.hint'), { href: 'https://openalex.org/settings/api', text: 'openalex.org/settings/api' });
+  const s2 = field('s2Key', t('settings.research.s2'), { type: 'password', autocomplete: 'off' }, t('settings.research.s2.hint'), { href: 'https://www.semanticscholar.org/product/api', text: 'semanticscholar.org/product/api' });
+
+  const list = h('ul', { class: 'research-sources' });
+  const lang = getLang();
+  for (const src of SOURCES) {
+    const box = h('input', { type: 'checkbox', checked: sourceOn(src.id, s) ? true : null, id: `research-src-${src.id}` });
+    box.addEventListener('change', () => setSourceOn(src.id, box.checked));
+    list.append(h('li', {}, h('label', { class: 'rs-check', for: `research-src-${src.id}` }, box,
+      h('span', {}, h('strong', { text: src.name }), h('span', { class: 'muted small', text: ` · ${src.what[lang] || src.what.en}${src.cors === 'no' ? ` · ${t('settings.research.viaWorker')}` : ''}` })))));
+  }
+
+  const result = h('ul', { class: 'checks', role: 'status' });
+  const line = (l) => h('li', { class: `check ${l.status}` },
+    iconEl({ ok: 'check', warn: 'warn', fail: 'close', info: 'info', busy: 'refresh' }[l.status] || 'info', l.status === 'busy' ? 'spin' : ''),
+    h('span', { text: t(l.key, l.vars) }));
+  const test = h('button', { type: 'button', class: 'btn' }, iconEl('link'), h('span', { text: t('settings.sync.test') }));
+  test.addEventListener('click', async () => {
+    for (const f of [worker, token, oa, s2]) saveResearchSetting(f.input.id.replace('research-', ''), f.input.value);
+    test.disabled = true;
+    try {
+      await testResearch((lines) => result.replaceChildren(...lines.map(line)));
+    } finally {
+      test.disabled = false;
+    }
+  });
+  return h('section', { class: 'card', id: 'settings-research' },
+    h('h2', { text: t('settings.research') }),
+    h('p', { class: 'muted', text: t('settings.research.hint') }),
+    worker.row, token.row, oa.row, s2.row,
+    h('h3', { class: 'set-sub', text: t('settings.research.sources') }), list,
+    h('div', { class: 'btn-row' }, test), result);
 }
 
 // Python for running snippets: what Toollib ships and whether it is stored on this device for offline use.

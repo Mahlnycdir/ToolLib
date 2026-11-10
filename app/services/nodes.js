@@ -196,6 +196,12 @@ export function summary(node) {
     choice: m.choice ? String(m.choice) : '',
     decided: m.decided != null ? String(m.decided) : '',
     decidedOn: m.decided_on ? String(m.decided_on) : '',
+    // research (0.14.0): a clip names its work, a research folder lists its clips
+    doi: m.doi ? String(m.doi).toLowerCase() : '',
+    arxiv: m.arxiv ? String(m.arxiv).toLowerCase() : '',
+    url: m.url ? String(m.url) : '',
+    clips: m.type === 'research' ? asList(m.clips) : [],
+    question: m.question ? String(m.question) : '',
     source: m.source ? String(m.source) : '',
     verified: m.verified !== false,
     conflict: node.conflict,
