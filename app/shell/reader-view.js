@@ -8,7 +8,10 @@ import { renderMarkdown } from './markdown.js';
 import { outlineOf, planFor, readWork } from '../services/reader.js';
 import { clipFor, keepWork, loadClipDoc, saveClipDoc, saveHighlights } from '../services/research-store.js';
 import { hasWorker, researchSettings } from '../services/research.js';
-import { CARD_KINDS, citeNumbers, clipForEntry, createCard, guessKind, guessLang, guessTitle, knowledgeFor, knownTopics, linkCitations, madeFrom, referenceEntry, searchTermFor } from '../services/reader-cards.js';
+import { clipForEntry, createCard, knowledgeFor, linkCitations, madeFrom, referenceEntry, searchTermFor } from '../services/reader-cards.js';
+import { insertIntoPage } from '../services/library-store.js';
+import { nodeByPath } from '../services/search.js';
+import { cardDialog } from './card-dialog.js';
 import { nodeHref, typeLabel } from './node-view.js';
 import { buildIndex, findQuote, selectionQuote, unwrap, wrapRange } from './reader-marks.js';
 
@@ -441,32 +444,7 @@ export function mountReader(host, opts) {
     const got = takeSelection();
     if (!got) return;
     const { q } = got;
-    const text = q.text.slice(0, 3000);
-    const kind = h('select', { class: 'field', 'aria-label': t('reader.card.type') }, ...CARD_KINDS.map((k) => h('option', { value: k, text: t(`reader.card.kind.${k}`) })));
-    kind.value = guessKind(text, q.section);
-    const title = h('input', { class: 'field', type: 'text', value: guessTitle(text, q.section), 'aria-label': t('reader.card.title') });
-    const topics = knownTopics();
-    const topic = h('input', { class: 'field', type: 'text', list: 'rd-topics', value: loadPref('reader.topic', ''), 'aria-label': t('reader.card.topic'), autocomplete: 'off' });
-    const body = h('textarea', { class: 'field rd-card-text', rows: '5', 'aria-label': t('reader.card.text') });
-    body.value = text;
-    const lang = h('select', { class: 'field', 'aria-label': t('reader.card.lang') }, h('option', { value: 'en', text: 'English' }), h('option', { value: 'de', text: 'Deutsch' }));
-    lang.value = guessLang(text);
-    const row = (key, el) => h('label', { class: 'rd-card-row' }, h('span', { text: t(key) }), el);
-    const form = h('div', { class: 'rd-card-form' },
-      row('reader.card.type', kind), row('reader.card.title', title), row('reader.card.topic', topic),
-      h('datalist', { id: 'rd-topics' }, ...topics.slice(0, 40).map((x) => h('option', { value: x }))),
-      row('reader.card.text', body), row('reader.card.lang', lang),
-      q.section ? h('p', { class: 'muted small', text: t('reader.card.from', { work: work.title, section: q.section }) }) : null);
-    const values = await modal({
-      title: t('reader.card.new'), body: form, wide: true,
-      actions: [
-        { label: t('action.cancel'), value: null },
-        { label: t('reader.card.create'), kind: 'primary', value: () => {
-          if (!title.value.trim() || !body.value.trim()) { toast(t('reader.card.empty'), 'error'); title.focus(); return undefined; }
-          return { kind: kind.value, title: title.value.trim(), topic: topic.value.trim(), text: body.value.trim(), lang: lang.value };
-        } },
-      ],
-    });
+    const values = await cardDialog({ text: q.text.slice(0, 3000), section: q.section || '', workTitle: work.title });
     if (!values) return;
     try {
       const clipPath = await ensureClip(false);
@@ -493,6 +471,29 @@ export function mountReader(host, opts) {
     } catch (e) {
       console.warn('Could not start the snippet', e);
       toast(t('reader.card.failed'), 'error', 5000);
+    }
+  }
+
+  // "Into page" (0.14.2): the passage goes as a quote with its source into the page you last had open, where you left the cursor.
+  const targetPage = () => { const tg = loadPref('library.target', null); return tg?.path ? nodeByPath(tg.path) : null; };
+  async function toPage() {
+    const page = targetPage();
+    const got = takeSelection();
+    if (!got || !page) return;
+    try {
+      const clipPath = await ensureClip(false);
+      const clipSlug = clipPath.slice(clipPath.lastIndexOf('/') + 1).replace(/\.md$/, '');
+      const next = await insertIntoPage(loadPref('library.target', null), {
+        quote: got.q.text.slice(0, 3000), section: got.q.section || '', work: { title: work.title, authors: work.authors || [], year: work.year }, url: workUrl(), clipSlug,
+      });
+      if (!next) { toast(t('library.toPage.gone'), 'error'); return; }
+      savePref('library.target', next);
+      toast(t('library.toPage.done', { title: nodeByPath(next.path)?.title || page.title }), 'ok');
+      drawSub();
+      if (state.marksTab === 'know') drawKnowList();
+    } catch (e) {
+      console.warn('Could not put the passage into the page', e);
+      toast(t('library.toPage.failed'), 'error', 5000);
     }
   }
 
@@ -556,7 +557,8 @@ export function mountReader(host, opts) {
     h('button', { type: 'button', class: 'btn small', onclick: () => addHighlight(true) }, iconEl('comment'), h('span', { text: t('reader.markNote') })),
     h('button', { type: 'button', class: 'btn small rd-sel-card', onclick: newCard }, iconEl('plus'), h('span', { text: t('reader.card') })),
     h('button', { type: 'button', class: 'btn small rd-sel-snippet', hidden: true, onclick: newSnippet }, iconEl('code'), h('span', { text: t('reader.snippet') })),
-    h('button', { type: 'button', class: 'btn small rd-sel-know', onclick: knowSelection }, iconEl('search'), h('span', { text: t('reader.know.sel') })));
+    h('button', { type: 'button', class: 'btn small rd-sel-know', onclick: knowSelection }, iconEl('search'), h('span', { text: t('reader.know.sel') })),
+    h('button', { type: 'button', class: 'btn small rd-sel-page', hidden: true, onclick: toPage }, iconEl('file'), h('span', { text: t('library.toPage') })));
   for (const b of selbar.querySelectorAll('button')) b.addEventListener('pointerdown', (e) => e.preventDefault());
   const onSelection = debounce(() => {
     if (!root.isConnected) { document.removeEventListener('selectionchange', onSelection); return; }
@@ -567,6 +569,10 @@ export function mountReader(host, opts) {
     const pre = q && sel?.anchorNode ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement)?.closest('pre') : null;
     state.code = pre && textEl.contains(pre) ? sel.toString() : '';
     selbar.querySelector('.rd-sel-snippet').hidden = !state.code.trim();
+    const page = q ? targetPage() : null;
+    const pb = selbar.querySelector('.rd-sel-page');
+    pb.hidden = !page;
+    if (page) pb.title = t('library.toPage.title', { title: page.title });
     selbar.hidden = !q;
   }, 120);
   document.addEventListener('selectionchange', onSelection);

@@ -13,6 +13,9 @@ import { CARD_TYPES, cardSections, shownElsewhere, topicChips } from './formular
 import { choiceBox, choiceState, decide, pickedNode } from './choice-box.js';
 import { markSpots } from '../services/choices.js';
 import { conflictActions } from './conflict-actions.js';
+import { loadLibrary } from '../services/library-store.js';
+import { workFromClip } from '../services/research-store.js';
+import { createFromWork } from './card-dialog.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 
@@ -20,9 +23,9 @@ const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(
 const TYPE_ICON = {
   snippet: 'code', recipe: 'list', topic: 'outline', formula: 'vars', convention: 'outline', definition: 'book', term: 'book', theorem: 'book',
   rule: 'warn', part: 'chip', device: 'chip', pin_map: 'board', tool: 'wand', note: 'edit', project: 'folder',
-  card: 'chalkboard', clip: 'globe', research: 'search',
+  card: 'chalkboard', clip: 'globe', research: 'search', library: 'book', page: 'file',
 };
-const TYPE_ACCENT = { formula: 'formulary', convention: 'formulary', definition: 'formulary', theorem: 'formulary', term: 'formulary', topic: 'formulary', snippet: 'cheatsheet', recipe: 'cheatsheet', part: 'parts', device: 'parts', rule: 'pins', pin_map: 'pins', card: 'workmode', clip: 'scraper', research: 'scraper' };
+const TYPE_ACCENT = { formula: 'formulary', convention: 'formulary', definition: 'formulary', theorem: 'formulary', term: 'formulary', topic: 'formulary', snippet: 'cheatsheet', recipe: 'cheatsheet', part: 'parts', device: 'parts', rule: 'pins', pin_map: 'pins', card: 'workmode', clip: 'scraper', research: 'scraper', library: 'scraper', page: 'scraper' };
 export const typeIcon = (type) => TYPE_ICON[type] || 'file';
 export const typeAccent = (type) => TYPE_ACCENT[type] || 'shell';
 export const typeLabel = (type) => (t(`type.${type}`) === `type.${type}` ? type : t(`type.${type}`));
@@ -205,8 +208,35 @@ export async function renderNode(main, path, ctx) {
 
   // A kept work reads in the research window (0.14.1): it opens the stored text, or fetches it.
   if (d.type === 'clip') {
+    const make = (kind) => async () => { const w = await workFromClip(path).catch(() => null); if (w) await createFromWork(kind, w, { go }); };
     box.append(h('div', { class: 'btn-row' },
-      h('button', { type: 'button', class: 'btn small primary clip-read', onclick: () => { savePref('research.read', path); go('#/m/scraper'); } }, iconEl('book'), h('span', { text: t('node.read') }))));
+      h('button', { type: 'button', class: 'btn small primary clip-read', onclick: () => { savePref('research.read', path); go('#/m/scraper'); } }, iconEl('book'), h('span', { text: t('node.read') })),
+      editable ? h('button', { type: 'button', class: 'btn small clip-card', onclick: make('card') }, iconEl('plus'), h('span', { text: t('reader.card') })) : null,
+      editable ? h('button', { type: 'button', class: 'btn small clip-term', onclick: make('term') }, iconEl('plus'), h('span', { text: t('reader.card.kind.term') })) : null,
+      editable ? h('button', { type: 'button', class: 'btn small clip-snippet', onclick: make('snippet') }, iconEl('code'), h('span', { text: t('reader.snippet') })) : null));
+  }
+
+  // Your libraries (0.14.2): a library shows its chapters, a page where it stands, with the pages before and after it.
+  const writeIn = (libPath, pagePath = '') => { savePref('library.open', { path: libPath, page: pagePath, at: Date.now() }); go('#/m/scraper'); };
+  let libInfo = null;
+  if ((d.type === 'library' || d.type === 'page') && !node.conflict) {
+    const libPath = d.type === 'library' ? path : allNodes().find((x) => x.type === 'library' && !x.conflict && x.slug === d.library)?.path;
+    if (libPath) {
+      libInfo = await loadLibrary(libPath).catch(() => null);
+      if (!isCurrent()) return;
+    }
+    if (libInfo) {
+      const flat = libInfo.chapters.flatMap((c, ci) => c.pages.map((sl) => ({ slug: sl, ci })));
+      const k = flat.findIndex((x) => x.slug === d.slug);
+      libInfo.prev = k > 0 ? flat[k - 1].slug : '';
+      libInfo.next = k >= 0 && k < flat.length - 1 ? flat[k + 1].slug : '';
+      if (d.type === 'page') {
+        const ch = k >= 0 ? libInfo.chapters[flat[k].ci] : null;
+        box.append(h('p', { class: 'lb-crumb small' }, h('a', { href: nodeHref(libPath), text: libInfo.title }), ch ? h('span', { class: 'muted', text: ` › ${flat[k].ci + 1}. ${ch.title}` }) : null));
+      }
+      if (editable) box.append(h('div', { class: 'btn-row' }, h('button', { type: 'button', class: 'btn small primary lb-write', onclick: () => writeIn(libPath, d.type === 'page' ? path : '') },
+        iconEl('edit'), h('span', { text: t(d.type === 'page' ? 'library.editPage' : 'library.write') }))));
+    }
   }
 
   const decideNow = async () => {
@@ -248,6 +278,16 @@ export async function renderNode(main, path, ctx) {
 
   // Formulary: symbols, follows from, leads to, conventions; for a topic the cards its text does not name
   box.append(...cardSections(node, d, lang));
+
+  if (libInfo && d.type === 'library') {
+    const pageLink = (sl) => { const p = nodeBySlug(sl); return p ? h('a', { href: nodeHref(p.path), text: nodeTitle(p, lang) }) : h('span', { class: 'muted', text: sl }); };
+    box.append(h('ol', { class: 'lb-contents' }, ...libInfo.chapters.map((c) => h('li', {}, h('strong', { text: c.title }),
+      c.pages.length ? h('ol', {}, ...c.pages.map((sl) => h('li', {}, pageLink(sl)))) : h('p', { class: 'muted small', text: t('library.chapter.empty') })))));
+  }
+  if (libInfo && d.type === 'page' && (libInfo.prev || libInfo.next)) {
+    const step = (sl, key, cls) => { const p = sl && nodeBySlug(sl); return p ? h('a', { class: `btn small ${cls}`, href: nodeHref(p.path) }, h('span', { text: `${t(key)}: ${nodeTitle(p, lang)}` })) : h('span'); };
+    box.append(h('nav', { class: 'lb-steps' }, step(libInfo.prev, 'library.prev', 'lb-prev'), step(libInfo.next, 'library.next', 'lb-next')));
+  }
 
   // Related nodes (without the ones listed above)
   const elsewhere = shownElsewhere(node, d);

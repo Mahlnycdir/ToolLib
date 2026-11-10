@@ -446,7 +446,7 @@ export function joinHunk({ a, b }, before) {
   return eol(a[0]);
 }
 
-function conflictName(path, device, stamp) {
+export function conflictName(path, device, stamp) {
   const slash = path.lastIndexOf('/');
   const name = path.slice(slash + 1);
   const dot = name.lastIndexOf('.');

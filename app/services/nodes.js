@@ -202,6 +202,8 @@ export function summary(node) {
     arxiv: m.arxiv ? String(m.arxiv).toLowerCase() : '',
     url: m.url ? String(m.url) : '',
     clips: m.type === 'research' ? asList(m.clips) : [],
+    // your libraries (0.14.2): a page names its library
+    library: m.type === 'page' && m.library ? String(m.library) : '',
     question: m.question ? String(m.question) : '',
     source: m.source ? String(m.source) : '',
     // where a card comes from (0.14.1): the links of its sources, so a work finds the cards made from it

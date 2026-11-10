@@ -11,11 +11,14 @@ import {
   clipFor, clipsIn, createFolder, deleteFolder, folderNotes, folders, foldersWith, keepWork, removeFromFolder, saveFolderNotes,
   updateClipVersions, workFromClip,
 } from '../services/research-store.js';
-import { nodeByPath, onIndexChange } from '../services/search.js';
+import { indexState, nodeByPath, onIndexChange } from '../services/search.js';
 import { nodeHref } from './node-view.js';
 import { renderMarkdown } from './markdown.js';
 import { planFor } from '../services/reader.js';
 import { mountReader } from './reader-view.js';
+import { createLibrary, libraries, pagesOf } from '../services/library-store.js';
+import { mountLibrary } from './library-view.js';
+import { createFromWork } from './card-dialog.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const solo = () => new URLSearchParams(location.search).has('solo');
@@ -38,6 +41,8 @@ const st = {
   sort: loadPref('research.sort', 'relevance'),
   versions: new Map(),   // key -> 'busy' | { added, failed }
   read: null,            // { work, version }: the reader is open
+  lib: null,             // { path, page, at }: your library is open (0.14.2), kept in library.open
+  libSeen: 0,
 };
 let view = null;         // the mounted view: { root, draw* }
 
@@ -79,7 +84,8 @@ export function renderResearch(main) {
   const mid = h('section', { class: 'rs-results', 'aria-label': t('research.results') });
   const right = h('section', { class: 'rs-detail', 'aria-label': t('research.details') });
   const readerHost = h('div', { class: 'rs-reader' });
-  root.append(tabs, left, mid, right, readerHost);
+  const libHost = h('div', { class: 'rs-library' });
+  root.append(tabs, left, mid, right, readerHost, libHost);
   main.append(root);
 
   // search bar
@@ -110,7 +116,7 @@ export function renderResearch(main) {
     reading?.destroy();
     reading = null;
     readerHost.replaceChildren();
-    root.dataset.mode = st.read ? 'read' : '';
+    applyMode();
     if (!st.read) return;
     const { work, version } = st.read;
     reading = mountReader(readerHost, {
@@ -130,6 +136,41 @@ export function renderResearch(main) {
   function openReader(work, version = null) {
     st.read = { work, version };
     showReader();
+  }
+
+  // ---------------------------------------------------------------- your library (0.14.2)
+  let library = null;
+  function applyMode() {
+    root.dataset.mode = st.read ? 'read' : st.lib ? 'lib' : '';
+    const want = st.lib && !st.read ? st.lib.path : '';
+    if (library && library.key !== want) { library.destroy(); library = null; libHost.replaceChildren(); }
+    if (want && !library) {
+      library = mountLibrary(libHost, {
+        path: st.lib.path, page: st.lib.page || '',
+        onBack: () => closeLibrary(),
+        onRead: async (clipPath) => {
+          const work = await workFromClip(clipPath).catch(() => null);
+          if (!work) return;
+          st.lib = { ...st.lib, ...(loadPref('library.open', null) || {}) };
+          st.kept = work; st.selected = null;
+          openReader(work);
+        },
+      });
+      library.key = want;
+    }
+  }
+  function openLibrary(path, page = '') {
+    st.lib = { path, page };
+    savePref('library.open', st.lib);
+    st.read = null;
+    showReader();
+    if (narrow()) setPane('results');
+  }
+  function closeLibrary() {
+    st.lib = null;
+    savePref('library.open', null);
+    applyMode();
+    view.drawAll();
   }
   // A clip node hands over its path ("Read" there): open the reader on it here.
   async function readQueued() {
@@ -173,9 +214,27 @@ export function renderResearch(main) {
       });
       items.append(h('li', {}, b));
     }
+    const libs = libraries();
+    const addLib = h('button', { type: 'button', class: 'icon-btn rs-lib-new', title: t('library.new'), 'aria-label': t('library.new'), html: icon('plus') });
+    addLib.addEventListener('click', async () => {
+      const title = await promptDialog(t('library.new'), { label: t('library.name'), placeholder: t('library.placeholder'), okLabel: t('research.folder.create'), validate: (v) => (v.trim() ? '' : t('library.needTitle')) });
+      if (!title || !title.trim()) return;
+      try {
+        const path = await createLibrary({ title, lang: getLang(), firstChapter: t('library.chapter.default', { n: 1 }) });
+        toast(t('library.created', { title: title.trim() }), 'ok');
+        openLibrary(path);
+      } catch (e) {
+        console.warn('Could not create the library', e);
+        toast(t('library.saveFailed'), 'error', 5000);
+      }
+    });
+    const libList = h('ul', { class: 'rs-folder-list rs-lib-list' }, ...libs.map((l) => h('li', {}, h('button', { type: 'button', class: 'rs-folder rs-lib', onclick: () => openLibrary(l.path) },
+      iconEl('book'), h('span', { class: 'rs-folder-name', text: l.title }), h('span', { class: 'rs-count', text: String(pagesOf(l.slug).length) })))));
     left.replaceChildren(
       h('div', { class: 'rs-head' }, h('h2', { text: t('research.folders') }), add),
       all.length ? items : h('p', { class: 'muted small', text: t('research.folder.none') }),
+      h('div', { class: 'rs-head rs-lib-head' }, h('h2', { text: t('library.libraries') }), addLib),
+      libs.length ? libList : h('p', { class: 'muted small', text: t('library.none') }),
       h('div', { class: 'rs-left-foot' },
         !solo() && !isIos() && !narrow() ? h('button', { type: 'button', class: 'btn small', onclick: openWindow }, iconEl('window'), h('span', { text: t('research.ownWindow') })) : null,
         h('a', { class: 'small', href: '#/settings/research', text: t('research.settings') })));
@@ -406,6 +465,15 @@ export function renderResearch(main) {
     cite.addEventListener('click', async () => { await copyText(citation(w)); toast(t('research.citeCopied'), 'ok'); });
     row.append(cite);
     box.append(row);
+    // a card, a term or a snippet from the whole work (0.14.2); the work is kept first
+    const make = (kind) => async () => {
+      const r = await createFromWork(kind, w, { folderPath: st.folder, query: st.result?.query.text || st.query || '' });
+      if (r && kind !== 'snippet') view.drawAll();
+    };
+    box.append(h('div', { class: 'btn-row rs-make' }, h('span', { class: 'small muted', text: t('library.make') }),
+      h('button', { type: 'button', class: 'btn small rs-make-card', onclick: make('card') }, iconEl('plus'), h('span', { text: t('reader.card') })),
+      h('button', { type: 'button', class: 'btn small rs-make-term', onclick: make('term') }, iconEl('plus'), h('span', { text: t('reader.card.kind.term') })),
+      h('button', { type: 'button', class: 'btn small rs-make-snippet', onclick: make('snippet') }, iconEl('code'), h('span', { text: t('reader.snippet') }))));
 
     if (w.abstract) {
       box.append(h('h3', { text: t('research.abstract') }));
@@ -519,7 +587,11 @@ export function renderResearch(main) {
   }
 
   view.drawAll();
-  if (st.read) showReader();
+  // a library opened from its node ("Write"): it comes to the front, also over the reader
+  const open = loadPref('library.open', null);
+  st.lib = open?.path && (!indexState().ready || nodeByPath(open.path)) ? open : null;
+  if (st.lib && (open.at || 0) > st.libSeen) { st.libSeen = open.at || 0; if (open.at) st.read = null; }
+  if (st.read) showReader(); else applyMode();
   readQueued();
   if (st.queued) { st.queued = false; run(st.query); } else if (!st.result && st.query) input.focus();
   return view;

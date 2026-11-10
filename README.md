@@ -2,7 +2,7 @@
 
 Persönliche Arbeitsoberfläche für Mac, iPhone und Linux: eine Web-App (PWA) auf GitHub Pages, dazu später ein Hub zu Hause. Das Wissen liegt getrennt im privaten Repository `knowledge`.
 
-Stand: Version 0.14.1.2 (aus dem Leser schnell Karten und Snippets anlegen, „Dein Wissen“ neben dem Text, Zitate wie [12] antippen; Zurück findet die Stelle auch nach einem Neustart der App; seit 0.14.1.1 läuft Sync von selbst), das Fenster Recherche hat einen Leser (Seiten, PDFs und arXiv-Quelltext lesen, markieren, Notizen) und sucht Paper mit freien Fassungen; Stufe 3 (Formelsammlung) läuft, Welle 2 (mathematische Methoden) ist drin; Stufe 2 (Python-Spickzettel als volles Modul) ist fertig. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte. Seit 0.8.0 laufen Snippets direkt in der App: Python mit numpy, scipy, matplotlib und sympy läuft im Browser, von Toollibs eigener Adresse. Seit 0.9.0 legst du eigene Snippets an und änderst Code und Check bestehender Knoten. Seit 0.10.0 gibt es die Gruppen Datenstrukturen, Fehlersuche, Threads & Prozesse und Git. Seit 0.11.0 ist Kobra Teil von Toollib, mit den Bausteinen aus dem Spickzettel. Seit 0.12.0 sind Formeln gesetzt (KaTeX) und es gibt die Formelsammlung: verknüpfte Karten nach Bereich und Thema. Seit 0.13.0 legst du offene Konventionen selbst fest. Seit 0.14.0 sucht das Fenster Recherche Paper und Bücher in sieben offenen Quellen und merkt sie in Recherche-Mappen.
+Stand: Version 0.14.2 (eigene Bibliotheken mit Kapiteln und Seiten schreiben, mit Stellen aus deinen Funden; seit 0.14.1.2 aus dem Leser schnell Karten und Snippets anlegen, „Dein Wissen“ neben dem Text, Zitate wie [12] antippen; Zurück findet die Stelle auch nach einem Neustart der App; seit 0.14.1.1 läuft Sync von selbst), das Fenster Recherche hat einen Leser (Seiten, PDFs und arXiv-Quelltext lesen, markieren, Notizen) und sucht Paper mit freien Fassungen; Stufe 3 (Formelsammlung) läuft, Welle 2 (mathematische Methoden) ist drin; Stufe 2 (Python-Spickzettel als volles Modul) ist fertig. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte. Seit 0.8.0 laufen Snippets direkt in der App: Python mit numpy, scipy, matplotlib und sympy läuft im Browser, von Toollibs eigener Adresse. Seit 0.9.0 legst du eigene Snippets an und änderst Code und Check bestehender Knoten. Seit 0.10.0 gibt es die Gruppen Datenstrukturen, Fehlersuche, Threads & Prozesse und Git. Seit 0.11.0 ist Kobra Teil von Toollib, mit den Bausteinen aus dem Spickzettel. Seit 0.12.0 sind Formeln gesetzt (KaTeX) und es gibt die Formelsammlung: verknüpfte Karten nach Bereich und Thema. Seit 0.13.0 legst du offene Konventionen selbst fest. Seit 0.14.0 sucht das Fenster Recherche Paper und Bücher in sieben offenen Quellen und merkt sie in Recherche-Mappen.
 
 ## Aufbau
 
@@ -32,6 +32,7 @@ toollib/                 dieses Repository, öffentlich
                          als Knoten), channel.js (Fenster sagen einander, welche Knoten sich geändert haben),
                          reader.js (Leser: Plan, Holen, Gliederung, Text und Markierungen im Fund-Knoten),
                          reader-cards.js (Leser: Karte aus der Auswahl, passendes Wissen, Zitate [12]),
+                         library-store.js (eigene Bibliotheken: Kapitel, Seiten, Zitate mit Quelle, Zusammenführen),
                          reader-latex.js (arXiv-Quelltext → Markdown, ohne DOM), reader-html.js (Webseiten),
                          reader-pdf.js (PDF-Text mit pdf.js)
     shell/               shell.js (Befehlszeile, Modulleiste, Statuszeile), views.js, modules.js, styles.css,
@@ -42,7 +43,9 @@ toollib/                 dieses Repository, öffentlich
                          formulary.js (Formelsammlung: Bereiche, Themen, Folgt aus / Führt zu, Symbole),
                          choice-box.js (offene Konventionen festlegen; Logik in services/choices.js),
                          research-view.js (Fenster Recherche: Mappen, Treffer, Fassungen und Notizen),
-                         reader-view.js (der Leser: Gliederung, Text, Markierungen, Dein Wissen), reader-marks.js (Markierungen im Text finden)
+                         reader-view.js (der Leser: Gliederung, Text, Markierungen, Dein Wissen), reader-marks.js (Markierungen im Text finden),
+                         library-view.js (eigene Bibliothek: Inhalt, Seite, Übernehmen), page-editor.js (Markdown mit Vorschau),
+                         card-dialog.js (Kartenfenster für Auswahl und ganze Werke)
   fetch-proxy/           der Holer für die Recherche: Cloudflare Worker (worker.js) und Anleitung (README.md)
   tools/                 Hilfsprogramme: import-snippets, build-vendor, fetch-pyodide
 ```
@@ -146,7 +149,8 @@ Das Fenster Recherche (Modulleiste, Befehlszeile oder „Paper suchen“ in der 
 - Merken legt einen Knoten `clips/<name>.md` an (`type: clip`, `source: scraper`, ungeprüft) mit allen Fassungen, der Zusammenfassung und, wenn du willst, „Hilft bei“ in deinen Worten. Eine Recherche-Mappe `research/<name>.md` (`type: research`, `source: you`) hält deine Frage, deine Notizen und die Liste ihrer Funde. Beides ist nach Sync offline durchsuchbar.
 - Auf dem iPhone sind die drei Bereiche Reiter; auf Mac und Linux öffnet „Eigenes Fenster“ die Recherche allein (`index.html?solo=1`).
 - Einstellungen › Recherche: der Holer (`fetch-proxy/`, für arXiv und DOAB, die Browser nicht direkt lesen dürfen), der kostenlose OpenAlex-Schlüssel (ohne ihn teilt OpenAlex ein kleines Tagesbudget mit allen in deinem Netz), wahlweise ein Semantic-Scholar-Schlüssel, die Quellen an und aus, „Verbindung testen“.
-- Später: „Passt zu deinem Wissen“ und verlinkte Zitate (zweiter Teil von 0.14.1), Schreiben in eigene Bibliotheken (0.14.2), Websites durchgehen (0.14.3), Mac-Helfer mit PDF-Ordner und SearXNG (0.14.4).
+- Aus einem ganzen Werk (0.14.2): in den Details eines Treffers und im Fund-Knoten „Karte“, „Begriff“ oder „Snippet“; das Werk wird dabei gemerkt, der neue Knoten nennt es als Quelle und verlinkt den Fund.
+- Später: Websites durchgehen (0.14.3), Mac-Helfer mit PDF-Ordner und SearXNG (0.14.4).
 
 ## Leser
 
@@ -161,7 +165,20 @@ Das Fenster Recherche (Modulleiste, Befehlszeile oder „Paper suchen“ in der 
 - Snippet aus Code: Code im Text auswählen, „Snippet“ öffnet das Formular für ein eigenes Snippet mit dem Code und dem Werk als Herkunft.
 - Dein Wissen (rechts, neben „Markierungen“; auf dem iPhone im dritten Reiter): oben die Karten und Snippets, die du aus diesem Werk angelegt hast, darunter was zum Abschnitt passt, den du gerade liest (er wechselt beim Scrollen). Das Suchfeld sucht in deinem Wissen; „Im Wissen“ in der Auswahl-Leiste sucht nach den ausgewählten Wörtern.
 - Zitate: Nummern wie [12] oder [2, 3] im Text sind Links, wenn sie in der Literaturliste stehen. Ein Tipp öffnet ein kleines Fenster mit dem Eintrag und fragt, was du willst: „In der Recherche suchen“ (nach DOI, arXiv-Nummer oder Titel, der Leser schließt sich), „Zur Literaturliste“, oder, wenn du das Werk schon gemerkt hast, „In deinem Wissen öffnen“.
+- In Seite (0.14.2): Wörter auswählen, „In Seite“. Die Stelle kommt als Zitat mit Quelle in die Seite deiner Bibliothek, die du zuletzt offen hattest, dorthin, wo der Cursor stand; die nächste Stelle kommt dahinter.
 - Grenzen: Abbildungen und TikZ kommen nur als Beschriftung, Tabellen als einfache Tabellen; ein Makro, das Toollib nicht kennt, bleibt im Text stehen.
+
+## Eigene Bibliotheken
+
+Im Fenster Recherche stehen links unter den Mappen deine Bibliotheken; „+“ legt eine neue an. Eine Bibliothek ist dein eigenes Buch: Kapitel mit Seiten, die du selbst schreibst. Sie öffnet sich im ganzen Fenster: links der Inhalt, in der Mitte die Seite, rechts was du übernimmst. Auf dem iPhone sind das drei Reiter (Inhalt, Seite, Übernehmen).
+
+- Schreiben: Markdown links, rechts gesetzt wie in der Knoten-Ansicht (Formeln mit KaTeX); „Beides“, „Schreiben“ oder „Vorschau“, auf dem iPhone die letzten zwei. Die Leiste setzt Überschrift (nochmal tippen: kleiner, dann keine), fett, kursiv, Formel im Satz, abgesetzte Formel, Liste, nummerierte Liste, Zitat, Code und `[[Link]]`. Nach `[[` schlägt Toollib Knoten aus deinem Wissen vor (Pfeiltasten, Enter). Strg/Cmd+B und I; Strg/Cmd+S speichert sofort. Gespeichert wird von selbst, kurz nachdem du aufhörst zu tippen, beim Verlassen und wenn die App in den Hintergrund geht. Auf dem iPhone treten Leiste und Kopf der Seite beim Tippen zur Seite.
+- Titel und „Hilft bei“ (mehrere mit `;`) stehen über dem Text; die Suche findet die Seite danach wie jeden Knoten.
+- Übernehmen, rechts: deine Markierungen aus allen Funden (die Werke, die die Seite schon zitiert, zuerst; „Lesen“ öffnet das Werk im Leser), dein Wissen (Suche; „Link“ setzt `[[name]]`, „Formel“ die erste Formel einer Karte mit Link) und die Quellen der Seite (eigene hinzufügen, etwa ein Buch mit Seite).
+- Eine übernommene Stelle steht als Zitat mit Quelle darunter: `> Text`, `>`, `> — [[fund|Autor Jahr, Titel]], § Abschnitt`. Das Werk kommt in `sources` der Seite (Abschnitte gesammelt in `at`), der Fund in `links`; im Leser steht die Seite dann unter „Dein Wissen“.
+- Kapitel und Seiten: „+“ am Kapitel legt eine Seite an, „…“ benennt um, verschiebt nach oben oder unten, in ein anderes Kapitel oder löscht. Abschnitte innerhalb einer Seite sind Überschriften.
+- In der Knoten-Ansicht zeigt eine Bibliothek ihren Inhalt, eine Seite ihre Bibliothek und ihr Kapitel, „Davor“ und „Weiter“ und „Seite bearbeiten“. Nach einem Neustart der App öffnet sich die Bibliothek wieder auf derselben Seite.
+- Dateien: `libraries/<bibliothek>/<bibliothek>.md` (`type: library`, Reihenfolge der Kapitel und Seiten in `chapters`, eine Zeile pro Kapitel) und `libraries/<bibliothek>/<seite>.md` (`type: page`, `library`, `lang`, `problems`, `sources`, `links`, darunter dein Text ohne Sprachblöcke). Wurde die Seite gleichzeitig anderswo geändert (Leser in einem zweiten Fenster, Sync), verbindet Toollib beides Zeile für Zeile; an denselben Zeilen bleibt dein Text, der andere liegt als Konfliktkopie daneben.
 
 ## Lokal ansehen
 
