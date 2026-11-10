@@ -2,6 +2,7 @@
 // (research-merge.js) and reports after every answer, so the first hits show while arXiv still thinks.
 // Answers come directly where the browser may read them, otherwise through your fetcher (fetch-proxy/worker.js).
 // Settings live on this device: research.worker, research.token, research.openalexKey, research.s2Key, research.off.
+// fetchPage() (0.14.1) brings pages, PDFs and arXiv sources to the reader the same way.
 import { loadPref, savePref } from './prefs.js';
 import { SOURCES, sourceById } from './research-sources.js';
 import { absorb, mergeRecords, parseQuery } from './research-merge.js';
@@ -124,6 +125,83 @@ export async function getFor(src, req, { settings = researchSettings(), signal, 
     data = await readAnswer(res, req, true, src);
     cache.set(req.url, { time: Date.now(), data });
     return data;
+  } finally {
+    t.done();
+  }
+}
+
+// ------------------------------------------------------------------ pages and files for the reader
+const PAGE_TIMEOUT_MS = 120 * 1000;
+const hostGap = (host) => (/(^|\.)arxiv\.org$/.test(host) ? 3100 : 400);
+
+// A page, a PDF or an arXiv source: { bytes, finalUrl, contentType }. Through your fetcher; without one only sites that
+// allow it (CORS) answer. onProgress(received, total) while the body comes in.
+export async function fetchPage(url, { signal, settings = researchSettings(), onProgress } = {}) {
+  let host = '';
+  try {
+    const u = new URL(url);
+    if (!/^https?:$/.test(u.protocol)) throw new Error('scheme');
+    host = u.hostname;
+  } catch { throw new ResearchError('bad-url'); }
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new ResearchError('offline');
+  await wait({ id: `host:${host}`, gap: hostGap(host) }, signal);
+  const t = timed(signal, PAGE_TIMEOUT_MS);
+  try {
+    let res;
+    let viaWorker = false;
+    if (hasWorker(settings)) {
+      viaWorker = true;
+      try {
+        res = await fetch(`${settings.worker}/fetch?url=${encodeURIComponent(url)}`, { headers: { Accept: '*/*', 'X-Toollib-Token': settings.token }, signal: t.signal, credentials: 'omit', cache: 'no-store' });
+      } catch {
+        if (t.signal.aborted) throw t.signal.reason instanceof ResearchError ? t.signal.reason : new ResearchError('aborted');
+        throw new ResearchError('worker', { detail: 'unreachable' });
+      }
+    } else {
+      try {
+        res = await fetch(url, { headers: { Accept: '*/*' }, signal: t.signal, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
+      } catch {
+        if (t.signal.aborted) throw t.signal.reason instanceof ResearchError ? t.signal.reason : new ResearchError('aborted');
+        throw new ResearchError('no-worker');
+      }
+    }
+    if (viaWorker && !res.headers.get('X-Final-URL')) {
+      let err = '';
+      try { err = (await res.json()).error || ''; } catch { /* no details */ }
+      if (res.status === 401) throw new ResearchError('worker-token');
+      if (err === 'origin-not-allowed') throw new ResearchError('worker-origin');
+      if (res.status === 413) throw new ResearchError('too-large', { status: 413 });
+      if (res.status === 403) throw new ResearchError('blocked', { status: 403, detail: err });
+      throw new ResearchError('worker', { status: res.status, detail: err });
+    }
+    if (res.status === 404 || res.status === 410) throw new ResearchError('not-found', { status: res.status });
+    if (res.status === 429) throw new ResearchError('rate', { status: 429 });
+    if (res.status === 401 || res.status === 402 || res.status === 403) throw new ResearchError('blocked', { status: res.status });
+    if (!res.ok) throw new ResearchError('http', { status: res.status });
+    const total = Number(res.headers.get('content-length')) || 0;
+    let bytes;
+    if (res.body && onProgress) {
+      const reader = res.body.getReader();
+      const chunks = [];
+      let got = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        got += value.length;
+        onProgress(got, total);
+      }
+      bytes = new Uint8Array(got);
+      let at = 0;
+      for (const c of chunks) { bytes.set(c, at); at += c.length; }
+    } else {
+      bytes = new Uint8Array(await res.arrayBuffer());
+    }
+    return { bytes, finalUrl: res.headers.get('X-Final-URL') || res.url || url, contentType: (res.headers.get('content-type') || '').toLowerCase() };
+  } catch (e) {
+    if (t.signal.aborted && !(e instanceof ResearchError)) throw t.signal.reason instanceof ResearchError ? t.signal.reason : new ResearchError('aborted');
+    if (e instanceof ResearchError) throw e;
+    throw new ResearchError('network');
   } finally {
     t.done();
   }

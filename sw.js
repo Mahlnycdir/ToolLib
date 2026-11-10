@@ -1,12 +1,16 @@
 // Service worker: keeps the whole app in a cache so Toollib starts without a network, keeps Python in a cache of
 // its own and carries input() from the Python worker to the page (the synchronous channel, from Kobra's sw.js).
 // Raise VERSION with every release; the shell then offers "Reload" for the update.
-const VERSION = '0.14.0.1';
+const VERSION = '0.14.1';
 const CACHE = `toollib-${VERSION}`;
 // Python (vendor/pyodide) is big and changes only with a new Pyodide version, so its cache survives app updates.
 // Keep PYODIDE equal to "pyodide" in vendor/pyodide/toollib-bundle.json.
 const PYODIDE = '314.0.7';
 const PY_CACHE = `toollib-python-${PYODIDE}`;
+// pdf.js (vendor/pdfjs, 1.8 MB, the reader reads PDFs with it) likewise has a cache of its own that survives app updates.
+// Keep PDFJS equal to "pdfjs-dist" in tools/build-vendor/package.json.
+const PDFJS = '6.4.299';
+const PDF_CACHE = `toollib-pdfjs-${PDFJS}`;
 
 const FILES = [
   './',
@@ -49,6 +53,14 @@ const FILES = [
   './app/services/research-merge.js',
   './app/services/research-store.js',
   './app/shell/research-view.js',
+  // reader (0.14.1)
+  './app/services/reader.js',
+  './app/services/reader-latex.js',
+  './app/services/reader-html.js',
+  './app/services/reader-pdf.js',
+  './app/shell/reader-marks.js',
+  './app/shell/reader-view.js',
+  './vendor/reader.js',
   './app/shell/styles.css',
   './vendor/git.js',
   './vendor/search.js',
@@ -102,7 +114,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     // Only Toollib's own old caches are removed; Kobra's caches on the same domain stay untouched.
     for (const key of await caches.keys()) {
-      if (key.startsWith('toollib-') && key !== CACHE && key !== PY_CACHE) await caches.delete(key);
+      if (key.startsWith('toollib-') && key !== CACHE && key !== PY_CACHE && key !== PDF_CACHE) await caches.delete(key);
     }
     await self.clients.claim();
   })());
@@ -199,10 +211,11 @@ self.addEventListener('fetch', (event) => {
   }
   if (req.method !== 'GET') return;
 
-  // Python: from its cache, otherwise from the server, and then into the cache.
-  if (url.pathname.startsWith(`${scope}vendor/pyodide/`)) {
+  // Python and pdf.js: from their own cache, otherwise from the server, and then into the cache.
+  const big = url.pathname.startsWith(`${scope}vendor/pyodide/`) ? PY_CACHE : url.pathname.startsWith(`${scope}vendor/pdfjs/`) ? PDF_CACHE : null;
+  if (big) {
     event.respondWith((async () => {
-      const cache = await caches.open(PY_CACHE);
+      const cache = await caches.open(big);
       const hit = await cache.match(req, { ignoreSearch: true });
       if (hit) return hit;
       const res = await fetch(req);

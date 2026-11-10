@@ -151,7 +151,8 @@ export function linksOf(node) {
 
 // Plain text of all languages for the search: prose, code and formulas.
 export function searchText(node) {
-  return node.body
+  // a kept full text can be long: the index takes the start (the abstract and the first pages)
+  return (node.type === 'clip' && node.body.length > 200000 ? node.body.slice(0, 200000) : node.body)
     .replace(/^:::.*$/gm, ' ')
     .replace(/^(```|~~~).*$/gm, ' ')
     .replace(/[#*_`>|$\\{}[\]()]/g, ' ')

@@ -201,6 +201,12 @@ export async function renderNode(main, path, ctx) {
     }
   }
 
+  // A kept work reads in the research window (0.14.1): it opens the stored text, or fetches it.
+  if (d.type === 'clip') {
+    box.append(h('div', { class: 'btn-row' },
+      h('button', { type: 'button', class: 'btn small primary clip-read', onclick: () => { savePref('research.read', path); go('#/m/scraper'); } }, iconEl('book'), h('span', { text: t('node.read') }))));
+  }
+
   const decideNow = async () => {
     if (!(await decide(node, d, lang))) return false;
     await redraw();

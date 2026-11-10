@@ -1,5 +1,6 @@
 // Research (0.14.0): what you keep goes into your knowledge as nodes, so it is searchable offline on every device.
-//   clips/<name>.md     type: clip, one work with all its versions (source: scraper, unchecked)
+//   clips/<name>.md     type: clip, one work with all its versions (source: scraper, unchecked); since 0.14.1 also the
+//                       text you read (## Text, ## References) and your highlights (## Highlights), see reader.js
 //   research/<name>.md  type: research, your research folder: title, question, the clips, your notes (source: you)
 // The folder lists its clips (clips: [..]); a clip can sit in several folders.
 import { KNOWLEDGE, exists } from './storage.js';
@@ -8,6 +9,7 @@ import { allNodes, nodeByPath, nodeBySlug, refreshNode } from './search.js';
 import { noteChange } from './sync.js';
 import { announce } from './channel.js';
 import { normArxiv, normDoi, orderVersions } from './research-merge.js';
+import { composeBody, parseBody } from './reader.js';
 
 const q = (v) => JSON.stringify(String(v));
 const today = () => new Date().toISOString().slice(0, 10);
@@ -173,6 +175,7 @@ export async function workFromClip(path) {
     type: m.kind === 'book' || m.kind === 'chapter' || m.kind === 'thesis' ? String(m.kind) : 'article',
     abstract: node.body.trim(), cited: 0, ids, versions: orderVersions(versions), free: versions.some((v) => v.free),
     sources: asList(m.found_in), ranks: {}, clip: { path, slug: node.slug, fetched: String(m.fetched || ''), verified: m.verified === true },
+    text: m.text_via ? { via: String(m.text_via), url: String(m.text_url || ''), fetched: String(m.text_fetched || '') } : null,
   };
 }
 
@@ -185,6 +188,51 @@ export async function updateClipVersions(path, work) {
   let next = setField(text, 'versions', block(versions), ['url', 'doi', 'title']).replace(/^versions: \n/m, 'versions:\n');
   next = setField(next, 'sources', block(versions.map((v) => ({ title: versionTitle(v), url: v.pdf && v.free ? v.pdf : v.url }))), ['versions']).replace(/^sources: \n/m, 'sources:\n');
   next = setField(next, 'url', q((versions.find((v) => v.free) || versions[0]).url), ['arxiv', 'doi', 'title']);
+  if (next === text) return false;
+  await writeNode(path, next);
+  await written([path], 'edited');
+  return true;
+}
+
+// ------------------------------------------------------------------ the text of a clip, your highlights (0.14.1)
+const FRONT = /^(\uFEFF?---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$))/;
+
+export async function loadClipDoc(path) {
+  const node = parseNode(await readNodeText(path), path);
+  const b = parseBody(node.body);
+  const m = node.meta;
+  return {
+    meta: m, lead: b.lead, markdown: b.text, references: b.references, highlights: b.highlights,
+    via: m.text_via ? String(m.text_via) : '', url: m.text_url ? String(m.text_url) : '', fetched: m.text_fetched ? String(m.text_fetched) : '',
+  };
+}
+
+// Keeps what the reader read in the clip: ## Text and ## References, where it came from. The abstract only if the clip has none.
+export async function saveClipDoc(path, doc) {
+  const text = await readNodeText(path);
+  const m = text.match(FRONT);
+  if (!m) throw new Error('A clip needs its front matter');
+  let head = m[1];
+  const parts = parseBody(text.slice(m[1].length)).parts;
+  const change = { text: doc.markdown, references: doc.references || [] };
+  if (!parts[0].lines.join('').trim() && doc.abstract) change.lead = doc.abstract;
+  const after = ['fetched', 'found_in', 'found_with', 'source'];
+  head = setField(head, 'text_via', q(doc.via), after);
+  head = setField(head, 'text_url', q(doc.finalUrl || doc.url || ''), ['text_via']);
+  head = setField(head, 'text_fetched', q(doc.fetched || today()), ['text_url']);
+  const next = `${head}\n${composeBody(parts, change)}`;
+  if (next === text) return false;
+  await writeNode(path, next);
+  await written([path], 'edited');
+  return true;
+}
+
+export async function saveHighlights(path, highlights) {
+  const text = await readNodeText(path);
+  const m = text.match(FRONT);
+  if (!m) return false;
+  const parts = parseBody(text.slice(m[1].length)).parts;
+  const next = `${m[1]}\n${composeBody(parts, { highlights })}`;
   if (next === text) return false;
   await writeNode(path, next);
   await written([path], 'edited');

@@ -716,6 +716,79 @@ table.symbols td:first-child { white-space: nowrap; }
 .rs-head .icon-btn { width: 36px; height: 36px; border: 1px solid var(--border); }
 @media (pointer: coarse) { .field.small { font-size: 16px; } }
 
+/* ------------------------------------------------------------------ reader (0.14.1) */
+.rs-reader { display: none; }
+.rs[data-mode="read"] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); grid-template-areas: "reader"; }
+.rs[data-mode="read"][data-mode="read"] > :not(.rs-reader) { display: none; }
+.rs[data-mode="read"] .rs-reader { display: block; grid-area: reader; min-height: 0; min-width: 0; }
+.rd { height: 100%; position: relative; display: grid; grid-template-rows: auto auto auto auto minmax(0, 1fr); background: var(--bg); }
+.rd-bar { display: flex; align-items: center; gap: 8px; padding: max(8px, env(safe-area-inset-top)) 12px 8px; border-bottom: 1px solid var(--border); background: var(--panel); min-width: 0; }
+.rd-title { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; }
+.rd-title span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-saved { display: inline-flex; align-items: center; gap: 5px; color: var(--ok); white-space: nowrap; }
+.rd-bar a.btn { text-decoration: none; color: inherit; }
+.rd-size { font-weight: 600; }
+.rd-tabs { display: none; margin: 8px 12px 0; }
+.rd-tabs button { flex: 1; }
+.rd-notices { display: flex; flex-direction: column; gap: 4px; padding: 0 16px; }
+.rd-notices:not(:empty) { padding-top: 8px; }
+.rd-status:not(:empty) { padding: 12px 16px 0; }
+.rd-busy { display: flex; align-items: center; gap: 10px; color: var(--muted); }
+.rd-error { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--warn) 40%, white); border-radius: 12px; background: color-mix(in srgb, var(--warn) 7%, white); max-width: 46em; }
+.rd-error .icon { color: var(--warn); margin-top: 2px; }
+.rd-error p { margin: 0 0 10px; }
+.rd-body { min-height: 0; display: grid; grid-template-columns: 240px minmax(0, 1fr) 320px; }
+.rd-outline, .rd-text, .rd-marks { min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.rd-outline { padding: 14px 8px 32px; border-right: 1px solid var(--border); background: var(--panel); }
+.rd-marks { padding: 14px 12px 32px; border-left: 1px solid var(--border); background: var(--panel); }
+.rd-text { padding: 20px 24px 64px; }
+.rd-inner { max-width: 46em; margin: 0 auto; font-size: 17px; line-height: 1.6; overflow-wrap: anywhere; }
+.rd[data-size="s"] .rd-inner { font-size: 15px; }
+.rd[data-size="l"] .rd-inner { font-size: 20px; }
+.rd-inner h3 { font-size: 1.3em; margin: 1.6em 0 0.5em; line-height: 1.25; }
+.rd-inner h4 { font-size: 1.1em; margin: 1.3em 0 0.4em; }
+.rd-inner .katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+.rd-inner img { max-width: 100%; height: auto; }
+.rd-inner table { display: block; overflow-x: auto; max-width: 100%; }
+.rd-inner blockquote { margin: 1em 0; padding: 2px 14px; border-left: 3px solid var(--border); color: color-mix(in srgb, var(--fg) 88%, white); }
+.rd-refs { margin-top: 2.5em; border-top: 1px solid var(--border); font-size: 0.9em; }
+.rd-refs p { margin: 0.5em 0; }
+.rd-outline-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.rd-o { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 6px 8px; border-radius: 8px; cursor: pointer; line-height: 1.3; font-size: 14px; overflow-wrap: anywhere; }
+.rd-o:hover { background: var(--panel-2); }
+.rd-o.on { background: color-mix(in srgb, var(--accent) 12%, white); font-weight: 600; }
+.rd-o2 { padding-left: 20px; }
+.rd-mark-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.rd-mark { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: var(--bg); }
+.rd-mark.flash, mark.rd-hl.flash { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+.rd-mark-head { display: flex; align-items: center; gap: 6px; justify-content: space-between; margin-bottom: 4px; }
+.rd-quote { display: block; width: 100%; text-align: left; border: 0; border-left: 3px solid #f6d84b; background: none; padding: 2px 8px; cursor: pointer; font-style: italic; line-height: 1.4; }
+.rd-note { margin-top: 8px; min-height: 52px; height: auto; resize: vertical; font-size: 15px; }
+mark.rd-hl { background: #fbe98a; color: inherit; border-radius: 3px; padding: 0; cursor: pointer; transition: box-shadow 0.2s; }
+mark.rd-hl-atom, .katex-display > mark.rd-hl { display: block; }
+.rd-selbar { position: absolute; z-index: 5; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; gap: 6px; padding: 6px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; box-shadow: var(--shadow); }
+.rd-selbar[hidden] { display: none; }
+@media (max-width: 1100px) and (min-width: 760px) {
+  .rd-body { grid-template-columns: 200px minmax(0, 1fr) 260px; }
+}
+@media (max-width: 759px) {
+  .rd-tabs { display: flex; }
+  .rd-bar { flex-wrap: wrap; row-gap: 6px; }
+  .rd-title { flex: 1 1 100%; order: -1; }
+  .rd-bar > .btn:not(.primary):not(.rd-size) > span:not(.icon), .rd-saved > span:not(.icon) { display: none; }
+  .rd-inner .math-display { padding: 8px 8px; }
+  .rd-inner .math-display .katex { font-size: 0.9em; }
+  .rd-bar > .rs-tag { margin-right: auto; }
+  .rd-tabs button { padding: 7px 6px; white-space: nowrap; }
+  .rd-bar { gap: 6px; }
+  .rd-bar > .btn { padding-left: 10px; padding-right: 10px; min-width: 0; }
+  .rd-body { grid-template-columns: minmax(0, 1fr); }
+  .rd-outline, .rd-text, .rd-marks { grid-area: 1 / 1; display: none; border: 0; }
+  .rd[data-pane="text"] .rd-text, .rd[data-pane="outline"] .rd-outline, .rd[data-pane="marks"] .rd-marks { display: block; }
+  .rd-text { padding: 14px 14px 80px; }
+  .rd-inner { font-size: 17px; }
+}
+
 @media (max-width: 1100px) and (min-width: 760px) {
   .rs { grid-template-columns: 200px minmax(0, 1fr) minmax(280px, 340px); }
   .rs-hit-actions .btn span { display: none; }

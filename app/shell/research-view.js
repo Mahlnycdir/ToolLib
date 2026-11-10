@@ -1,6 +1,6 @@
 // The research window (0.14.0): left your research folders, in the middle the hits of a search or what a folder
 // keeps, on the right the work you picked with all its versions and the notes of the folder. On the iPhone the three
-// areas are tabs. "Own window" opens the same view alone (index.html?solo=1).
+// areas are tabs. "Own window" opens the same view alone (index.html?solo=1). "Read" (0.14.1) turns the whole window into the reader.
 import { h, toast, copyText, debounce, loadPref, savePref, promptDialog } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
@@ -14,6 +14,8 @@ import {
 import { nodeByPath, onIndexChange } from '../services/search.js';
 import { nodeHref } from './node-view.js';
 import { renderMarkdown } from './markdown.js';
+import { planFor } from '../services/reader.js';
+import { mountReader } from './reader-view.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const solo = () => new URLSearchParams(location.search).has('solo');
@@ -35,6 +37,7 @@ const st = {
   kind: loadPref('research.kind', 'all'),
   sort: loadPref('research.sort', 'relevance'),
   versions: new Map(),   // key -> 'busy' | { added, failed }
+  read: null,            // { work, version }: the reader is open
 };
 let view = null;         // the mounted view: { root, draw* }
 
@@ -70,12 +73,13 @@ const selectedWork = () => {
 // ------------------------------------------------------------------ the view
 export function renderResearch(main) {
   main.dataset.view = 'research';
-  const root = h('div', { class: 'rs', dataset: { pane: st.pane } });
+  const root = h('div', { class: 'rs', dataset: { pane: st.pane, mode: st.read ? 'read' : '' } });
   const tabs = h('div', { class: 'rs-tabs segmented', role: 'tablist' });
   const left = h('aside', { class: 'rs-folders', 'aria-label': t('research.folders') });
   const mid = h('section', { class: 'rs-results', 'aria-label': t('research.results') });
   const right = h('section', { class: 'rs-detail', 'aria-label': t('research.details') });
-  root.append(tabs, left, mid, right);
+  const readerHost = h('div', { class: 'rs-reader' });
+  root.append(tabs, left, mid, right, readerHost);
   main.append(root);
 
   // search bar
@@ -99,6 +103,43 @@ export function renderResearch(main) {
   };
 
   function setPane(p) { st.pane = p; root.dataset.pane = p; drawTabs(); }
+
+  // ---------------------------------------------------------------- the reader (0.14.1)
+  let reading = null;
+  function showReader() {
+    reading?.destroy();
+    reading = null;
+    readerHost.replaceChildren();
+    root.dataset.mode = st.read ? 'read' : '';
+    if (!st.read) return;
+    const { work, version } = st.read;
+    reading = mountReader(readerHost, {
+      work, version, folderPath: st.folder, query: st.result?.query.text || st.query || '',
+      onBack: closeReader,
+      onChange: () => { if (view?.root.isConnected) drawList(); },
+    });
+  }
+  async function closeReader() {
+    const clipPath = st.read?.work.clip?.path || (st.read && clipFor(st.read.work)?.path) || '';
+    st.read = null;
+    showReader();
+    if (st.kept?.clip && clipPath === st.kept.clip.path) { try { st.kept = await workFromClip(clipPath) || st.kept; } catch { /* keep what is shown */ } }
+    view.drawAll();
+  }
+  function openReader(work, version = null) {
+    st.read = { work, version };
+    showReader();
+  }
+  // A clip node hands over its path ("Read" there): open the reader on it here.
+  async function readQueued() {
+    const path = loadPref('research.read', '');
+    if (!path) return;
+    savePref('research.read', '');
+    try {
+      const work = await workFromClip(path);
+      if (work) { st.kept = work; st.selected = null; openReader(work); view.drawAll(); }
+    } catch (e) { console.warn('Could not open the reader', e); }
+  }
 
   function drawTabs() {
     const sel = selectedWork();
@@ -319,6 +360,7 @@ export function renderResearch(main) {
         h('div', { class: 'rs-version-head' }, badge(v), licenseName(v.license) ? h('span', { class: 'rs-tag', text: licenseName(v.license) }) : null),
         h('div', { class: 'rs-version-host small', text: v.host || hostOf(v.url) }),
         h('div', { class: 'rs-version-links' },
+          v.url || v.pdf ? h('button', { type: 'button', class: 'btn small', onclick: () => openReader(w, v) }, iconEl('book'), h('span', { text: t('research.read') })) : null,
           v.url ? h('a', { class: 'btn small', href: v.url, target: '_blank', rel: 'noopener noreferrer' }, iconEl('external'), h('span', { text: t('research.openPage') })) : null,
           v.pdf ? h('a', { class: 'btn small', href: v.pdf, target: '_blank', rel: 'noopener noreferrer' }, iconEl('file'), h('span', { text: 'PDF' })) : null)));
     }
@@ -328,7 +370,9 @@ export function renderResearch(main) {
     const more = h('button', { type: 'button', class: 'btn small', disabled: vs === 'busy' ? true : null },
       iconEl('refresh', vs === 'busy' ? 'spin' : ''), h('span', { text: t(vs === 'busy' ? 'research.versionsBusy' : 'research.versionsMore') }));
     more.addEventListener('click', () => moreVersions(w));
-    const row = h('div', { class: 'btn-row rs-work-actions' }, more);
+    const readable = !!w.text || planFor(w).steps.length > 0;
+    const read = readable ? h('button', { type: 'button', class: 'btn small primary', onclick: () => openReader(w) }, iconEl('book'), h('span', { text: t('research.read') })) : null;
+    const row = h('div', { class: 'btn-row rs-work-actions' }, read, more);
     if (vs && vs !== 'busy') {
       const why = vs.failed.filter((x) => x.error === 'no-worker').length ? ` ${t('research.versionsNoWorker')}` : '';
       box.append(h('p', { class: 'muted small rs-versions-note', text: `${vs.added ? t('research.versionsAdded', { n: vs.added }) : t('research.versionsNone')}${why}` }));
@@ -458,6 +502,8 @@ export function renderResearch(main) {
   }
 
   view.drawAll();
+  if (st.read) showReader();
+  readQueued();
   if (st.queued) { st.queued = false; run(st.query); } else if (!st.result && st.query) input.focus();
   return view;
 }

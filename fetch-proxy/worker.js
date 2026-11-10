@@ -11,7 +11,7 @@
 // Optional: ALLOWED_HOSTS limits the hosts (comma list, "*.example.org" for subdomains); USER_AGENT replaces the
 // generic name the worker sends. The worker never sends anything about you to the sites.
 
-const VERSION = '0.14.0';
+const VERSION = '0.14.1';
 const DEFAULT_MAX_BYTES = 30 * 1024 * 1024;
 const TIMEOUT_MS = 90 * 1000;          // arXiv's interface can take most of a minute
 const MAX_REDIRECTS = 6;
@@ -105,12 +105,15 @@ async function handle(request, env) {
 
   const out = new Headers(cors);
   for (const k of PASS_BACK) { const v = res.headers.get(k); if (v) out.set(k, v); }
+  // Compressed upstream (arXiv's source files come that way): the body is unpacked on the way, so the length no longer fits.
+  const packed = !!res.headers.get('content-encoding');
+  if (packed) out.delete('content-length');
   out.set('X-Final-URL', at.href);
   out.set('X-Proxy-Version', VERSION);
   if (!ttl) out.set('Cache-Control', 'no-store');
   if (request.method === 'HEAD' || !res.body) return new Response(null, { status: res.status, headers: out });
   // Known size within the limit: straight through, without touching every chunk (saves CPU time on large PDFs).
-  if (Number.isFinite(length) && res.headers.get('content-length')) return new Response(res.body, { status: res.status, headers: out });
+  if (!packed && Number.isFinite(length) && res.headers.get('content-length')) return new Response(res.body, { status: res.status, headers: out });
   return new Response(capped(res.body, limit), { status: res.status, headers: out });
 }
 

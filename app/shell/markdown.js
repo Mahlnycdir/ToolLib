@@ -10,7 +10,10 @@ import { icon } from '../services/icons.js';
 import { t } from '../i18n/i18n.js';
 import { typeset } from './math.js';
 
-const SECTION_KEYS = { example: 'section.example', examples: 'section.example', pitfalls: 'section.pitfalls', check: 'section.check', steps: 'section.steps', derivation: 'section.derivation' };
+const SECTION_KEYS = {
+  example: 'section.example', examples: 'section.example', pitfalls: 'section.pitfalls', check: 'section.check', steps: 'section.steps', derivation: 'section.derivation',
+  text: 'section.text', references: 'section.references', highlights: 'section.highlights',   // parts of a clip (0.14.1)
+};
 const iconEl = (name) => h('span', { class: 'icon', html: icon(name) });
 
 // options: onCopy(text, label), onNodeLink(slug) → { label, open } or null
@@ -142,7 +145,7 @@ function codeBlock(code, lang, options) {
 function mathBlock(tex, options) {
   return h('div', { class: 'code-block math' },
     h('div', { class: 'code-head' }, h('span', { class: 'code-lang', text: 'LaTeX' }), copyButton(() => unmarkTex(tex), 'LaTeX', options)),
-    typeset(h('div', { class: 'math-display' }), tex, true));
+    typeset(h('div', { class: 'math-display', dataset: { tex: unmarkTex(tex), display: '1' } }), tex, true));
 }
 
 function table(rows, options) {
@@ -185,7 +188,7 @@ export function inline(text, options = {}) {
       frag.append(url ? h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, inline(m[4], options)) : m[4]);
     } else if (m[6] != null) frag.append(h('strong', {}, inline(m[6], options)));
     else if (m[7] != null) frag.append(h('em', {}, inline(m[7], options)));
-    else if (m[8] != null) frag.append(typeset(h('span', { class: 'math-inline', title: unmarkTex(m[8]) }), m[8], false));
+    else if (m[8] != null) frag.append(typeset(h('span', { class: 'math-inline', title: unmarkTex(m[8]), dataset: { tex: unmarkTex(m[8]) } }), m[8], false));
     else if (m[9] != null) frag.append(h('a', { href: m[9], target: '_blank', rel: 'noopener noreferrer', text: m[9] }));
     else if (m[10] != null) frag.append(spotEl(m[10] === '\uE002', inline(m[11], options)));
   }

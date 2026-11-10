@@ -2,7 +2,7 @@
 
 Persönliche Arbeitsoberfläche für Mac, iPhone und Linux: eine Web-App (PWA) auf GitHub Pages, dazu später ein Hub zu Hause. Das Wissen liegt getrennt im privaten Repository `knowledge`.
 
-Stand: Version 0.14.0.1, das Fenster Recherche ist da (Paper-Suche mit freien Fassungen, Recherche-Mappen); Stufe 3 (Formelsammlung) läuft, Welle 2 (mathematische Methoden) ist drin; Stufe 2 (Python-Spickzettel als volles Modul) ist fertig. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte. Seit 0.8.0 laufen Snippets direkt in der App: Python mit numpy, scipy, matplotlib und sympy läuft im Browser, von Toollibs eigener Adresse. Seit 0.9.0 legst du eigene Snippets an und änderst Code und Check bestehender Knoten. Seit 0.10.0 gibt es die Gruppen Datenstrukturen, Fehlersuche, Threads & Prozesse und Git. Seit 0.11.0 ist Kobra Teil von Toollib, mit den Bausteinen aus dem Spickzettel. Seit 0.12.0 sind Formeln gesetzt (KaTeX) und es gibt die Formelsammlung: verknüpfte Karten nach Bereich und Thema. Seit 0.13.0 legst du offene Konventionen selbst fest. Seit 0.14.0 sucht das Fenster Recherche Paper und Bücher in sieben offenen Quellen und merkt sie in Recherche-Mappen.
+Stand: Version 0.14.1, das Fenster Recherche hat einen Leser (Seiten, PDFs und arXiv-Quelltext lesen, markieren, Notizen) und sucht Paper mit freien Fassungen; Stufe 3 (Formelsammlung) läuft, Welle 2 (mathematische Methoden) ist drin; Stufe 2 (Python-Spickzettel als volles Modul) ist fertig. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte. Seit 0.8.0 laufen Snippets direkt in der App: Python mit numpy, scipy, matplotlib und sympy läuft im Browser, von Toollibs eigener Adresse. Seit 0.9.0 legst du eigene Snippets an und änderst Code und Check bestehender Knoten. Seit 0.10.0 gibt es die Gruppen Datenstrukturen, Fehlersuche, Threads & Prozesse und Git. Seit 0.11.0 ist Kobra Teil von Toollib, mit den Bausteinen aus dem Spickzettel. Seit 0.12.0 sind Formeln gesetzt (KaTeX) und es gibt die Formelsammlung: verknüpfte Karten nach Bereich und Thema. Seit 0.13.0 legst du offene Konventionen selbst fest. Seit 0.14.0 sucht das Fenster Recherche Paper und Bücher in sieben offenen Quellen und merkt sie in Recherche-Mappen.
 
 ## Aufbau
 
@@ -17,6 +17,8 @@ toollib/                 dieses Repository, öffentlich
   vendor/pyodide/        Python im Browser (Pyodide) mit numpy, scipy, matplotlib, sympy (geholt mit tools/fetch-pyodide)
   vendor/py-bundle.json  Kobras Python-Bibliothek: Laufzeit, matplotlib-Backend, Nachbauten von tkinter und Qt
   vendor/katex/          KaTeX 0.19.1 als ES-Modul, Stylesheet und woff2-Schriften (gebaut mit tools/build-vendor)
+  vendor/reader.js       Readability, Turndown (mit GFM), fflate als ein Modul für den Leser (gebaut mit tools/build-vendor)
+  vendor/pdfjs/          pdf.js 6.4.299 (Legacy-Bau für Safari 15), liest PDFs im Leser; eigener Cache im Service Worker
   app/
     main.js              Start: Texte laden, Rahmen bauen, Service Worker anmelden
     i18n/                strings.json (jeder Satz auf Englisch und Deutsch), i18n.js mit t()
@@ -27,7 +29,10 @@ toollib/                 dieses Repository, öffentlich
                          toollib_snippets.py (baut aus Snippet, benötigten Snippets und Check ein Programm),
                          research.js (Suche über alle Quellen, Holer, Einstellungen), research-sources.js (die Quellen),
                          research-merge.js (Fassungen zusammenführen und ordnen), research-store.js (Funde und Mappen
-                         als Knoten), channel.js (Fenster sagen einander, welche Knoten sich geändert haben)
+                         als Knoten), channel.js (Fenster sagen einander, welche Knoten sich geändert haben),
+                         reader.js (Leser: Plan, Holen, Gliederung, Text und Markierungen im Fund-Knoten),
+                         reader-latex.js (arXiv-Quelltext → Markdown, ohne DOM), reader-html.js (Webseiten),
+                         reader-pdf.js (PDF-Text mit pdf.js)
     shell/               shell.js (Befehlszeile, Modulleiste, Statuszeile), views.js, modules.js, styles.css,
                          node-view.js (Knoten-Ansicht, Python-Spickzettel), markdown.js (sicherer Markdown-Leser),
                          run-panel.js (Ausprobieren, Check ausführen), console.js (Ausgabe, input(), Abbildungen),
@@ -35,7 +40,8 @@ toollib/                 dieses Repository, öffentlich
                          math.js (Formeln mit KaTeX, Makros aus Paper und Masterarbeit),
                          formulary.js (Formelsammlung: Bereiche, Themen, Folgt aus / Führt zu, Symbole),
                          choice-box.js (offene Konventionen festlegen; Logik in services/choices.js),
-                         research-view.js (Fenster Recherche: Mappen, Treffer, Fassungen und Notizen)
+                         research-view.js (Fenster Recherche: Mappen, Treffer, Fassungen und Notizen),
+                         reader-view.js (der Leser: Gliederung, Text, Markierungen), reader-marks.js (Markierungen im Text finden)
   fetch-proxy/           der Holer für die Recherche: Cloudflare Worker (worker.js) und Anleitung (README.md)
   tools/                 Hilfsprogramme: import-snippets, build-vendor, fetch-pyodide
 ```
@@ -137,7 +143,18 @@ Das Fenster Recherche (Modulleiste, Befehlszeile oder „Paper suchen“ in der 
 - Merken legt einen Knoten `clips/<name>.md` an (`type: clip`, `source: scraper`, ungeprüft) mit allen Fassungen, der Zusammenfassung und, wenn du willst, „Hilft bei“ in deinen Worten. Eine Recherche-Mappe `research/<name>.md` (`type: research`, `source: you`) hält deine Frage, deine Notizen und die Liste ihrer Funde. Beides ist nach Sync offline durchsuchbar.
 - Auf dem iPhone sind die drei Bereiche Reiter; auf Mac und Linux öffnet „Eigenes Fenster“ die Recherche allein (`index.html?solo=1`).
 - Einstellungen › Recherche: der Holer (`fetch-proxy/`, für arXiv und DOAB, die Browser nicht direkt lesen dürfen), der kostenlose OpenAlex-Schlüssel (ohne ihn teilt OpenAlex ein kleines Tagesbudget mit allen in deinem Netz), wahlweise ein Semantic-Scholar-Schlüssel, die Quellen an und aus, „Verbindung testen“.
-- Später: der Leser (0.14.1), Schreiben in eigene Bibliotheken (0.14.2), Websites durchgehen (0.14.3), Mac-Helfer mit PDF-Ordner und SearXNG (0.14.4).
+- Später: „Passt zu deinem Wissen“ und verlinkte Zitate (zweiter Teil von 0.14.1), Schreiben in eigene Bibliotheken (0.14.2), Websites durchgehen (0.14.3), Mac-Helfer mit PDF-Ordner und SearXNG (0.14.4).
+
+## Leser
+
+„Lesen“ (bei einem Treffer, bei jeder Fassung, in einem Fund-Knoten) macht das Fenster Recherche zum Leser: links die Gliederung, in der Mitte der Text, rechts deine Markierungen und Notizen. Auf dem iPhone sind das drei Reiter. Der Leser braucht den Holer (Einstellungen › Recherche), weil Browser fremde Seiten nicht lesen dürfen; ein schon gespeicherter Text geht auch offline.
+
+- Woher der Text kommt: bei arXiv der LaTeX-Quelltext (Formeln, Gleichungsnummern, Querverweise, Literatur, Sätze), sonst die freie PDF-Fassung, sonst die Seite. Geht der Quelltext nicht (zum Beispiel nur ein PDF hochgeladen), liest Toollib das PDF und sagt es dazu.
+- Webseiten: Toollib holt den Hauptinhalt (Readability) und macht Markdown daraus; Formeln aus KaTeX, MathJax und Wikipedia bleiben Formeln. PDFs: Text in Leserichtung (auch zweispaltig), ohne Kopfzeilen und Seitenzahlen, Silbentrennung zurückgesetzt, Überschriften nach Größe und Nummerierung, Literatur abgetrennt. Formeln in einem PDF sind nur Zeichen und können durcheinander aussehen; Scans ohne Textebene gehen noch nicht.
+- Der gelesene Text steht im Fund-Knoten: `## Text` und `## References` (Kopfzeilen `text_via`, `text_url`, `text_fetched`), die Zusammenfassung bleibt oben. Bei einem gemerkten Fund wird der Text sofort gespeichert, sonst fragt „Merken und Text speichern“. Das PDF selbst speichert Toollib nicht (das kommt mit dem Mac-Helfer in 0.14.4).
+- Markieren: Wörter auswählen, „Markieren“ oder „Mit Notiz“. Die Markierungen stehen im Fund-Knoten unter `## Highlights` (`> Zitat`, `§ Abschnitt`, Notiz) und werden nach dem Zitat wiedergefunden, auch wenn der Text neu geholt wird. Sync nimmt sie mit.
+- „Aa“ wechselt die Textgröße, „Neu holen“ lädt den Text noch einmal; die Leseposition merkt sich Toollib.
+- Grenzen: Abbildungen und TikZ kommen nur als Beschriftung, Tabellen als einfache Tabellen; ein Makro, das Toollib nicht kennt, bleibt im Text stehen.
 
 ## Lokal ansehen
 

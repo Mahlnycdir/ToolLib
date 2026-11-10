@@ -38,3 +38,7 @@ Den Token schickt Toollib im Kopf `X-Toollib-Token`. Weitergegeben werden nur di
 ## Kosten und Grenzen
 
 Der kostenlose Plan von Cloudflare erlaubt 100 000 Anfragen am Tag; eine Suche braucht eine Anfrage pro Quelle, die der Browser nicht direkt fragen darf. arXiv bittet um höchstens eine Anfrage alle drei Sekunden, Toollib hält das ein.
+
+## Aktualisieren (0.14.1)
+
+Version 0.14.1 gehört zum Leser: Der Worker gibt gepackte Antworten (arXiv-Quelltexte) mit richtiger Länge weiter. Wer den Worker schon hat, ersetzt den Code durch das neue `worker.js` und tippt **Deploy**; „Verbindung testen“ nennt danach Version 0.14.1. Ohne das Update liest Toollib arXiv-Paper notfalls als PDF statt aus dem LaTeX-Quelltext.
