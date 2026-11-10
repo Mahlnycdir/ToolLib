@@ -72,6 +72,7 @@ const KEEP = 5;
 // Returns { buttons, panel }: buttons for the row under the title and the panel that opens below it,
 // or null when the node has no Python code.
 //   canVerify(): whether "Mark as checked" may be offered; onVerify(): marks it, resolves to true on success
+//   verifyText: another label for that button (0.13.0: deciding an open convention)
 //   nodeLink(slug): { href, label } of another node or null
 //   canChange(): whether your version may go into the node; onTakeOver(which, text): writes it, true on success
 //   onSaveAs({ code, check }): opens the form for a new snippet with this code; redraw(): draws the view again
@@ -250,6 +251,7 @@ export function runControls(node, options) {
     const row = con.note('run.checkPassed', {}, 'ok');
     if (opts().canVerify()) {
       const mark = button('check', 'run.markVerified');
+      if (opts().verifyText) mark.lastChild.textContent = opts().verifyText;   // "Decide" on a card with an open convention
       mark.addEventListener('click', async () => {
         mark.disabled = true;
         if (await opts().onVerify()) mark.remove();

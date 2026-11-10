@@ -594,3 +594,29 @@ dl.keys dd { margin: 0; }
 a.topic-row { display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 8px; text-decoration: none; color: inherit; }
 a.topic-row:hover { background: var(--panel-2); }
 table.symbols td:first-child { white-space: nowrap; }
+
+/* Open conventions (0.13.0) */
+.choice-box { margin: 12px 0; padding: 12px 14px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--accent) 35%, white); background: color-mix(in srgb, var(--accent) 5%, white); }
+.choice-head { display: flex; align-items: center; gap: 8px; color: color-mix(in srgb, var(--accent) 80%, #0f1f3d); }
+.choice-head .icon .ic { width: 18px; height: 18px; }
+.choice-intro { margin: 4px 0 8px; }
+.choice-box fieldset.choice { border: 0; margin: 0; padding: 8px 0 4px; min-width: 0; }
+.choice-box fieldset.choice + fieldset.choice { border-top: 1px solid color-mix(in srgb, var(--accent) 18%, white); }
+.choice-box legend { padding: 0; font-weight: 600; font-size: 15px; }
+.choice-hint { margin: 4px 0 6px; color: var(--muted); }
+.choice-option { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 10px; margin: 6px 0; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); cursor: pointer; min-width: 0; }
+.choice-option.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.choice-option input { margin: 0; accent-color: var(--accent); }
+.choice-option input:disabled + .choice-label { opacity: .45; }
+.choice-label { font-weight: 600; white-space: nowrap; }
+.choice-preview { flex: 1 1 240px; min-width: 0; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; color: var(--muted); }
+.choice-decided { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 6px 0 0; }
+.choice-decided .icon { color: var(--ok); }
+.choice-also { margin: 6px 0 0; }
+.choice-box .btn-row { margin: 10px 0 0; align-items: center; }
+.choice-confirm ul { margin: 0 0 10px; padding-left: 20px; }
+.choice-confirm-list { max-height: 9em; overflow-y: auto; }
+.katex .choice-spot, mark.choice-spot { background: color-mix(in srgb, var(--accent) 16%, white); color: inherit; border-radius: 4px; padding: 0 2px; }
+.katex .choice-spot.open, mark.choice-spot.open { background: color-mix(in srgb, var(--warn) 18%, white); }
+.snip-choice { display: inline-block; margin-left: 8px; padding: 0 7px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 18px; color: color-mix(in srgb, var(--accent) 85%, #0f1f3d); background: color-mix(in srgb, var(--accent) 12%, white); }
+.open-choices h2 .icon { color: var(--accent); }

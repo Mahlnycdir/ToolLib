@@ -2,7 +2,7 @@
 
 Persönliche Arbeitsoberfläche für Mac, iPhone und Linux: eine Web-App (PWA) auf GitHub Pages, dazu später ein Hub zu Hause. Das Wissen liegt getrennt im privaten Repository `knowledge`.
 
-Stand: Version 0.12.0, Stufe 3 (Formelsammlung) hat begonnen; Stufe 2 (Python-Spickzettel als volles Modul) ist fertig. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte. Seit 0.8.0 laufen Snippets direkt in der App: Python mit numpy, scipy, matplotlib und sympy läuft im Browser, von Toollibs eigener Adresse. Seit 0.9.0 legst du eigene Snippets an und änderst Code und Check bestehender Knoten. Seit 0.10.0 gibt es die Gruppen Datenstrukturen, Fehlersuche, Threads & Prozesse und Git. Seit 0.11.0 ist Kobra Teil von Toollib, mit den Bausteinen aus dem Spickzettel. Seit 0.12.0 sind Formeln gesetzt (KaTeX) und es gibt die Formelsammlung: verknüpfte Karten nach Bereich und Thema.
+Stand: Version 0.13.0, Stufe 3 (Formelsammlung) läuft; Stufe 2 (Python-Spickzettel als volles Modul) ist fertig. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte. Seit 0.8.0 laufen Snippets direkt in der App: Python mit numpy, scipy, matplotlib und sympy läuft im Browser, von Toollibs eigener Adresse. Seit 0.9.0 legst du eigene Snippets an und änderst Code und Check bestehender Knoten. Seit 0.10.0 gibt es die Gruppen Datenstrukturen, Fehlersuche, Threads & Prozesse und Git. Seit 0.11.0 ist Kobra Teil von Toollib, mit den Bausteinen aus dem Spickzettel. Seit 0.12.0 sind Formeln gesetzt (KaTeX) und es gibt die Formelsammlung: verknüpfte Karten nach Bereich und Thema. Seit 0.13.0 legst du offene Konventionen selbst fest.
 
 ## Aufbau
 
@@ -30,7 +30,8 @@ toollib/                 dieses Repository, öffentlich
                          run-panel.js (Ausprobieren, Check ausführen), console.js (Ausgabe, input(), Abbildungen),
                          snippet-form.js (eigene Snippets anlegen, bearbeiten, löschen)
                          math.js (Formeln mit KaTeX, Makros aus Paper und Masterarbeit),
-                         formulary.js (Formelsammlung: Bereiche, Themen, Folgt aus / Führt zu, Symbole)
+                         formulary.js (Formelsammlung: Bereiche, Themen, Folgt aus / Führt zu, Symbole),
+                         choice-box.js (offene Konventionen festlegen; Logik in services/choices.js)
   tools/                 Hilfsprogramme: import-snippets, build-vendor, fetch-pyodide
 ```
 
@@ -115,9 +116,10 @@ Kobra (die Python-IDE) liegt seit 0.11.0 fast unverändert in `kobra/` und öffn
 
 Die Formelsammlung (Modulleiste oder Befehlszeile) zeigt die Karten des Wissens: Knoten vom Typ `formula`, `definition`, `theorem` und `convention`, nach Bereich (`area`, erste Ebene) und Thema (`topic`, zweite Ebene). Jedes Thema hat eine Übersichtskarte (`type: topic`), die seine Karten in Lesereihenfolge verlinkt.
 
-- Formeln in `$$ … $$` und `$ … $` setzt KaTeX (selbst gehostet in `vendor/katex`, lädt mit der ersten Formel, offline im Cache). „Kopieren“ gibt das LaTeX, wie es im Knoten steht. Die Makros aus Paper und Masterarbeit (`\gch`, `\psibar`, `\slashed`, `\ii`, `\dd`, `\tr`, `\expval` …) stehen in `app/shell/math.js`. KaTeX baut seine Elemente selbst, `\href` und Ähnliches bleiben aus (`trust: false`).
+- Formeln in `$$ … $$` und `$ … $` setzt KaTeX (selbst gehostet in `vendor/katex`, lädt mit der ersten Formel, offline im Cache). „Kopieren“ gibt das LaTeX, wie es im Knoten steht. Die Makros aus Paper und Masterarbeit (`\gch`, `\psibar`, `\slashed`, `\ii`, `\dd`, `\tr`, `\expval` …) stehen in `app/shell/math.js`. KaTeX baut seine Elemente selbst, `\href` und Ähnliches bleiben aus; erlaubt ist nur `\htmlClass{choice-spot}`, die Markierung offener Konventionen.
 - Eine Karte zeigt unter dem Text die Symbole (Feld `symbols`), „Folgt aus“ (`derived_from`), „Führt zu“ (Karten, die auf ihr aufbauen), ihre Konventionen und die Themen als Chips.
 - „Check ausführen“ gibt es auch bei Karten: Der Check läuft im Python auf dem Gerät, danach „Als geprüft markieren“ wie bei Snippets.
+- Offene Konventionen (0.13.0): Legt das Paper eine Konvention nicht fest, trägt die Karte `choices` und im Text Stellen `\choice{id}{…}{…}` mit dem Text für jede Möglichkeit. Die Karte zeigt einen Kasten „Konvention offen“: Du wählst, siehst Formeln, Text und Check mit deiner Wahl (markiert) und lässt den Check laufen. „Festlegen und als geprüft markieren“ schreibt die Wahl in die Karte und in alle Karten mit derselben Konvention (die bleiben ungeprüft) und legt `nodes/conventions/<id>.md` mit `decided` an. Die Formelsammlung zählt die offenen Konventionen und listet sie oben. Logik in `app/services/choices.js`, Kasten in `app/shell/choice-box.js`.
 - Format der Karten: README im Repository knowledge.
 
 ## Lokal ansehen

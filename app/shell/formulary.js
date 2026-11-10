@@ -94,9 +94,30 @@ export function renderFormulary(main, mod) {
   const list = h('div', { class: 'formulary' });
   main.append(head, h('div', { class: 'filter-row' }, iconEl('search'), input), count, list);
 
-  const row = (d, lead) => h('a', { class: 'snip-row snip-main topic-row', href: hrefOf(d.path) },
-    h('span', { class: 'snip-title' }, h('span', { text: titleIn(d) }), !d.verified && d.type !== 'topic' ? h('span', { class: 'snip-open', text: t('cheatsheet.unverified') }) : null),
+  const row = (d, lead, open = d.choices?.length) => h('a', { class: 'snip-row snip-main topic-row', href: hrefOf(d.path) },
+    h('span', { class: 'snip-title' }, h('span', { text: titleIn(d) }),
+      !d.verified && d.type !== 'topic' ? h('span', { class: 'snip-open', text: t('cheatsheet.unverified') }) : null,
+      open ? h('span', { class: 'snip-choice', text: t('formulary.choiceOpen') }) : null),
     h('span', { class: 'snip-lead muted', text: lead }));
+
+  // Open conventions (0.13.0): one row per convention with the cards that wait for it; the row opens the first.
+  function openChoices(cards) {
+    const byId = new Map();
+    for (const d of cards) for (const c of d.choices || []) {
+      if (!byId.has(c.id)) byId.set(c.id, { c, cards: [] });
+      byId.get(c.id).cards.push(d);
+    }
+    return [...byId.values()];
+  }
+  const choiceSection = (open) => h('section', { class: 'card snip-card open-choices' },
+    h('h2', {}, h('span', { class: 'icon', html: icon('vars') }), t('formulary.openChoices'), h('span', { class: 'count', text: String(open.length) })),
+    h('p', { class: 'muted small', text: t('formulary.openChoices.hint') }),
+    open.map(({ c, cards: list }) => {
+      const sorted = [...list].sort(byTitle);
+      return h('a', { class: 'snip-row snip-main topic-row', href: hrefOf(sorted[0].path) },
+        h('span', { class: 'snip-title' }, h('span', { text: getLang() === 'de' ? c.de : c.en })),
+        h('span', { class: 'snip-lead muted', text: `${t('formulary.cards', { n: sorted.length })}: ${sorted.map((d) => titleIn(d)).join(' · ')}` }));
+    }));
 
   function draw() {
     const s = indexState();
@@ -105,7 +126,9 @@ export function renderFormulary(main, mod) {
     const cards = allNodes().filter(isCard);
     const plain = cards.filter((d) => d.type !== 'topic');
     const open = plain.filter((d) => !d.verified).length;
-    count.textContent = t('formulary.count', { cards: plain.length, topics: cards.length - plain.length }) + (open ? ` · ${t('formulary.open', { open })}` : '');
+    const choices = openChoices(plain);
+    count.textContent = t('formulary.count', { cards: plain.length, topics: cards.length - plain.length }) + (open ? ` · ${t('formulary.open', { open })}` : '')
+      + (choices.length ? ` · ${t(choices.length === 1 ? 'formulary.choicesOne' : 'formulary.choices', { n: choices.length })}` : '');
     const q = input.value.trim();
     if (q) {
       const hits = searchNodes(q, { limit: 200, filter: isCard });
@@ -114,6 +137,7 @@ export function renderFormulary(main, mod) {
       return;
     }
     if (!plain.length) { list.append(h('p', { class: 'muted', text: t('formulary.empty') })); return; }
+    if (choices.length) list.append(choiceSection(choices));
     // Each card is listed under its first area; further areas are for the network view later.
     const primary = (d) => d.area[0] || 'other';
     const areas = [...new Set([...AREA_ORDER, ...cards.map(primary)])];
@@ -125,7 +149,7 @@ export function renderFormulary(main, mod) {
       const loose = inArea.filter((d) => d.type !== 'topic' && !d.topics.some((id) => covered.has(id) || topicCard(id))).sort(byTitle);
       const sec = h('section', { class: `card snip-card area-card area-${a}` },
         h('h2', {}, h('span', { class: 'area-dot', 'aria-hidden': 'true' }), areaLabel(a), h('span', { class: 'count', text: String(inArea.filter((d) => d.type !== 'topic').length) })));
-      for (const tc of topics) sec.append(row(tc, `${t('formulary.cards', { n: membersOf(tc.slug).length })} · ${leadIn(tc)}`));
+      for (const tc of topics) sec.append(row(tc, `${t('formulary.cards', { n: membersOf(tc.slug).length })} · ${leadIn(tc)}`, membersOf(tc.slug).some((d) => d.choices?.length)));
       for (const d of loose) sec.append(row(d, leadIn(d)));
       list.append(sec);
     }

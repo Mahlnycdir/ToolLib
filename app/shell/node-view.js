@@ -3,13 +3,15 @@ import { h, toast, copyText, confirmDialog } from '../services/ui.js';
 import { loadPref, savePref } from '../services/prefs.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
-import { getNode, isOwn, linksOf, localize, readNodeText, replaceBlock, setVerified, sourcesOf, summary, titleOf, writeNode } from '../services/nodes.js';
+import { getNode, isOwn, linksOf, localize, readNodeText, replaceBlock, runParts, setVerified, sourcesOf, summary, titleOf, writeNode } from '../services/nodes.js';
 import { allNodes, bestProblem, indexState, nodeByPath, nodeBySlug, onIndexChange, refreshNode, searchNodes } from '../services/search.js';
 import { githubRepo, isConfigured, noteChange, repoUrl } from '../services/sync.js';
 import { paintAccent } from './modules.js';
 import { renderMarkdown } from './markdown.js';
 import { runControls } from './run-panel.js';
 import { CARD_TYPES, cardSections, shownElsewhere, topicChips } from './formulary.js';
+import { choiceBox, choiceState, decide, pickedNode } from './choice-box.js';
+import { markSpots } from '../services/choices.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 
@@ -140,10 +142,12 @@ export async function renderNode(main, path, ctx) {
       h('ul', {}, problems.map((p) => h('li', { text: p })))));
   }
 
+  // An open convention (0.13.0): you pick and decide in its box; deciding also marks the card as checked.
+  const choices = CARD_TYPES.has(d.type) ? choiceState(node) : null;
   if (!d.verified) {
     const who = t(`node.source.${d.source}`) === `node.source.${d.source}` ? d.source : t(`node.source.${d.source}`);
     const text = h('div', { class: 'note-body' }, h('p', { text: who ? t('node.unverifiedFrom', { who }) : t('node.unverified') }));
-    if (editable) {
+    if (editable && !choices) {
       const btn = h('button', { type: 'button', class: 'btn small verify-btn' }, iconEl('check'), h('span', { text: t('node.verify') }));
       btn.addEventListener('click', async () => {
         btn.disabled = true;
@@ -197,25 +201,42 @@ export async function renderNode(main, path, ctx) {
     }
   }
 
-  // Cards of the formulary: run their check on this device, then mark them as verified (0.12.0)
+  const decideNow = async () => {
+    if (!(await decide(node, d, lang))) return false;
+    await redraw();
+    return true;
+  };
+  if (choices) box.append(choiceBox(node, { lang, editable, onPick: () => redraw(), onDecide: decideNow }));
+
+  // Cards of the formulary: run their check on this device, then mark them as verified (0.12.0). With an open
+  // convention the check runs with what you picked, and "Mark as checked" becomes "Decide".
   if (CARD_TYPES.has(d.type) && d.type !== 'topic') {
-    const run = runControls(node, {
-      canVerify: () => editable && !d.verified,
-      onVerify: async () => {
-        if (!(await changeVerified(path, true))) return false;
-        await redraw();
-        return true;
-      },
-      nodeLink: onNodeLink,
-      canChange: () => editable,
-      onTakeOver: (which, text) => takeOver(path, which, text),
-      redraw,
-    });
-    if (run) box.append(h('div', { class: 'btn-row card-run' }, ...run.buttons), run.panel);
+    if (choices && !choices.complete) {
+      if (runParts(node).check) {
+        box.append(h('div', { class: 'btn-row card-run' },
+          h('button', { type: 'button', class: 'btn small', disabled: true }, iconEl('check'), h('span', { text: t('run.check') })),
+          h('span', { class: 'muted small', text: t('choice.pickToRun') })));
+      }
+    } else {
+      const run = runControls(choices ? pickedNode(node, choices) : node, {
+        canVerify: () => editable && (choices ? true : !d.verified),
+        verifyText: choices ? t('choice.decide') : null,
+        onVerify: choices ? decideNow : async () => {
+          if (!(await changeVerified(path, true))) return false;
+          await redraw();
+          return true;
+        },
+        nodeLink: onNodeLink,
+        canChange: () => editable && !choices,
+        onTakeOver: (which, text) => takeOver(path, which, text),
+        redraw,
+      });
+      if (run) box.append(h('div', { class: 'btn-row card-run' }, ...run.buttons), run.panel);
+    }
   }
 
-  // Body in the chosen language
-  box.append(renderMarkdown(localize(node.body, lang), { onCopy: (text) => copyWithToast(text), onNodeLink }));
+  // Body in the chosen language; the spots of an open convention show what you picked
+  box.append(renderMarkdown(localize(choices ? markSpots(node.body, choices.pick) : node.body, lang), { onCopy: (text) => copyWithToast(text), onNodeLink }));
 
   // Formulary: symbols, follows from, leads to, conventions; for a topic the cards its text does not name
   box.append(...cardSections(node, d, lang));

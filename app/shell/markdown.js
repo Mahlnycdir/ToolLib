@@ -2,8 +2,10 @@
 // so text from the knowledge (later also from the web) cannot inject scripts.
 // Covers what nodes use: headings, paragraphs, lists, quotes, tables, code blocks with copy buttons,
 // formulas ($$ … $$ and $ … $, set with KaTeX since 0.12.0; the copy button gives the LaTeX), inline code, bold,
-// italic, links and [[node]] links.
+// italic, links and [[node]] links. Spots of an open convention (0.13.0) come marked from services/choices.js
+// and show highlighted.
 import { h } from '../services/ui.js';
+import { stripMarks, unmarkTex } from '../services/choices.js';
 import { icon } from '../services/icons.js';
 import { t } from '../i18n/i18n.js';
 import { typeset } from './math.js';
@@ -108,26 +110,38 @@ function copyButton(getText, label, options) {
 
 const PLACEHOLDER = /\$\{(?:\d+:)?([^}]*)\}/g;
 
+const SPOT = /([\uE000\uE002])([^\uE001]*)\uE001/g;
+const spotEl = (open, text) => h('mark', { class: `choice-spot${open ? ' open' : ''}`, title: t('choice.spot') }, text);
+
 function codeBlock(code, lang, options) {
   const pre = h('pre', {});
   const el = h('code', {});
   let last = 0;
+  const plain = (s) => {
+    let at = 0;
+    for (const m of s.matchAll(SPOT)) {
+      el.append(s.slice(at, m.index), spotEl(m[1] === '\uE002', m[2]));
+      at = m.index + m[0].length;
+    }
+    el.append(s.slice(at));
+  };
   for (const m of code.matchAll(PLACEHOLDER)) {
-    el.append(code.slice(last, m.index), h('span', { class: 'ph', title: t('node.placeholder'), text: m[1] }));
+    plain(code.slice(last, m.index));
+    el.append(h('span', { class: 'ph', title: t('node.placeholder'), text: m[1] }));
     last = m.index + m[0].length;
   }
-  el.append(code.slice(last));
+  plain(code.slice(last));
   pre.append(el);
   const label = lang || t('node.code');
   return h('div', { class: 'code-block' },
-    h('div', { class: 'code-head' }, h('span', { class: 'code-lang', text: label }), copyButton(() => code.replace(PLACEHOLDER, '$1'), label, options)),
+    h('div', { class: 'code-head' }, h('span', { class: 'code-lang', text: label }), copyButton(() => stripMarks(code.replace(PLACEHOLDER, '$1')), label, options)),
     pre);
 }
 
 // A display formula: set with KaTeX; the button copies the LaTeX as written in the node.
 function mathBlock(tex, options) {
   return h('div', { class: 'code-block math' },
-    h('div', { class: 'code-head' }, h('span', { class: 'code-lang', text: 'LaTeX' }), copyButton(() => tex, 'LaTeX', options)),
+    h('div', { class: 'code-head' }, h('span', { class: 'code-lang', text: 'LaTeX' }), copyButton(() => unmarkTex(tex), 'LaTeX', options)),
     typeset(h('div', { class: 'math-display' }), tex, true));
 }
 
@@ -150,6 +164,7 @@ const INLINE = new RegExp([
   '\\*([^*\\s][^*]*?)\\*', // 7 italic (no _italic_ for the same reason)
   '\\$([^$\\n]+?)\\$', // 8 inline formula
   '(https?:\\/\\/[^\\s<>()]+[^\\s<>().,;:!?])', // 9 bare address
+  '([\\uE000\\uE002])([^\\uE001]*)\\uE001', // 10, 11 spot of an open convention (0.13.0)
 ].join('|'), 'g');
 
 const safeUrl = (u) => (/^(https?:|mailto:)/i.test(u) ? u : null);
@@ -170,8 +185,9 @@ export function inline(text, options = {}) {
       frag.append(url ? h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, inline(m[4], options)) : m[4]);
     } else if (m[6] != null) frag.append(h('strong', {}, inline(m[6], options)));
     else if (m[7] != null) frag.append(h('em', {}, inline(m[7], options)));
-    else if (m[8] != null) frag.append(typeset(h('span', { class: 'math-inline', title: m[8] }), m[8], false));
+    else if (m[8] != null) frag.append(typeset(h('span', { class: 'math-inline', title: unmarkTex(m[8]) }), m[8], false));
     else if (m[9] != null) frag.append(h('a', { href: m[9], target: '_blank', rel: 'noopener noreferrer', text: m[9] }));
+    else if (m[10] != null) frag.append(spotEl(m[10] === '\uE002', inline(m[11], options)));
   }
   frag.append(text.slice(last));
   return frag;

@@ -214,7 +214,7 @@ function describeChanges(paths) {
     const slug = p.slice(p.lastIndexOf('/') + 1).replace(/\.md$/, '');
     byWhat.set(notes[p], [...(byWhat.get(notes[p]) || []), slug]);
   }
-  const parts = [...byWhat].map(([what, slugs]) => [what, slugs.sort()]).map(([what, slugs]) => `${what} ${slugs.length > 5 ? `${slugs.slice(0, 5).join(', ')} and ${slugs.length - 5} more` : slugs.join(', ')}`);
+  const parts = [...byWhat].map(([what, slugs]) => [what, slugs.sort()]).map(([what, slugs]) => `${what}${what.startsWith('decided ') ? ':' : ''} ${slugs.length > 5 ? `${slugs.slice(0, 5).join(', ')} and ${slugs.length - 5} more` : slugs.join(', ')}`);
   return parts.join('; ');
 }
 

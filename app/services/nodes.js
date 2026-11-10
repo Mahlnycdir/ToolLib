@@ -2,6 +2,7 @@
 // code blocks and sources. Nothing here touches the page; the node view and the search build on it.
 import { parseYaml, JSON_SCHEMA } from '../../vendor/search.js';
 import { KNOWLEDGE, basename, exists, listTree, readText, removeFile, writeFile } from './storage.js';
+import { choicesOf, plainSpots } from './choices.js';
 
 // ------------------------------------------------------------------ parsing
 export function parseNode(text, path) {
@@ -160,7 +161,7 @@ export function searchText(node) {
 
 // First sentence-ish of the prose in one language, for lists.
 export function leadOf(body, lang, max = 140) {
-  for (const para of localize(body, lang).split(/\n\s*\n/)) {
+  for (const para of localize(plainSpots(body), lang).split(/\n\s*\n/)) {
     const p = para.trim();
     if (!p || /^(```|~~~|\$\$|#|\||>|[-*+] |\d+[.)] )/.test(p)) continue;
     const text = p.replace(/\s+/g, ' ').replace(/[*`]/g, '').replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, a, b) => b || a);
@@ -190,6 +191,11 @@ export function summary(node) {
     derived: asList(m.derived_from),
     conventions: asList(m.conventions),
     order: Number.isFinite(Number(m.order)) && m.order !== '' && m.order != null ? Number(m.order) : null,
+    // open conventions (0.13.0): the choices still open on a card; a convention card you decided names its choice
+    choices: choicesOf(m).map((c) => ({ id: c.id, en: c.en, de: c.de, options: c.options })),
+    choice: m.choice ? String(m.choice) : '',
+    decided: m.decided != null ? String(m.decided) : '',
+    decidedOn: m.decided_on ? String(m.decided_on) : '',
     source: m.source ? String(m.source) : '',
     verified: m.verified !== false,
     conflict: node.conflict,

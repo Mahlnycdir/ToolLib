@@ -1,6 +1,7 @@
 // Formulas set with KaTeX (0.12.0). KaTeX is loaded with the first formula on screen, from vendor/katex.
-// It builds DOM nodes itself, so text from the knowledge never goes through innerHTML; trust stays off,
-// so \href, \url and \html… commands do nothing. A formula KaTeX cannot read keeps its LaTeX in red.
+// It builds DOM nodes itself, so text from the knowledge never goes through innerHTML. trust allows exactly one
+// thing: \htmlClass{choice-spot}{…}, the highlight of an open convention (0.13.0); \href, \url and the other
+// \html… commands do nothing. A formula KaTeX cannot read keeps its LaTeX in red.
 import { h } from '../services/ui.js';
 
 // The macros of ENTE's paper draft and master thesis (Preamble/commands.tex), plus the parts of the physics
@@ -91,10 +92,12 @@ function load() {
   return loading;
 }
 
+export const onlyChoiceSpots = (c) => c.command === '\\htmlClass' && /^choice-spot( open)?$/.test(String(c.class));
+
 function draw(el, tex, display) {
   try {
     katex.render(tex, el, {
-      displayMode: display, throwOnError: false, trust: false, strict: 'ignore', maxExpand: 1000,
+      displayMode: display, throwOnError: false, trust: onlyChoiceSpots, strict: 'ignore', maxExpand: 1000,
       macros: { ...MACROS }, output: 'htmlAndMathml',
     });
     el.classList.add('typeset');
