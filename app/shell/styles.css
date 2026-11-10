@@ -766,8 +766,8 @@ table.symbols td:first-child { white-space: nowrap; }
 .rd-note { margin-top: 8px; min-height: 52px; height: auto; resize: vertical; font-size: 15px; }
 mark.rd-hl { background: #fbe98a; color: inherit; border-radius: 3px; padding: 0; cursor: pointer; transition: box-shadow 0.2s; }
 mark.rd-hl-atom, .katex-display > mark.rd-hl { display: block; }
-.rd-selbar { position: absolute; z-index: 5; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; gap: 6px; padding: 6px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; box-shadow: var(--shadow); }
-.rd-selbar[hidden] { display: none; }
+.rd-selbar { max-width: calc(100% - 16px); flex-wrap: wrap; justify-content: center; position: absolute; z-index: 5; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; gap: 6px; padding: 6px; background: var(--panel); border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow); }
+.rd-selbar[hidden], .rd-selbar [hidden] { display: none; }
 @media (max-width: 1100px) and (min-width: 760px) {
   .rd-body { grid-template-columns: 200px minmax(0, 1fr) 260px; }
 }
@@ -811,3 +811,26 @@ mark.rd-hl-atom, .katex-display > mark.rd-hl { display: block; }
 .set-check .field-hint { display: block; }
 .conflicts li { margin: 8px 0; }
 .conflict-actions { margin-top: 6px; flex-wrap: wrap; }
+
+/* 0.14.1.2: cards from the reading, your knowledge next to the text, references as links */
+.rd-sub { display: flex; gap: 6px; margin-bottom: 10px; }
+.rd-sub button { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid var(--border); background: var(--bg); border-radius: 999px; padding: 6px 8px; cursor: pointer; font: inherit; font-size: 13px; }
+.rd-sub button.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.rd-marks [hidden] { display: none; }
+.rd-know h4 { margin: 14px 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.rd-know-sec { margin: 0 0 6px; }
+.rd-know-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rd-know-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: inherit; text-decoration: none; }
+.rd-know-item:hover { border-color: var(--accent); }
+.rd-know-title { font-weight: 600; }
+.rd-know-lead { flex-basis: 100%; }
+a.rd-cite { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); cursor: pointer; }
+a.rd-cite:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.rd-card-form { display: flex; flex-direction: column; gap: 10px; }
+.rd-card-row { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.rd-card-row select.field, .rd-card-row input.field { height: 42px; }
+.rd-card-text { height: auto; min-height: 110px; padding: 10px 12px; font-family: var(--mono, monospace); font-size: 14px; resize: vertical; }
+.rd-cite-pop { display: flex; flex-direction: column; gap: 14px; }
+.rd-cite-entry { margin: 0 0 6px; line-height: 1.45; overflow-wrap: anywhere; }
+.rd-cite-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.rd-cite-actions a.btn { text-decoration: none; color: inherit; }

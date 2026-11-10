@@ -2,7 +2,7 @@
 
 Persönliche Arbeitsoberfläche für Mac, iPhone und Linux: eine Web-App (PWA) auf GitHub Pages, dazu später ein Hub zu Hause. Das Wissen liegt getrennt im privaten Repository `knowledge`.
 
-Stand: Version 0.14.1.1 (Sync läuft von selbst, Konflikte lösen sich bei Mappen und Funden selbst, Mappen lassen sich löschen), das Fenster Recherche hat einen Leser (Seiten, PDFs und arXiv-Quelltext lesen, markieren, Notizen) und sucht Paper mit freien Fassungen; Stufe 3 (Formelsammlung) läuft, Welle 2 (mathematische Methoden) ist drin; Stufe 2 (Python-Spickzettel als volles Modul) ist fertig. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte. Seit 0.8.0 laufen Snippets direkt in der App: Python mit numpy, scipy, matplotlib und sympy läuft im Browser, von Toollibs eigener Adresse. Seit 0.9.0 legst du eigene Snippets an und änderst Code und Check bestehender Knoten. Seit 0.10.0 gibt es die Gruppen Datenstrukturen, Fehlersuche, Threads & Prozesse und Git. Seit 0.11.0 ist Kobra Teil von Toollib, mit den Bausteinen aus dem Spickzettel. Seit 0.12.0 sind Formeln gesetzt (KaTeX) und es gibt die Formelsammlung: verknüpfte Karten nach Bereich und Thema. Seit 0.13.0 legst du offene Konventionen selbst fest. Seit 0.14.0 sucht das Fenster Recherche Paper und Bücher in sieben offenen Quellen und merkt sie in Recherche-Mappen.
+Stand: Version 0.14.1.2 (aus dem Leser schnell Karten und Snippets anlegen, „Dein Wissen“ neben dem Text, Zitate wie [12] antippen; Zurück findet die Stelle auch nach einem Neustart der App; seit 0.14.1.1 läuft Sync von selbst), das Fenster Recherche hat einen Leser (Seiten, PDFs und arXiv-Quelltext lesen, markieren, Notizen) und sucht Paper mit freien Fassungen; Stufe 3 (Formelsammlung) läuft, Welle 2 (mathematische Methoden) ist drin; Stufe 2 (Python-Spickzettel als volles Modul) ist fertig. Der Rahmen läuft als installierbare App und startet offline. Ein Tipp auf Sync holt das Wissen aufs Gerät; die Befehlszeile durchsucht es, Knoten lassen sich lesen und Snippets kopieren, auch ohne Netz. Seit 0.6.0 lässt sich ein Knoten in der App als geprüft markieren; Sync lädt die Änderung hoch. Seit 0.7.0 sucht die Befehlszeile auch nach Problemen in deinen eigenen Worten, und der Spickzettel hat Rezepte. Seit 0.8.0 laufen Snippets direkt in der App: Python mit numpy, scipy, matplotlib und sympy läuft im Browser, von Toollibs eigener Adresse. Seit 0.9.0 legst du eigene Snippets an und änderst Code und Check bestehender Knoten. Seit 0.10.0 gibt es die Gruppen Datenstrukturen, Fehlersuche, Threads & Prozesse und Git. Seit 0.11.0 ist Kobra Teil von Toollib, mit den Bausteinen aus dem Spickzettel. Seit 0.12.0 sind Formeln gesetzt (KaTeX) und es gibt die Formelsammlung: verknüpfte Karten nach Bereich und Thema. Seit 0.13.0 legst du offene Konventionen selbst fest. Seit 0.14.0 sucht das Fenster Recherche Paper und Bücher in sieben offenen Quellen und merkt sie in Recherche-Mappen.
 
 ## Aufbau
 
@@ -31,6 +31,7 @@ toollib/                 dieses Repository, öffentlich
                          research-merge.js (Fassungen zusammenführen und ordnen), research-store.js (Funde und Mappen
                          als Knoten), channel.js (Fenster sagen einander, welche Knoten sich geändert haben),
                          reader.js (Leser: Plan, Holen, Gliederung, Text und Markierungen im Fund-Knoten),
+                         reader-cards.js (Leser: Karte aus der Auswahl, passendes Wissen, Zitate [12]),
                          reader-latex.js (arXiv-Quelltext → Markdown, ohne DOM), reader-html.js (Webseiten),
                          reader-pdf.js (PDF-Text mit pdf.js)
     shell/               shell.js (Befehlszeile, Modulleiste, Statuszeile), views.js, modules.js, styles.css,
@@ -41,7 +42,7 @@ toollib/                 dieses Repository, öffentlich
                          formulary.js (Formelsammlung: Bereiche, Themen, Folgt aus / Führt zu, Symbole),
                          choice-box.js (offene Konventionen festlegen; Logik in services/choices.js),
                          research-view.js (Fenster Recherche: Mappen, Treffer, Fassungen und Notizen),
-                         reader-view.js (der Leser: Gliederung, Text, Markierungen), reader-marks.js (Markierungen im Text finden)
+                         reader-view.js (der Leser: Gliederung, Text, Markierungen, Dein Wissen), reader-marks.js (Markierungen im Text finden)
   fetch-proxy/           der Holer für die Recherche: Cloudflare Worker (worker.js) und Anleitung (README.md)
   tools/                 Hilfsprogramme: import-snippets, build-vendor, fetch-pyodide
 ```
@@ -78,7 +79,7 @@ Der Token bleibt im Speicher dieses Geräts und geht nur an den Proxy und an Git
 - Die Knoten-Ansicht zeigt den Text in der gewählten Sprache, Code und Formeln (als LaTeX) mit Kopierknopf, verwandte Knoten, die Quellen mit Link und Fundstelle sowie einen Link zur Datei auf GitHub.
 - Modul Python-Spickzettel: oben die Rezepte (Schritt für Schritt zu einem größeren Ziel), darunter alle Snippets nach Gruppen, mit Filter und Kopierknopf. Oben steht, wie viele schon geprüft sind; „Zu prüfen“ und „Geprüft“ zeigen nur diese.
 - Die Knoten-Ansicht zeigt unter dem Titel, wobei der Knoten hilft (problems in der gewählten Sprache).
-- Zurück (Knopf oder Browser) führt an dieselbe Stelle, an der du warst, im Spickzettel auch mit demselben Filter. Jeder Eintrag im Verlauf merkt sich das in history.state; ein neuer Aufruf beginnt oben.
+- Zurück (Knopf oder Browser) führt an dieselbe Stelle, an der du warst, im Spickzettel auch mit demselben Filter. Jeder Eintrag im Verlauf merkt sich das in history.state; ein neuer Aufruf beginnt oben. Seit 0.14.1.2 merkt sich das Gerät die Stellen auch (wenn du in eine andere App wechselst oder weiterklickst): Das iPhone wirft die App im Hintergrund oft aus dem Speicher und öffnet sie neu, Zurück führt trotzdem an die alte Stelle. Kommt die Liste nach einem Neustart erst nach dem Suchindex, scrollt die App bis zu 5 Sekunden nach, außer du scrollst selbst.
 - Der Suchindex entsteht beim Start und nach jedem Sync im Speicher; bei einigen tausend Knoten dauert das unter einer Sekunde.
 
 ## Prüfen
@@ -156,6 +157,10 @@ Das Fenster Recherche (Modulleiste, Befehlszeile oder „Paper suchen“ in der 
 - Der gelesene Text steht im Fund-Knoten: `## Text` und `## References` (Kopfzeilen `text_via`, `text_url`, `text_fetched`), die Zusammenfassung bleibt oben. Bei einem gemerkten Fund wird der Text sofort gespeichert, sonst fragt „Merken und Text speichern“. Das PDF selbst speichert Toollib nicht (das kommt mit dem Mac-Helfer in 0.14.4).
 - Markieren: Wörter auswählen, „Markieren“ oder „Mit Notiz“. Die Markierungen stehen im Fund-Knoten unter `## Highlights` (`> Zitat`, `§ Abschnitt`, Notiz) und werden nach dem Zitat wiedergefunden, auch wenn der Text neu geholt wird. Sync nimmt sie mit.
 - „Aa“ wechselt die Textgröße, „Neu holen“ lädt den Text noch einmal; die Leseposition merkt sich Toollib.
+- Karte aus der Auswahl (0.14.1.2): Wörter auswählen, „Karte“. Ein kleines Fenster ist schon ausgefüllt: Art (Formel, Definition, Satz, Begriff, nach dem Text geraten), Titel (die ersten Wörter, bei einer reinen Formel der Abschnitt), Thema (das zuletzt benutzte, Vorschläge aus deinen Karten), Text (Formeln als LaTeX) und seine Sprache. „Karte anlegen“ schreibt `nodes/formulas/<name>.md` (Begriffe nach `nodes/terms/`) mit `source: you`, `verified: false`, dem Werk und Abschnitt unter `sources` und einem Link auf den Fund-Knoten; der Fund wird dabei gemerkt. Die Karte steht sofort in der Suche und der Formelsammlung, Sync nimmt sie mit. Prüfen und ausbauen wie jede Karte.
+- Snippet aus Code: Code im Text auswählen, „Snippet“ öffnet das Formular für ein eigenes Snippet mit dem Code und dem Werk als Herkunft.
+- Dein Wissen (rechts, neben „Markierungen“; auf dem iPhone im dritten Reiter): oben die Karten und Snippets, die du aus diesem Werk angelegt hast, darunter was zum Abschnitt passt, den du gerade liest (er wechselt beim Scrollen). Das Suchfeld sucht in deinem Wissen; „Im Wissen“ in der Auswahl-Leiste sucht nach den ausgewählten Wörtern.
+- Zitate: Nummern wie [12] oder [2, 3] im Text sind Links, wenn sie in der Literaturliste stehen. Ein Tipp öffnet ein kleines Fenster mit dem Eintrag und fragt, was du willst: „In der Recherche suchen“ (nach DOI, arXiv-Nummer oder Titel, der Leser schließt sich), „Zur Literaturliste“, oder, wenn du das Werk schon gemerkt hast, „In deinem Wissen öffnen“.
 - Grenzen: Abbildungen und TikZ kommen nur als Beschriftung, Tabellen als einfache Tabellen; ein Makro, das Toollib nicht kennt, bleibt im Text stehen.
 
 ## Lokal ansehen

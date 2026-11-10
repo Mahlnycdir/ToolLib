@@ -204,6 +204,8 @@ export function summary(node) {
     clips: m.type === 'research' ? asList(m.clips) : [],
     question: m.question ? String(m.question) : '',
     source: m.source ? String(m.source) : '',
+    // where a card comes from (0.14.1): the links of its sources, so a work finds the cards made from it
+    sourceUrls: (Array.isArray(m.sources) ? m.sources : []).map((s) => (s && typeof s === 'object' ? String(s.url || '') : '')).filter(Boolean),
     verified: m.verified !== false,
     conflict: node.conflict,
     error: node.error,

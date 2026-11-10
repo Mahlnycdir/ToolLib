@@ -1,13 +1,15 @@
 // The reader (0.14.1): a work's text in the middle, its outline on the left, your highlights and notes on the right.
 // On the iPhone the three are tabs. It opens inside the research window (research-view.js). What it reads comes from
 // services/reader.js; a work you kept keeps the text and your highlights in its clip, so both are there offline.
-import { h, toast, copyText, debounce, loadPref, savePref } from '../services/ui.js';
+import { h, toast, copyText, debounce, loadPref, modal, savePref } from '../services/ui.js';
 import { icon } from '../services/icons.js';
-import { t } from '../i18n/i18n.js';
+import { getLang, t } from '../i18n/i18n.js';
 import { renderMarkdown } from './markdown.js';
 import { outlineOf, planFor, readWork } from '../services/reader.js';
 import { clipFor, keepWork, loadClipDoc, saveClipDoc, saveHighlights } from '../services/research-store.js';
 import { hasWorker, researchSettings } from '../services/research.js';
+import { CARD_KINDS, citeNumbers, clipForEntry, createCard, guessKind, guessLang, guessTitle, knowledgeFor, knownTopics, linkCitations, madeFrom, referenceEntry, searchTermFor } from '../services/reader-cards.js';
+import { nodeHref, typeLabel } from './node-view.js';
 import { buildIndex, findQuote, selectionQuote, unwrap, wrapRange } from './reader-marks.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
@@ -49,7 +51,7 @@ export function mountReader(host, opts) {
   const workKey = work.key || work.title;
   const state = {
     doc: null, clipPath: clipFor(work)?.path || work.clip?.path || null, stored: false, highlights: [], pending: null,
-    pane: 'text', size: loadPref('reader.size', 'm'), error: null, busy: null, rendering: false, heads: [], seq: 0,
+    pane: 'text', marksTab: 'marks', knowQuery: '', knowAt: '', code: '', size: loadPref('reader.size', 'm'), error: null, busy: null, rendering: false, heads: [], seq: 0,
   };
   let abort = null;
   let renderToken = 0;
@@ -191,6 +193,7 @@ export function mountReader(host, opts) {
     for (let i = 0; i < chunks.length; i++) {
       if (token !== renderToken || destroyed) return;
       const sec = h('section', { class: 'rd-sec' }, renderMarkdown(chunks[i], { onCopy }));
+      if (doc.references?.length) linkCitations(sec, (n) => !!referenceEntry(doc.references, n));
       inner.append(sec);
       applyHighlights(sec);
       if (i === 0) restorePosition();
@@ -255,6 +258,8 @@ export function mountReader(host, opts) {
     const refs = state.heads.length && at === state.heads.length - 1 && inner.querySelector('.rd-refs h3') === state.heads[at];
     for (const b of outlineEl.querySelectorAll('.rd-o')) b.classList.toggle('on', refs ? b.dataset.k === 'refs' : b.dataset.k === String(at));
     ticking = false;
+    const here = refs ? '' : (state.heads[at]?.textContent || '').trim();
+    if (here !== state.section) { state.section = here; if (state.marksTab === 'know' && !state.knowQuery) drawKnowList(); }
   }
   const posKey = () => state.clipPath || workKey;
   const savePos = debounce(() => {
@@ -364,7 +369,168 @@ export function mountReader(host, opts) {
         h('div', { class: 'rd-mark-head' }, hl.section ? h('span', { class: 'rs-tag', text: hl.section.length > 40 ? `${hl.section.slice(0, 38)}…` : hl.section }) : null, !hl.els?.length && !state.rendering ? h('span', { class: 'rs-tag muted', text: t('reader.notFound') }) : null, del),
         go, note));
     }
-    marksEl.replaceChildren(h('h3', { text: t('reader.marks') }), state.highlights.length ? list : h('p', { class: 'muted small', text: t('reader.marks.none') }));
+    marksHost.replaceChildren(state.highlights.length ? list : h('p', { class: 'muted small', text: t('reader.marks.none') }));
+    drawSub();
+  }
+
+  // ---------------------------------------------------------------- your knowledge (0.14.1, part 2)
+  const marksHost = h('div', { class: 'rd-marks-body' });
+  const knowHost = h('div', { class: 'rd-know' });
+  marksEl.append(h('div', { class: 'rd-sub' }), marksHost, knowHost);
+  const subEl = marksEl.firstChild;
+
+  function drawSub() {
+    const made = madeFrom(work, state.clipPath || '').length;
+    subEl.replaceChildren(...[['marks', 'reader.tab.marks', state.highlights.length], ['know', 'reader.know', made]].map(([id, key, n]) => h('button', {
+      type: 'button', class: state.marksTab === id ? 'on' : '', 'aria-pressed': String(state.marksTab === id),
+      text: n ? `${t(key)} (${n})` : t(key), onclick: () => setMarksTab(id),
+    })));
+    marksHost.hidden = state.marksTab !== 'marks';
+    knowHost.hidden = state.marksTab !== 'know';
+  }
+  function setMarksTab(id) {
+    state.marksTab = id;
+    drawSub();
+    if (id === 'know') drawKnow();
+  }
+
+  const nodeTitle = (d) => (getLang() === 'de' && d.title_de ? d.title_de : d.title);
+  function knowItem(d) {
+    return h('li', {}, h('a', { class: 'rd-know-item', href: nodeHref(d.path) },
+      h('span', { class: 'rs-tag', text: typeLabel(d.type) }),
+      h('span', { class: 'rd-know-title', text: nodeTitle(d) }),
+      d.lead?.[getLang()] || d.lead?.en ? h('span', { class: 'rd-know-lead muted small', text: (d.lead[getLang()] || d.lead.en).slice(0, 110) }) : null));
+  }
+  function drawKnowList() {
+    const list = knowHost.querySelector('.rd-know-results');
+    if (!list) return;
+    const query = state.knowQuery || state.section || '';
+    const hits = knowledgeFor(query, { skip: state.clipPath || '', limit: 6 });
+    const made = madeFrom(work, state.clipPath || '');
+    const madePaths = new Set(made.map((d) => d.path));
+    const rest = hits.filter((d) => !madePaths.has(d.path));
+    list.replaceChildren(...[
+      made.length ? h('h4', { text: t('reader.know.made') }) : null,
+      made.length ? h('ul', { class: 'rd-know-list' }, ...made.map(knowItem)) : null,
+      h('h4', { text: state.knowQuery ? t('reader.know.search') : t('reader.know.here') }),
+      !state.knowQuery && state.section ? h('p', { class: 'muted small rd-know-sec', text: state.section.slice(0, 80) }) : null,
+      rest.length ? h('ul', { class: 'rd-know-list' }, ...rest.map(knowItem)) : h('p', { class: 'muted small', text: t('reader.know.none') }),
+    ].filter(Boolean));
+  }
+  function drawKnow() {
+    const input = h('input', { class: 'field', type: 'search', placeholder: t('reader.know.placeholder'), 'aria-label': t('reader.know.placeholder'), value: state.knowQuery });
+    input.addEventListener('input', debounce(() => { state.knowQuery = input.value.trim(); drawKnowList(); }, 200));
+    knowHost.replaceChildren(input, h('div', { class: 'rd-know-results' }));
+    drawKnowList();
+  }
+
+  // ---------------------------------------------------------------- cards and snippets from the selection
+  const workUrl = () => (work.ids?.doi ? `https://doi.org/${work.ids.doi}` : work.ids?.arxiv ? `https://arxiv.org/abs/${work.ids.arxiv}` : work.url || state.doc?.url || '');
+
+  function takeSelection() {
+    const q = state.pending;
+    if (!q) return null;
+    const code = state.code;
+    state.pending = null;
+    selbar.hidden = true;
+    window.getSelection()?.removeAllRanges();
+    return { q, code };
+  }
+
+  async function newCard() {
+    const got = takeSelection();
+    if (!got) return;
+    const { q } = got;
+    const text = q.text.slice(0, 3000);
+    const kind = h('select', { class: 'field', 'aria-label': t('reader.card.type') }, ...CARD_KINDS.map((k) => h('option', { value: k, text: t(`reader.card.kind.${k}`) })));
+    kind.value = guessKind(text, q.section);
+    const title = h('input', { class: 'field', type: 'text', value: guessTitle(text, q.section), 'aria-label': t('reader.card.title') });
+    const topics = knownTopics();
+    const topic = h('input', { class: 'field', type: 'text', list: 'rd-topics', value: loadPref('reader.topic', ''), 'aria-label': t('reader.card.topic'), autocomplete: 'off' });
+    const body = h('textarea', { class: 'field rd-card-text', rows: '5', 'aria-label': t('reader.card.text') });
+    body.value = text;
+    const lang = h('select', { class: 'field', 'aria-label': t('reader.card.lang') }, h('option', { value: 'en', text: 'English' }), h('option', { value: 'de', text: 'Deutsch' }));
+    lang.value = guessLang(text);
+    const row = (key, el) => h('label', { class: 'rd-card-row' }, h('span', { text: t(key) }), el);
+    const form = h('div', { class: 'rd-card-form' },
+      row('reader.card.type', kind), row('reader.card.title', title), row('reader.card.topic', topic),
+      h('datalist', { id: 'rd-topics' }, ...topics.slice(0, 40).map((x) => h('option', { value: x }))),
+      row('reader.card.text', body), row('reader.card.lang', lang),
+      q.section ? h('p', { class: 'muted small', text: t('reader.card.from', { work: work.title, section: q.section }) }) : null);
+    const values = await modal({
+      title: t('reader.card.new'), body: form, wide: true,
+      actions: [
+        { label: t('action.cancel'), value: null },
+        { label: t('reader.card.create'), kind: 'primary', value: () => {
+          if (!title.value.trim() || !body.value.trim()) { toast(t('reader.card.empty'), 'error'); title.focus(); return undefined; }
+          return { kind: kind.value, title: title.value.trim(), topic: topic.value.trim(), text: body.value.trim(), lang: lang.value };
+        } },
+      ],
+    });
+    if (!values) return;
+    try {
+      const clipPath = await ensureClip(false);
+      const clipSlug = clipPath.slice(clipPath.lastIndexOf('/') + 1).replace(/\.md$/, '');
+      await createCard({ ...values, section: q.section || '', work: { title: work.title, url: workUrl() }, clipSlug });
+      if (values.topic) savePref('reader.topic', values.topic);
+      toast(t('reader.card.made', { title: values.title }), 'ok');
+      drawSub();
+      if (state.marksTab === 'know') drawKnowList();
+    } catch (e) {
+      console.warn('Could not create the card', e);
+      toast(t('reader.card.failed'), 'error', 5000);
+    }
+  }
+
+  async function newSnippet() {
+    const got = takeSelection();
+    if (!got || !got.code.trim()) return;
+    try {
+      const clipPath = await ensureClip(false);
+      const clipSlug = clipPath.slice(clipPath.lastIndexOf('/') + 1).replace(/\.md$/, '');
+      savePref('snippet.draft', { from: clipPath, fromTitle: work.title, group: '', links: [clipSlug], code: got.code.replace(/\s+$/, ''), check: '' });
+      location.hash = '#/new';
+    } catch (e) {
+      console.warn('Could not start the snippet', e);
+      toast(t('reader.card.failed'), 'error', 5000);
+    }
+  }
+
+  function knowSelection() {
+    const got = takeSelection();
+    if (!got) return;
+    state.knowQuery = got.q.text.replace(/\$\$?/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+    if (narrow()) setPane('marks');
+    setMarksTab('know');
+  }
+
+  // ---------------------------------------------------------------- the reference [12]
+  textEl.addEventListener('click', (e) => {
+    const a = e.target.closest?.('a.rd-cite');
+    if (!a) return;
+    e.preventDefault();
+    openCite(a.dataset.cite.split(',').map(Number));
+  });
+  function openCite(nums) {
+    let close = () => {};
+    const rows = nums.map((n) => {
+      const entry = referenceEntry(state.doc?.references, n);
+      if (!entry) return null;
+      const have = clipForEntry(entry);
+      return h('div', { class: 'rd-cite-row' },
+        h('p', { class: 'rd-cite-entry' }, h('strong', { text: `[${n}] ` }), entry),
+        have ? h('p', { class: 'muted small', text: t('reader.cite.have') }) : null,
+        h('div', { class: 'rd-cite-actions' },
+          opts.onSearch ? h('button', { type: 'button', class: 'btn small primary', onclick: () => { close(); opts.onSearch(searchTermFor(entry)); } }, iconEl('search'), h('span', { text: t('reader.cite.search') })) : null,
+          have ? h('a', { class: 'btn small', href: nodeHref(have.path), onclick: () => close() }, iconEl('book'), h('span', { text: t('reader.cite.open') })) : null));
+    }).filter(Boolean);
+    const goList = h('button', { type: 'button', class: 'btn small', onclick: () => { close(); scrollToEl(inner.querySelector('.rd-refs')); } }, iconEl('list'), h('span', { text: t('reader.cite.list') }));
+    modal({
+      title: t('reader.cite.title', { n: nums.join(', ') }),
+      body: h('div', { class: 'rd-cite-pop' }, ...(rows.length ? rows : [h('p', { class: 'muted', text: t('reader.cite.none') })]), h('div', { class: 'rd-cite-actions' }, goList)),
+      actions: [{ label: t('action.close'), value: null }],
+      onOpen: (_, c) => { close = c; },
+    });
   }
 
   function flash(hl) {
@@ -387,13 +553,20 @@ export function mountReader(host, opts) {
   // the selection bar: shows while words are selected in the text
   selbar.append(
     h('button', { type: 'button', class: 'btn small primary', onclick: () => addHighlight(false) }, iconEl('edit'), h('span', { text: t('reader.mark') })),
-    h('button', { type: 'button', class: 'btn small', onclick: () => addHighlight(true) }, iconEl('comment'), h('span', { text: t('reader.markNote') })));
+    h('button', { type: 'button', class: 'btn small', onclick: () => addHighlight(true) }, iconEl('comment'), h('span', { text: t('reader.markNote') })),
+    h('button', { type: 'button', class: 'btn small rd-sel-card', onclick: newCard }, iconEl('plus'), h('span', { text: t('reader.card') })),
+    h('button', { type: 'button', class: 'btn small rd-sel-snippet', hidden: true, onclick: newSnippet }, iconEl('code'), h('span', { text: t('reader.snippet') })),
+    h('button', { type: 'button', class: 'btn small rd-sel-know', onclick: knowSelection }, iconEl('search'), h('span', { text: t('reader.know.sel') })));
   for (const b of selbar.querySelectorAll('button')) b.addEventListener('pointerdown', (e) => e.preventDefault());
   const onSelection = debounce(() => {
     if (!root.isConnected) { document.removeEventListener('selectionchange', onSelection); return; }
     if (destroyed || state.pane !== 'text') { selbar.hidden = true; return; }
     const q = selectionQuote(textEl);
     state.pending = q;
+    const sel = window.getSelection();
+    const pre = q && sel?.anchorNode ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement)?.closest('pre') : null;
+    state.code = pre && textEl.contains(pre) ? sel.toString() : '';
+    selbar.querySelector('.rd-sel-snippet').hidden = !state.code.trim();
     selbar.hidden = !q;
   }, 120);
   document.addEventListener('selectionchange', onSelection);

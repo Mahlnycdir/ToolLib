@@ -116,6 +116,7 @@ export function renderResearch(main) {
     reading = mountReader(readerHost, {
       work, version, folderPath: st.folder, query: st.result?.query.text || st.query || '',
       onBack: closeReader,
+      onSearch: async (term) => { await closeReader(); input.value = term; run(term); },
       onChange: () => { if (view?.root.isConnected) drawList(); },
     });
   }

@@ -60,7 +60,14 @@ export function startShell(root) {
 
   // Every history entry remembers how far its view was scrolled, so Back returns to the same place (e.g. in the
   // cheatsheet); a new entry starts at the top. The entry gets an id in history.state the first time it is shown.
-  const positions = new Map();   // entry id -> scrollTop
+  // The places are kept on the device too (0.14.1.2): the iPhone drops the app while you are in another app and opens
+  // it again on the same page; Back still returns to where you were.
+  const POS_KEY = 'toollib.scroll';
+  const positions = new Map((() => { try { return JSON.parse(sessionStorage.getItem(POS_KEY) || localStorage.getItem(POS_KEY) || '[]'); } catch { return []; } })());
+  const keepPositions = () => {
+    const list = [...positions.entries()].slice(-40);
+    try { const v = JSON.stringify(list); sessionStorage.setItem(POS_KEY, v); localStorage.setItem(POS_KEY, v); } catch { /* keeps working without */ }
+  };
   let shownEntry = null;
   let entrySeq = Date.now();
   function entryId() {
@@ -71,8 +78,34 @@ export function startShell(root) {
     }
     return id;
   }
+  function savePosition() {
+    if (shownEntry === null) return;
+    positions.delete(shownEntry);   // newest last, so the oldest go first
+    positions.set(shownEntry, main.scrollTop);
+    keepPositions();
+  }
+  const leaving = () => { if (document.visibilityState === 'hidden') savePosition(); };
+  document.addEventListener('visibilitychange', leaving);
+  window.addEventListener('pagehide', savePosition);
+  // The content may still come (the index after a start, a long node): try again while it grows, until you scroll.
+  let stopRestore = () => {};
   const restoreScroll = (entry, token) => {
-    if (token === renderToken) main.scrollTop = positions.get(entry) || 0;
+    stopRestore();
+    if (token !== renderToken) return;
+    const y = positions.get(entry) || 0;
+    main.scrollTop = y;
+    if (!y || Math.abs(main.scrollTop - y) < 2) return;
+    const until = Date.now() + 5000;
+    let timer = 0;
+    const stop = () => { clearTimeout(timer); for (const e of ['touchstart', 'wheel', 'keydown', 'pointerdown']) main.removeEventListener(e, stop); };
+    stopRestore = stop;
+    for (const e of ['touchstart', 'wheel', 'keydown', 'pointerdown']) main.addEventListener(e, stop, { passive: true });
+    const again = () => {
+      if (token !== renderToken || Date.now() > until) { stop(); return; }
+      main.scrollTop = y;
+      if (Math.abs(main.scrollTop - y) < 2) stop(); else timer = setTimeout(again, 120);
+    };
+    timer = setTimeout(again, 120);
   };
 
   let renderToken = 0;
@@ -80,7 +113,7 @@ export function startShell(root) {
     const route = currentRoute();
     const token = ++renderToken;
     setDrawer(false); // also when the route changes from outside, e.g. the back button
-    if (shownEntry !== null) positions.set(shownEntry, main.scrollTop);
+    savePosition();
     const entry = entryId();
     shownEntry = entry;
     main.replaceChildren();
