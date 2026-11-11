@@ -7,7 +7,7 @@ import { getLang, t } from '../i18n/i18n.js';
 import { renderMarkdown } from './markdown.js';
 import { outlineOf, planFor, readWork } from '../services/reader.js';
 import { clipFor, keepWork, loadClipDoc, saveClipDoc, saveHighlights } from '../services/research-store.js';
-import { hasWorker, researchSettings } from '../services/research.js';
+import { hasFetcher, researchSettings } from '../services/research.js';
 import { clipForEntry, createCard, knowledgeFor, linkCitations, madeFrom, referenceEntry, searchTermFor } from '../services/reader-cards.js';
 import { insertIntoPage } from '../services/library-store.js';
 import { nodeByPath } from '../services/search.js';
@@ -45,7 +45,7 @@ export function splitChunks(markdown, max = 12000) {
 
 export function errorKey(e) {
   const code = e?.code || 'failed';
-  const known = ['no-worker', 'worker-token', 'worker-origin', 'worker', 'blocked', 'not-found', 'http', 'rate', 'too-large', 'network', 'timeout', 'offline', 'no-source', 'bad-source', 'nothing', 'aborted', 'bad-url'];
+  const known = ['no-worker', 'worker-token', 'worker-origin', 'worker', 'helper-token', 'helper-origin', 'helper', 'blocked', 'not-found', 'http', 'rate', 'too-large', 'network', 'timeout', 'offline', 'no-source', 'bad-source', 'nothing', 'aborted', 'bad-url'];
   return `reader.err.${known.includes(code) ? code : 'failed'}`;
 }
 
@@ -131,7 +131,7 @@ export function mountReader(host, opts) {
 
   function fail(e) {
     const key = errorKey(e);
-    const worker = ['no-worker', 'worker-token', 'worker-origin', 'worker'].includes(e?.code);
+    const worker = ['no-worker', 'worker-token', 'worker-origin', 'worker', 'helper-token', 'helper-origin', 'helper'].includes(e?.code);
     const msg = h('div', { class: 'rd-error' }, iconEl('warn'), h('div', {},
       h('p', { text: t(key, { status: e?.status || '' }) }),
       h('div', { class: 'btn-row' },
@@ -612,6 +612,6 @@ export function mountReader(host, opts) {
       document.removeEventListener('selectionchange', onSelection);
       root.remove();
     },
-    hasSettings: () => hasWorker(researchSettings()),
+    hasSettings: () => hasFetcher(researchSettings()),
   };
 }

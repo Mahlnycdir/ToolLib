@@ -1,8 +1,11 @@
 // Research (0.14.0): searches the open interfaces in research-sources.js at the same time, merges what they find
 // (research-merge.js) and reports after every answer, so the first hits show while arXiv still thinks.
-// Answers come directly where the browser may read them, otherwise through your fetcher (fetch-proxy/worker.js).
-// Settings live on this device: research.worker, research.token, research.openalexKey, research.s2Key, research.off.
-// fetchPage() (0.14.1) brings pages, PDFs and arXiv sources to the reader the same way.
+// Answers come directly where the browser may read them, otherwise through your Mac helper (mac-helper/, 0.14.4; your
+// address at home, pages with JavaScript, the PDF folder) when it answers, otherwise through your fetcher
+// (fetch-proxy/worker.js). Settings live on this device: research.worker, research.token, research.helper,
+// research.helperToken, research.openalexKey, research.s2Key, research.off.
+// fetchPage() (0.14.1) brings pages, PDFs and arXiv sources to the reader the same way; renderPage() (0.14.4) asks the
+// helper for a page as Chromium shows it after its scripts ran.
 import { loadPref, savePref } from './prefs.js';
 import { SOURCES, sourceById } from './research-sources.js';
 import { absorb, mergeRecords, parseQuery } from './research-merge.js';
@@ -16,6 +19,8 @@ export function researchSettings() {
   return {
     worker: String(loadPref('research.worker', '') || '').trim().replace(/\/+$/, ''),
     token: String(loadPref('research.token', '') || '').trim(),
+    helper: String(loadPref('research.helper', '') || '').trim().replace(/\/+$/, ''),
+    helperToken: String(loadPref('research.helperToken', '') || '').trim(),
     openalexKey: String(loadPref('research.openalexKey', '') || '').trim(),
     s2Key: String(loadPref('research.s2Key', '') || '').trim(),
     off: loadPref('research.off', []),
@@ -23,6 +28,9 @@ export function researchSettings() {
 }
 export const saveResearchSetting = (key, value) => savePref(`research.${key}`, typeof value === 'string' ? value.trim() : value);
 export const hasWorker = (s = researchSettings()) => !!(s.worker && s.token);
+export const hasHelper = (s = researchSettings()) => !!(s.helper && s.helperToken);
+// a way to fetch what the browser may not read itself: the helper or the worker
+export const hasFetcher = (s = researchSettings()) => hasWorker(s) || hasHelper(s);
 export const sourceOn = (id, s = researchSettings()) => !(s.off || []).includes(id);
 export function setSourceOn(id, on) {
   const off = new Set(researchSettings().off || []);
@@ -34,7 +42,7 @@ export function setSourceOn(id, on) {
 export class ResearchError extends Error {
   constructor(code, { status = 0, detail = '' } = {}) {
     super(`${code}${status ? ` ${status}` : ''}${detail ? `: ${detail}` : ''}`);
-    this.code = code;   // offline, no-worker, worker-token, worker-origin, worker, blocked, rate, key, not-found, http, network, timeout, parse
+    this.code = code;   // offline, no-worker, worker-token, worker-origin, worker, helper-token, helper-origin, helper, no-helper, no-render, blocked, rate, key, not-found, http, network, timeout, parse
     this.status = status;
   }
 }
@@ -62,15 +70,64 @@ function timed(signal, ms) {
   return { signal: c.signal, done: () => { clearTimeout(id); signal?.removeEventListener('abort', stop); } };
 }
 
-async function readAnswer(res, req, viaWorker, src) {
-  if (viaWorker && !res.headers.get('X-Final-URL')) {
-    // The fetcher itself answered: its own error, not the site's.
-    let err = '';
-    try { err = (await res.json()).error || ''; } catch { /* no details */ }
-    if (res.status === 401) throw new ResearchError('worker-token');
-    if (err === 'origin-not-allowed') throw new ResearchError('worker-origin');
-    if (res.status === 403 || res.status === 413) throw new ResearchError('blocked', { status: res.status, detail: err });
-    throw new ResearchError('worker', { status: res.status, detail: err });
+// ------------------------------------------------------------------ the Mac helper (0.14.4)
+// Asked first when it answers; a Mac that sleeps or a phone away from home costs one short /ping every two minutes.
+const HELPER_OK_MS = 5 * 60 * 1000;
+const HELPER_DOWN_MS = 2 * 60 * 1000;
+let helper = { key: '', ok: null, at: 0, info: null, pending: null };
+export const helperState = () => ({ ok: helper.ok, info: helper.info });
+export async function helperReady(settings = researchSettings(), { fresh = false } = {}) {
+  if (!hasHelper(settings)) return false;
+  const key = `${settings.helper}|${settings.helperToken}`;
+  if (helper.key !== key) helper = { key, ok: null, at: 0, info: null, pending: null };
+  const age = Date.now() - helper.at;
+  if (!fresh && helper.ok === true && age < HELPER_OK_MS) return true;
+  if (!fresh && helper.ok === false && age < HELPER_DOWN_MS) return false;
+  if (helper.pending) return helper.pending;
+  const mine = helper;
+  mine.pending = (async () => {
+    const c = new AbortController();
+    const id = setTimeout(() => c.abort(), 4000);
+    try {
+      const res = await fetch(`${settings.helper}/ping`, { headers: { 'X-Toollib-Token': settings.helperToken }, credentials: 'omit', cache: 'no-store', signal: c.signal });
+      const body = await res.json().catch(() => ({}));
+      mine.ok = res.ok && body.ok === true;
+      mine.info = mine.ok ? body : { status: res.status, error: body.error || '' };
+    } catch {
+      mine.ok = false;
+      mine.info = null;
+    } finally {
+      clearTimeout(id);
+    }
+    mine.at = Date.now();
+    mine.pending = null;
+    return mine.ok;
+  })();
+  return mine.pending;
+}
+const helperDown = () => { helper.ok = false; helper.at = Date.now(); };
+const helperHeaders = (s, more = {}) => ({ ...more, 'X-Toollib-Token': s.helperToken });
+
+// The helper or the worker answered itself (no X-Final-URL): its own error, not the site's.
+async function ownError(res, via) {
+  let err = '';
+  try { err = (await res.json()).error || ''; } catch { /* no details */ }
+  if (res.status === 401) return new ResearchError(`${via}-token`);
+  if (err === 'origin-not-allowed') return new ResearchError(`${via}-origin`);
+  if (res.status === 413) return new ResearchError('too-large', { status: 413, detail: err });
+  if (res.status === 403) return new ResearchError('blocked', { status: 403, detail: err });
+  if (err === 'not-html') return new ResearchError('type', { status: res.status });
+  if (err === 'no-render') return new ResearchError('no-render');
+  if (via === 'helper' && res.status === 404) return new ResearchError('not-found', { status: 404, detail: err });
+  if (via === 'helper' && res.status === 504) return new ResearchError('timeout', { status: 504 });
+  return new ResearchError(via, { status: res.status, detail: err });
+}
+
+// via: '' (directly), 'helper' or 'worker'
+async function readAnswer(res, req, via, src) {
+  if (via && !res.headers.get('X-Final-URL')) {
+    const e = await ownError(res, via);
+    throw e.code === 'too-large' ? new ResearchError('blocked', { status: 413, detail: 'too-large' }) : e;
   }
   if (res.status === 404 && req.one) return null;
   if (res.status === 429) throw new ResearchError('rate', { status: 429 });
@@ -104,7 +161,7 @@ export async function getFor(src, req, { settings = researchSettings(), signal, 
     if (src.cors !== 'no') {
       try {
         const res = await fetch(req.url, { headers, signal: t.signal, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
-        data = await readAnswer(res, req, false, src);
+        data = await readAnswer(res, req, '', src);
         cache.set(req.url, { time: Date.now(), data });
         return data;
       } catch (e) {
@@ -113,7 +170,25 @@ export async function getFor(src, req, { settings = researchSettings(), signal, 
         directFailed = e;   // the browser refused (CORS) or the site is not reachable from here
       }
     }
-    if (!hasWorker(settings)) throw new ResearchError(src.cors === 'no' ? 'no-worker' : directFailed instanceof ResearchError ? directFailed.code : 'network');
+    if (await helperReady(settings)) {
+      let res = null;
+      try {
+        res = await fetch(`${settings.helper}/fetch?url=${encodeURIComponent(req.url)}`, { headers: helperHeaders(settings, headers), signal: t.signal, credentials: 'omit', cache: 'no-store' });
+      } catch {
+        if (t.signal.aborted) throw t.signal.reason instanceof ResearchError ? t.signal.reason : new ResearchError('aborted');
+        helperDown();   // the Mac sleeps or you are away: the worker takes over
+      }
+      if (res) {
+        data = await readAnswer(res, req, 'helper', src);
+        blocked.delete(src.id);
+        cache.set(req.url, { time: Date.now(), data });
+        return data;
+      }
+    }
+    if (!hasWorker(settings)) {
+      if (hasHelper(settings)) throw new ResearchError('helper', { detail: 'unreachable' });
+      throw new ResearchError(src.cors === 'no' ? 'no-worker' : directFailed instanceof ResearchError ? directFailed.code : 'network');
+    }
     const via = `${settings.worker}/fetch?url=${encodeURIComponent(req.url)}${src.ttl ? `&ttl=${src.ttl}` : ''}`;
     let res;
     try {
@@ -122,7 +197,7 @@ export async function getFor(src, req, { settings = researchSettings(), signal, 
       if (t.signal.aborted) throw t.signal.reason instanceof ResearchError ? t.signal.reason : new ResearchError('aborted');
       throw new ResearchError('worker', { detail: 'unreachable' });
     }
-    data = await readAnswer(res, req, true, src);
+    data = await readAnswer(res, req, 'worker', src);
     cache.set(req.url, { time: Date.now(), data });
     return data;
   } finally {
@@ -134,9 +209,10 @@ export async function getFor(src, req, { settings = researchSettings(), signal, 
 const PAGE_TIMEOUT_MS = 120 * 1000;
 const hostGap = (host) => (/(^|\.)arxiv\.org$/.test(host) ? 3100 : 400);
 
-// A page, a PDF or an arXiv source: { bytes, finalUrl, contentType }. Through your fetcher; without one only sites that
-// allow it (CORS) answer. onProgress(received, total) while the body comes in.
-export async function fetchPage(url, { signal, settings = researchSettings(), onProgress } = {}) {
+// A page, a PDF or an arXiv source: { bytes, finalUrl, contentType, via, savedAs, sha1 }. Through your Mac helper when
+// it answers, else your fetcher; without either only sites that allow it (CORS) answer. keep: the helper keeps a PDF
+// in your PDF folder (savedAs: its path there). onProgress(received, total) while the body comes in.
+export async function fetchPage(url, { signal, settings = researchSettings(), onProgress, keep = false } = {}) {
   let host = '';
   try {
     const u = new URL(url);
@@ -147,10 +223,22 @@ export async function fetchPage(url, { signal, settings = researchSettings(), on
   await wait({ id: `host:${host}`, gap: hostGap(host) }, signal);
   const t = timed(signal, PAGE_TIMEOUT_MS);
   try {
-    let res;
-    let viaWorker = false;
-    if (hasWorker(settings)) {
-      viaWorker = true;
+    let res = null;
+    let via = '';
+    if (await helperReady(settings)) {
+      try {
+        res = await fetch(`${settings.helper}/fetch?url=${encodeURIComponent(url)}${keep ? '&keep=1' : ''}`, { headers: helperHeaders(settings, { Accept: '*/*' }), signal: t.signal, credentials: 'omit', cache: 'no-store' });
+        via = 'helper';
+      } catch {
+        if (t.signal.aborted) throw t.signal.reason instanceof ResearchError ? t.signal.reason : new ResearchError('aborted');
+        helperDown();
+        res = null;
+      }
+    }
+    if (res) {
+      // the helper answered
+    } else if (hasWorker(settings)) {
+      via = 'worker';
       try {
         res = await fetch(`${settings.worker}/fetch?url=${encodeURIComponent(url)}`, { headers: { Accept: '*/*', 'X-Toollib-Token': settings.token }, signal: t.signal, credentials: 'omit', cache: 'no-store' });
       } catch {
@@ -162,18 +250,10 @@ export async function fetchPage(url, { signal, settings = researchSettings(), on
         res = await fetch(url, { headers: { Accept: '*/*' }, signal: t.signal, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
       } catch {
         if (t.signal.aborted) throw t.signal.reason instanceof ResearchError ? t.signal.reason : new ResearchError('aborted');
-        throw new ResearchError('no-worker');
+        throw hasHelper(settings) ? new ResearchError('helper', { detail: 'unreachable' }) : new ResearchError('no-worker');
       }
     }
-    if (viaWorker && !res.headers.get('X-Final-URL')) {
-      let err = '';
-      try { err = (await res.json()).error || ''; } catch { /* no details */ }
-      if (res.status === 401) throw new ResearchError('worker-token');
-      if (err === 'origin-not-allowed') throw new ResearchError('worker-origin');
-      if (res.status === 413) throw new ResearchError('too-large', { status: 413 });
-      if (res.status === 403) throw new ResearchError('blocked', { status: 403, detail: err });
-      throw new ResearchError('worker', { status: res.status, detail: err });
-    }
+    if (via && !res.headers.get('X-Final-URL')) throw await ownError(res, via);
     if (res.status === 404 || res.status === 410) throw new ResearchError('not-found', { status: res.status });
     if (res.status === 429) throw new ResearchError('rate', { status: 429 });
     if (res.status === 401 || res.status === 402 || res.status === 403) throw new ResearchError('blocked', { status: res.status });
@@ -197,7 +277,11 @@ export async function fetchPage(url, { signal, settings = researchSettings(), on
     } else {
       bytes = new Uint8Array(await res.arrayBuffer());
     }
-    return { bytes, finalUrl: res.headers.get('X-Final-URL') || res.url || url, contentType: (res.headers.get('content-type') || '').toLowerCase() };
+    const saved = res.headers.get('X-Saved-As');
+    return {
+      bytes, finalUrl: res.headers.get('X-Final-URL') || res.url || url, contentType: (res.headers.get('content-type') || '').toLowerCase(),
+      via: via || 'direct', savedAs: saved ? decodeURIComponent(saved) : '', sha1: res.headers.get('X-Saved-Sha1') || '',
+    };
   } catch (e) {
     if (t.signal.aborted && !(e instanceof ResearchError)) throw t.signal.reason instanceof ResearchError ? t.signal.reason : new ResearchError('aborted');
     if (e instanceof ResearchError) throw e;
@@ -205,6 +289,59 @@ export async function fetchPage(url, { signal, settings = researchSettings(), on
   } finally {
     t.done();
   }
+}
+
+// A request to the helper itself (0.14.4, the PDF folder): the answer, or a ResearchError ('helper' when it does not answer).
+export async function helperFetch(path, { method = 'GET', json = null, signal, settings = researchSettings() } = {}) {
+  if (!(await helperReady(settings))) throw new ResearchError(hasHelper(settings) ? 'helper' : 'no-helper', { detail: 'unreachable' });
+  let res;
+  try {
+    res = await fetch(`${settings.helper}${path}`, {
+      method, body: json ? JSON.stringify(json) : null, headers: helperHeaders(settings, json ? { 'Content-Type': 'application/json' } : {}),
+      signal, credentials: 'omit', cache: 'no-store',
+    });
+  } catch {
+    if (signal?.aborted) throw new ResearchError('aborted');
+    helperDown();
+    throw new ResearchError('helper', { detail: 'unreachable' });
+  }
+  if (!res.ok) throw await ownError(res, 'helper');
+  return res;
+}
+
+// A page as Chromium on your Mac shows it after its scripts ran (0.14.4): { bytes, finalUrl, contentType, via: 'render' }.
+// Needs the Mac helper; for pages that build their text with JavaScript (the reader and going through ask by themselves).
+export async function renderPage(url, { signal, settings = researchSettings() } = {}) {
+  if (!(await helperReady(settings))) throw new ResearchError(hasHelper(settings) ? 'helper' : 'no-helper', { detail: 'unreachable' });
+  const t = timed(signal, PAGE_TIMEOUT_MS);
+  try {
+    let res;
+    try {
+      res = await fetch(`${settings.helper}/render?url=${encodeURIComponent(url)}`, { headers: helperHeaders(settings), signal: t.signal, credentials: 'omit', cache: 'no-store' });
+    } catch {
+      if (t.signal.aborted) throw t.signal.reason instanceof ResearchError ? t.signal.reason : new ResearchError('aborted');
+      helperDown();
+      throw new ResearchError('helper', { detail: 'unreachable' });
+    }
+    if (!res.headers.get('X-Final-URL')) throw await ownError(res, 'helper');
+    if (res.status === 404 || res.status === 410) throw new ResearchError('not-found', { status: res.status });
+    if (res.status === 429) throw new ResearchError('rate', { status: 429 });
+    if (res.status === 401 || res.status === 402 || res.status === 403) throw new ResearchError('blocked', { status: res.status });
+    if (!res.ok) throw new ResearchError('http', { status: res.status });
+    return { bytes: new Uint8Array(await res.arrayBuffer()), finalUrl: res.headers.get('X-Final-URL'), contentType: 'text/html; charset=utf-8', via: 'render', savedAs: '', sha1: '' };
+  } catch (e) {
+    if (t.signal.aborted && !(e instanceof ResearchError)) throw t.signal.reason instanceof ResearchError ? t.signal.reason : new ResearchError('aborted');
+    if (e instanceof ResearchError) throw e;
+    throw new ResearchError('network');
+  } finally {
+    t.done();
+  }
+}
+
+// A page that builds its text with JavaScript: little text, but scripts. Then the helper shows it as Chromium does.
+export function wantsRender(html, markdown) {
+  const plain = String(markdown || '').replace(/\$\$[\s\S]*?\$\$|\$[^$]*\$/g, '').replace(/[#*_>`\-\s]+/g, ' ').trim();
+  return plain.length < 200 && /<script[\s>]/i.test(String(html || ''));
 }
 
 // ------------------------------------------------------------------ searching
@@ -226,7 +363,7 @@ export function startSearch(raw, { onUpdate, only } = {}) {
   const runOne = async (src) => {
     const reqs = src.requests(query, settings, src.id === 'doab' ? 10 : LIMIT);
     if (!reqs.length) { status[src.id] = { state: 'skip', n: 0 }; return; }
-    if (blocked.has(src.id)) { status[src.id] = { state: 'error', n: 0, error: 'blocked', status: 403 }; return; }
+    if (blocked.has(src.id) && !(await helperReady(settings))) { status[src.id] = { state: 'error', n: 0, error: 'blocked', status: 403 }; return; }
     try {
       let n = 0;
       for (const req of reqs) {
@@ -276,7 +413,8 @@ export async function findVersions(work, { onUpdate, signal, settings = research
   let current = work;
   let added = 0;
   const failed = [];
-  await Promise.all(SOURCES.filter((s) => sourceOn(s.id, settings) && s.versionRequests && !blocked.has(s.id)).map(async (src) => {
+  const home = await helperReady(settings);
+  await Promise.all(SOURCES.filter((s) => sourceOn(s.id, settings) && s.versionRequests && (home || !blocked.has(s.id))).map(async (src) => {
     for (const req of src.versionRequests(current, settings)) {
       try {
         const data = await getFor(src, req, { settings, signal });
@@ -307,6 +445,19 @@ export async function testResearch(onLine) {
     onLine?.([...lines]);
   };
   const checks = [];
+  if (hasHelper(s)) {
+    set('helper', 'busy', 'research.test.busy', { name: 'Mac helper' });
+    checks.push((async () => {
+      await helperReady(s, { fresh: true });
+      const st = helperState();
+      if (st.ok) set('helper', 'ok', st.info.render ? 'research.test.helper' : 'research.test.helperNoRender', { version: st.info.version || '?', folder: st.info.pdfDir || '', n: st.info.inbox || 0 });
+      else if (st.info?.status === 401) set('helper', 'fail', 'research.test.helperToken');
+      else if (st.info?.error === 'origin-not-allowed') set('helper', 'fail', 'research.test.helperOrigin', { origin: location.origin });
+      else if (st.info) set('helper', 'fail', 'research.test.workerError', { status: st.info.status });
+      else set('helper', 'fail', 'research.test.helperUnreachable');
+    })());
+    await checks[0];   // the sources below then know whether the helper answers
+  }
   set('worker', hasWorker(s) ? 'busy' : 'info', hasWorker(s) ? 'research.test.busy' : 'research.test.noWorker', { name: 'Fetcher' });
   if (hasWorker(s)) {
     checks.push((async () => {

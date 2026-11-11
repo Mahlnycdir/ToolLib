@@ -16,6 +16,7 @@ import { conflictActions } from './conflict-actions.js';
 import { loadLibrary } from '../services/library-store.js';
 import { workFromClip } from '../services/research-store.js';
 import { createFromWork } from './card-dialog.js';
+import { openOriginal } from '../services/pdf-inbox.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 
@@ -211,6 +212,8 @@ export async function renderNode(main, path, ctx) {
     const make = (kind) => async () => { const w = await workFromClip(path).catch(() => null); if (w) await createFromWork(kind, w, { go }); };
     box.append(h('div', { class: 'btn-row' },
       h('button', { type: 'button', class: 'btn small primary clip-read', onclick: () => { savePref('research.read', path); go('#/m/scraper'); } }, iconEl('book'), h('span', { text: t('node.read') })),
+      // the original in your PDF folder on the Mac (0.14.4)
+      d.file ? h('button', { type: 'button', class: 'btn small clip-original', title: t('inbox.original.hint'), onclick: async () => { if (!(await openOriginal(d.file, d.fileSha1))) toast(t('inbox.originalFailed'), 'warn', 5000); } }, iconEl('file'), h('span', { text: t('inbox.original') })) : null,
       editable ? h('button', { type: 'button', class: 'btn small clip-card', onclick: make('card') }, iconEl('plus'), h('span', { text: t('reader.card') })) : null,
       editable ? h('button', { type: 'button', class: 'btn small clip-term', onclick: make('term') }, iconEl('plus'), h('span', { text: t('reader.card.kind.term') })) : null,
       editable ? h('button', { type: 'button', class: 'btn small clip-snippet', onclick: make('snippet') }, iconEl('code'), h('span', { text: t('reader.snippet') })) : null));

@@ -5,9 +5,11 @@
 // their text (they count as pages). Clips link to each other where their text links ("links:").
 // The run is kept on this device in /crawls/<folder>.json (outside the knowledge, not synced): a pause, an app the
 // iPhone closed or a lost network continue where they stopped. Only one run at a time per device (Web Lock).
+// With the Mac helper (0.14.4) pages that build their text with JavaScript are shown by Chromium on the Mac, and the
+// PDFs stay as originals in your PDF folder (file: in the clip).
 //   research/<name>.md  type: research; crawl: {start, scope, depth, max, pdfs}; crawl_state, crawl_pages, crawl_date
 //   clips/<name>.md     type: clip; kind: page or document; site, url, crawl (the folder), crawl_depth, links, ## Text
-import { fetchPage, hasWorker, researchSettings } from './research.js';
+import { fetchPage, hasFetcher, helperReady, renderPage, researchSettings, wantsRender } from './research.js';
 import { KNOWLEDGE, exists, pfs, readText, removeFile, writeFile } from './storage.js';
 import { parseNode, readNodeText, setField, slugify, writeNode, yamlValue } from './nodes.js';
 import { allNodes, indexState, nodeByPath, nodeBySlug, onIndexChange, refreshNode } from './search.js';
@@ -260,7 +262,7 @@ function fresh({ folder, title, start, scope, depth, max, pdfs, gap }) {
   return {
     v: 1, folder, title, start, scope, depth, max, pdfs, gap, status: 'running', why: '', started: Date.now(), updated: Date.now(),
     robots: null, sitemapDone: false, queue: [], seen: [], done: {}, paths: {}, outlinks: {}, linked: {}, hashes: {}, order: [],
-    counts: { fetched: 0, saved: 0, updated: 0, same: 0, robots: 0, outside: 0, type: 0, dup: 0, noindex: 0, empty: 0, missing: 0, blocked: 0, failed: 0, sitemap: 0 },
+    counts: { fetched: 0, saved: 0, updated: 0, same: 0, robots: 0, outside: 0, type: 0, dup: 0, noindex: 0, empty: 0, missing: 0, blocked: 0, failed: 0, sitemap: 0, rendered: 0 },
     skipped: [], current: '',
   };
 }
@@ -300,7 +302,7 @@ async function lockHeld() {
 // ------------------------------------------------------------------ starting, pausing, continuing
 // opts: { start, scope (from scopeFor or scopeFromText), depth, max, pdfs, gap, title }. Returns the folder path.
 export async function startCrawl(opts) {
-  if (!hasWorker(researchSettings())) throw new CrawlError('no-worker');
+  if (!hasFetcher(researchSettings())) throw new CrawlError('no-worker');
   if (run || await lockHeld()) throw new CrawlError('busy');
   const start = parseStart(opts.start);
   if (!start) throw new CrawlError('bad-url');
@@ -480,8 +482,8 @@ async function getRobots(s, signal) {
       const code = e?.code || 'network';
       // RFC 9309: a missing robots.txt (4xx) allows everything; an unreachable one (5xx) allows nothing for now
       if (['not-found', 'blocked'].includes(code) || (code === 'http' && e.status >= 400 && e.status < 500)) return { rules: [], delay: 0, sitemaps: [] };
-      if (['no-worker', 'worker-token', 'worker-origin', 'offline'].includes(code)) throw new CrawlError(code);
-      if (code === 'worker' && /unreachable/.test(e.message)) throw new CrawlError('worker');
+      if (['no-worker', 'worker-token', 'worker-origin', 'helper-token', 'helper-origin', 'offline'].includes(code)) throw new CrawlError(code);
+      if ((code === 'worker' || code === 'helper') && /unreachable/.test(e.message)) throw new CrawlError(code);
       if (attempt >= 1) throw new CrawlError('robots', e.status || 0);
       await sleep(3000, signal);
     }
@@ -587,11 +589,11 @@ async function loop(r) {
     if (wake.aborted) { s.queue.unshift(item); break; }
     let page;
     try {
-      page = await fetchPage(item.u, { signal });
+      page = await fetchPage(item.u, { signal, keep: s.pdfs });
     } catch (e) {
       if (signal.aborted) { s.queue.unshift(item); break; }
       const code = e?.code || 'network';
-      if (['no-worker', 'worker-token', 'worker-origin'].includes(code) || (code === 'worker' && /unreachable/.test(e.message))) { s.queue.unshift(item); throw new CrawlError(code); }
+      if (['no-worker', 'worker-token', 'worker-origin', 'helper-token', 'helper-origin'].includes(code) || ((code === 'worker' || code === 'helper') && /unreachable/.test(e.message))) { s.queue.unshift(item); throw new CrawlError(code); }
       if (code === 'offline') { s.queue.unshift(item); s.status = 'paused'; s.why = 'offline'; break; }
       if (code === 'rate' && (item.r || 0) < 3) {
         item.r = (item.r || 0) + 1;
@@ -665,6 +667,24 @@ async function take(s, item, page, signal) {
     if (!parts.nofollow) enqueue(s, parts.links, item.d);
     if (parts.noindex) return skip(s, item, 'noindex');
     doc = await htmlToDoc(html, finalUrl);
+    // little text but scripts: Chromium on your Mac shows the page (0.14.4); its links count too
+    if (wantsRender(html, doc.markdown) && await helperReady()) {
+      try {
+        const shown = await renderPage(finalUrl, { signal });
+        const html2 = decodeHtml(shown.bytes, shown.contentType);
+        const parts2 = pageParts(html2, shown.finalUrl || finalUrl);
+        if (!parts.nofollow && !parts2.nofollow) enqueue(s, parts2.links, item.d);
+        const doc2 = await htmlToDoc(html2, shown.finalUrl || finalUrl);
+        if (doc2.markdown.trim().length > doc.markdown.trim().length) {
+          doc = { ...doc2, via: 'render' };
+          s.counts.rendered = (s.counts.rendered || 0) + 1;
+          if (!parts.title) parts.title = parts2.title;
+        }
+      } catch (e) {
+        if (signal.aborted) throw e;
+        console.warn('Crawl: the helper could not show', finalUrl, e);
+      }
+    }
     kind = 'page';
     title = withoutSite(s, doc.title || parts.title, item.d === 0);
   } else return skip(s, item, 'type');
@@ -672,7 +692,7 @@ async function take(s, item, page, signal) {
   const hash = fnv(doc.markdown);
   if (s.hashes[hash]) { for (const k of keys) s.done[k] = s.hashes[hash]; return skip(s, item, 'dup'); }
   const site = bareHost(new URL(finalUrl).hostname);
-  const slug = await writePage(s, { url: item.u, finalUrl, kind, title: title || pathOf(finalUrl) || site, site, depth: item.d, doc });
+  const slug = await writePage(s, { url: item.u, finalUrl, kind, title: title || pathOf(finalUrl) || site, site, depth: item.d, doc, file: kind === 'document' ? page.savedAs || '' : '', fileSha1: page.sha1 || '' });
   for (const k of keys) s.done[k] = slug;
   s.hashes[hash] = slug;
   s.outlinks[slug] = textLinks(doc.markdown).slice(0, 80);
@@ -712,6 +732,7 @@ export function pageClipText(p) {
     'sources:', `  - ${JSON.stringify({ title: p.site, url: p.url })}`,
     `crawl: ${q(p.folder)}`, `crawl_depth: ${Number(p.depth) || 0}`,
     `fetched: ${q(p.date)}`, `text_via: ${q(p.doc.via || (p.kind === 'document' ? 'pdf' : 'html'))}`, `text_url: ${q(p.finalUrl || p.url)}`, `text_fetched: ${q(p.date)}`,
+    ...(p.file ? [`file: ${q(p.file)}`, `file_sha1: ${q(p.fileSha1 || '')}`] : []),
     'source: scraper', 'verified: false', '---',
   ];
   return `${head.join('\n')}\n\n${composeBody([{ title: null, lines: [] }], { text: p.doc.markdown, references: p.doc.references || [] })}`;
@@ -733,12 +754,26 @@ async function writePage(s, p) {
     const slug = slugOf(have);
     s.paths[slug] = have;
     if (!s.order.includes(slug)) { s.order.push(slug); s._add.push(slug); }
-    if (old.trim() === p.doc.markdown.trim()) { s.counts.same++; return slug; }
+    const sameText = old.trim() === p.doc.markdown.trim();
+    if (sameText && (!p.file || (m && m[1].includes(`file: ${q(p.file)}`)))) { s.counts.same++; return slug; }
     let head = m ? m[1] : '';
+    if (sameText) {   // only the original in your PDF folder is new
+      head = setField(head, 'file', q(p.file), ['text_fetched']);
+      head = setField(head, 'file_sha1', q(p.fileSha1 || ''), ['file']);
+      await writeNode(have, `${head}${text.slice(m ? m[1].length : 0)}`);
+      await refreshNode(have);
+      s._dirty.set(have, s._dirty.get(have) || 'edited');
+      s.counts.same++;
+      return slug;
+    }
     head = setField(head, 'text_via', q(p.doc.via || 'html'), ['fetched', 'source']);
     head = setField(head, 'text_url', q(p.finalUrl || p.url), ['text_via']);
     head = setField(head, 'text_fetched', q(date), ['text_url']);
     head = setField(head, 'fetched', q(date), ['crawl_depth', 'url']);
+    if (p.file) {
+      head = setField(head, 'file', q(p.file), ['text_fetched']);
+      head = setField(head, 'file_sha1', q(p.fileSha1 || ''), ['file']);
+    }
     await writeNode(have, `${head}\n${composeBody(parts, { text: p.doc.markdown, references: p.doc.references || [] })}`);
     await refreshNode(have);
     s._dirty.set(have, s._dirty.get(have) || 'edited');

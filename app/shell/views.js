@@ -283,6 +283,18 @@ function researchCard() {
   const tokenRow = h('div', { class: 'row-input' });
   token.input.before(tokenRow);
   tokenRow.append(token.input, show);
+  // the Mac helper (0.14.4): your address at home, pages with JavaScript, the PDF folder
+  const helper = field('helper', t('settings.research.helper'), { type: 'url', placeholder: 'https://localhost:8413', inputmode: 'url' }, t('settings.research.helper.hint'));
+  const helperToken = field('helperToken', t('settings.research.helperToken'), { type: 'password', autocomplete: 'off' }, t('settings.research.helperToken.hint'));
+  const showH = h('button', { type: 'button', class: 'btn small', text: t('settings.sync.show') });
+  showH.addEventListener('click', () => {
+    const hidden = helperToken.input.type === 'password';
+    helperToken.input.type = hidden ? 'text' : 'password';
+    showH.textContent = t(hidden ? 'settings.sync.hide' : 'settings.sync.show');
+  });
+  const helperRow = h('div', { class: 'row-input' });
+  helperToken.input.before(helperRow);
+  helperRow.append(helperToken.input, showH);
   const oa = field('openalexKey', t('settings.research.openalex'), { type: 'password', autocomplete: 'off' }, t('settings.research.openalex.hint'), { href: 'https://openalex.org/settings/api', text: 'openalex.org/settings/api' });
   const s2 = field('s2Key', t('settings.research.s2'), { type: 'password', autocomplete: 'off' }, t('settings.research.s2.hint'), { href: 'https://www.semanticscholar.org/product/api', text: 'semanticscholar.org/product/api' });
 
@@ -301,7 +313,7 @@ function researchCard() {
     h('span', { text: l.key.startsWith('research.err.') ? `${l.vars.name}: ${errorText(l.vars.id, l.key.slice(13), l.vars.status)}` : t(l.key, l.vars) }));
   const test = h('button', { type: 'button', class: 'btn' }, iconEl('link'), h('span', { text: t('settings.sync.test') }));
   test.addEventListener('click', async () => {
-    for (const f of [worker, token, oa, s2]) saveResearchSetting(f.input.id.replace('research-', ''), f.input.value);
+    for (const f of [worker, token, helper, helperToken, oa, s2]) saveResearchSetting(f.input.id.replace('research-', ''), f.input.value);
     test.disabled = true;
     try {
       await testResearch((lines) => result.replaceChildren(...lines.map(line)));
@@ -322,7 +334,12 @@ function researchCard() {
   return h('section', { class: 'card', id: 'settings-research' },
     h('h2', { text: t('settings.research') }),
     h('p', { class: 'muted', text: t('settings.research.hint') }),
-    worker.row, token.row, oa.row, s2.row,
+    worker.row, token.row,
+    h('h3', { class: 'set-sub', text: t('settings.research.helperTitle') }),
+    h('p', { class: 'muted small', text: t('settings.research.helperIntro') }),
+    helper.row, helperToken.row,
+    h('h3', { class: 'set-sub', text: t('settings.research.keys') }),
+    oa.row, s2.row,
     h('h3', { class: 'set-sub', text: t('settings.research.sources') }), list,
     h('div', { class: 'btn-row' }, test), result,
     h('h3', { class: 'set-sub', text: t('settings.crawl') }),

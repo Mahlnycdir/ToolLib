@@ -2,7 +2,7 @@
 // formulas), then the PDF; for other works the free version's PDF or page. Everything ends as Markdown with LaTeX
 // formulas, an outline, a list of references and a place for your highlights.
 // The clip node keeps it: abstract, then "## Text", "## References", "## Highlights" (functions at the end of this file).
-import { fetchPage, researchSettings, ResearchError } from './research.js';
+import { fetchPage, hasFetcher, renderPage, researchSettings, ResearchError, wantsRender, helperReady } from './research.js';
 import { arxivFromUrl, bestFree, normArxiv } from './research-merge.js';
 
 export class ReaderError extends Error {
@@ -32,8 +32,9 @@ export function planFor(work, version = null) {
 // ------------------------------------------------------------------ reading
 async function readStep(step, { signal, onStatus }) {
   onStatus?.({ step: 'fetch', via: step.via, url: step.url });
-  const page = await fetchPage(step.url, { signal, onProgress: (got, total) => onStatus?.({ step: 'fetch', via: step.via, url: step.url, got, total }) });
-  const done = { url: step.url, finalUrl: page.finalUrl, fetched: today() };
+  const page = await fetchPage(step.url, { signal, keep: true, onProgress: (got, total) => onStatus?.({ step: 'fetch', via: step.via, url: step.url, got, total }) });
+  // a PDF the Mac helper kept: its place in your PDF folder (0.14.4)
+  const done = { url: step.url, finalUrl: page.finalUrl, fetched: today(), ...(page.savedAs ? { file: page.savedAs, fileSha1: page.sha1 } : {}) };
   onStatus?.({ step: 'convert', via: step.via });
   const pdf = async () => {
     const { pdfToDoc } = await import('./reader-pdf.js');
@@ -52,7 +53,20 @@ async function readStep(step, { signal, onStatus }) {
   }
   if (step.via === 'pdf' || isPdf(page.bytes, page.contentType)) return { ...(await pdf()), ...done };
   const { htmlToDoc, decodeHtml } = await import('./reader-html.js');
-  const doc = await htmlToDoc(decodeHtml(page.bytes, page.contentType), page.finalUrl || step.url);
+  const html = decodeHtml(page.bytes, page.contentType);
+  const doc = await htmlToDoc(html, page.finalUrl || step.url);
+  // little text but scripts: the Mac helper shows the page as Chromium does (0.14.4)
+  if (wantsRender(html, doc.markdown) && await helperReady()) {
+    onStatus?.({ step: 'fetch', via: 'render', url: step.url });
+    try {
+      const shown = await renderPage(page.finalUrl || step.url, { signal });
+      const again = await htmlToDoc(decodeHtml(shown.bytes, shown.contentType), shown.finalUrl);
+      if (again.markdown.length > doc.markdown.length) return { ...again, via: 'render', ...done, finalUrl: shown.finalUrl };
+    } catch (e) {
+      if (signal?.aborted || e?.code === 'aborted') throw e;
+      console.warn('Reader: the helper could not show the page', e);
+    }
+  }
   return { ...doc, ...done };
 }
 
@@ -69,14 +83,14 @@ export async function readWork(plan, { signal, onStatus } = {}) {
       first = first || (e instanceof ResearchError || e instanceof ReaderError ? e : new ReaderError('failed', String(e?.message || e)));
       console.warn('Reader step failed', step.via, step.url, e);
       // a missing fetcher, a wrong token or no network will not change with the next step
-      if (['no-worker', 'worker-token', 'worker-origin', 'offline'].includes(e?.code)) throw e;
+      if (['no-worker', 'worker-token', 'worker-origin', 'helper-token', 'helper-origin', 'offline'].includes(e?.code)) throw e;
     }
   }
   if (!plan.steps.length) throw new ReaderError('nothing');
   throw first;
 }
 
-export const canRead = (settings = researchSettings()) => !!(settings.worker && settings.token);
+export const canRead = (settings = researchSettings()) => hasFetcher(settings);
 
 // ------------------------------------------------------------------ outline
 // Headings of the stored text: "###" first level, "####" second level. Code and display formulas are skipped.

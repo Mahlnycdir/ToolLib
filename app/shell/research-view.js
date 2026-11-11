@@ -6,7 +6,8 @@ import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
 import { SOURCES, sourceById } from '../services/research-sources.js';
 import { bestFree, rankWorks, parseQuery, webUrl } from '../services/research-merge.js';
-import { findVersions, hasWorker, researchSettings, setSourceOn, sourceOn, startSearch } from '../services/research.js';
+import { findVersions, hasFetcher, helperState, researchSettings, setSourceOn, sourceOn, startSearch } from '../services/research.js';
+import { importInbox, onInbox, openOriginal } from '../services/pdf-inbox.js';
 import {
   clipFor, clipsIn, createFolder, deleteFolder, folderNotes, folders, foldersWith, keepWork, removeFromFolder, saveFolderNotes,
   updateClipVersions, workFromClip,
@@ -49,6 +50,18 @@ const st = {
 };
 let view = null;         // the mounted view: { root, draw* }
 let panel = null;        // the panel of the crawl folder that is open (0.14.3)
+let inboxLine = '';      // what the last look into the PDF inbox found (0.14.4)
+
+// The original of a clip in your PDF folder on the Mac (0.14.4), through the Mac helper.
+export function originalButton(d) {
+  const b = h('button', { type: 'button', class: 'btn small rs-original', title: t('inbox.original.hint') }, iconEl('file'), h('span', { text: t('inbox.original') }));
+  b.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (!(await openOriginal(d.file, d.fileSha1))) toast(t('inbox.originalFailed'), 'warn', 5000);
+  });
+  return b;
+}
+onInbox((x) => { if (!x.busy && view?.root.isConnected && (x.added || x.known)) view.drawAll(); });
 
 const KIND_LABEL = { published: 'research.kind.published', accepted: 'research.kind.accepted', preprint: 'research.kind.preprint', other: 'research.kind.other' };
 // Why a source did not answer, in words for this source when there are any ("DOAB refuses servers").
@@ -219,7 +232,7 @@ export function renderResearch(main) {
       const on = f.path === st.folder;
       const running = f.crawl && crawlState(f.path)?.status === 'running';
       const b = h('button', { type: 'button', class: `rs-folder${on ? ' on' : ''}${f.crawl ? ' crawl' : ''}`, 'aria-current': on ? 'true' : null },
-        iconEl(running ? 'refresh' : f.crawl ? 'globe' : on ? 'folderOpen' : 'folder', running ? 'spin' : ''), h('span', { class: 'rs-folder-name', text: f.title }), h('span', { class: 'rs-count', text: String(f.clips.length) }));
+        iconEl(running ? 'refresh' : f.crawl ? 'globe' : f.pdfInbox ? 'download' : on ? 'folderOpen' : 'folder', running ? 'spin' : ''), h('span', { class: 'rs-folder-name', text: f.title }), h('span', { class: 'rs-count', text: String(f.clips.length) }));
       b.addEventListener('click', () => {
         st.folder = on ? '' : f.path;
         savePref('research.folder', st.folder);
@@ -314,7 +327,7 @@ export function renderResearch(main) {
     const s = researchSettings();
     const errors = Object.entries(st.result?.status || {}).filter(([, v]) => v.state === 'error');
     const lines = [];
-    if (!hasWorker(s) && (sourceOn('arxiv', s) || sourceOn('doab', s))) lines.push(['info', t('research.needWorker')]);
+    if (!hasFetcher(s) && (sourceOn('arxiv', s) || sourceOn('doab', s))) lines.push(['info', t('research.needWorker')]);
     if (!s.openalexKey && sourceOn('openalex', s)) lines.push(['info', t('research.needKey')]);
     for (const [id, v] of errors) lines.push(['warn', `${sourceById(id).name}: ${errorText(id, v.error, v.status)}`]);
     if (typeof navigator !== 'undefined' && navigator.onLine === false) lines.unshift(['warn', t('research.offline')]);
@@ -397,6 +410,7 @@ export function renderResearch(main) {
       list.append(h('li', { class: 'cr-tree-wrap' }, pageTree(f, clips, { selected: st.kept?.clip?.path || '', onPick: pick, onRead: read })));
       return;
     }
+    if (f.pdfInbox) list.append(inboxBar());
     if (!clips.length) { list.append(h('li', { class: 'rs-empty muted', text: t('research.folder.empty') })); return; }
     for (const d of clips) {
       const on = st.kept?.clip?.path === d.path;
@@ -405,7 +419,8 @@ export function renderResearch(main) {
           h('span', { class: 'rs-hit-title', text: d.title }),
           d.lead?.en ? h('span', { class: 'rs-hit-meta muted small', text: d.lead.en }) : null,
           h('span', { class: 'rs-hit-tags' }, !d.verified ? h('span', { class: 'rs-tag', text: t('research.unchecked') }) : null)),
-        h('div', { class: 'rs-hit-actions' }, webUrl(d.url) ? h('a', { class: 'btn small', href: webUrl(d.url), target: '_blank', rel: 'noopener noreferrer' }, iconEl('external'), h('span', { text: t('research.open') })) : null));
+        h('div', { class: 'rs-hit-actions' }, webUrl(d.url) ? h('a', { class: 'btn small', href: webUrl(d.url), target: '_blank', rel: 'noopener noreferrer' }, iconEl('external'), h('span', { text: t('research.open') })) : null,
+          d.file ? originalButton(d) : null));
       row.firstChild.addEventListener('click', async () => {
         st.kept = await workFromClip(d.path);
         st.selected = null;
@@ -414,6 +429,32 @@ export function renderResearch(main) {
       });
       list.append(row);
     }
+  }
+
+  // the folder of your PDF inbox on the Mac (0.14.4): where to put PDFs, read them in now
+  function inboxBar() {
+    const info = helperState().info || {};
+    const status = h('p', { class: 'muted small ib-status', role: 'status', text: inboxLine || '' });
+    const now = h('button', { type: 'button', class: 'btn small ib-now' }, iconEl('download'), h('span', { text: t('inbox.now') }));
+    now.addEventListener('click', async () => {
+      now.disabled = true;
+      status.textContent = t('inbox.looking');
+      try {
+        const r = await importInbox({
+          title: t('inbox.folder'),
+          onProgress: (p) => { status.textContent = p.page ? t('inbox.readingPage', p) : t('inbox.reading', p); },
+        });
+        inboxLine = !r ? t('inbox.noHelper') : r.added || r.known || r.failed ? t('inbox.result', r) : t('inbox.empty');
+      } catch (e) {
+        inboxLine = t('inbox.noHelper');
+      }
+      status.textContent = inboxLine;
+      now.disabled = false;
+      view.drawAll();
+    });
+    return h('li', { class: 'ib-wrap' }, h('div', { class: 'ib-panel' },
+      h('p', { class: 'small', text: t('inbox.hint', { dir: info.inboxDir || '~/Toollib-PDFs/Eingang', own: info.ownDir || '~/Toollib-PDFs/Eigene' }) }),
+      h('div', { class: 'btn-row' }, now), status));
   }
 
   // ---------------------------------------------------------------- details on the right
@@ -484,6 +525,7 @@ export function renderResearch(main) {
     // keep it
     const clip = w.clip ? nodeByPath(w.clip.path) : clipFor(w);
     if (clip) {
+      if (clip.file) row.append(originalButton(clip));
       row.append(h('a', { class: 'btn small', href: nodeHref(clip.path) }, iconEl('globe'), h('span', { text: t('research.toNode') })));
       const inFolders = foldersWith(clip.slug);
       box.append(h('p', { class: 'small rs-kept-in' }, iconEl('check'), h('span', { text: inFolders.length ? t('research.keptIn', { folders: inFolders.map((f) => f.title).join(', ') }) : t('research.keptNoFolder') })));

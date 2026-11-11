@@ -951,6 +951,11 @@ a.rd-cite:hover { background: color-mix(in srgb, var(--accent) 12%, transparent)
 .cr-error { margin-top: 8px; }
 .cr-wrap, .cr-tree-wrap { list-style: none; }
 .cr-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+/* the PDF inbox on your Mac (0.14.4) */
+.ib-wrap { list-style: none; margin-bottom: 8px; }
+.ib-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.ib-panel p { margin: 0; overflow-wrap: anywhere; }
+.ib-status:empty { display: none; }
 .cr-panel[data-status="running"] { border-color: var(--accent); }
 .cr-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .cr-head .icon { color: var(--accent); }

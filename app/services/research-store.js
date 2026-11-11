@@ -242,6 +242,11 @@ export async function saveClipDoc(path, doc) {
   head = setField(head, 'text_via', q(doc.via), after);
   head = setField(head, 'text_url', q(doc.finalUrl || doc.url || ''), ['text_via']);
   head = setField(head, 'text_fetched', q(doc.fetched || today()), ['text_url']);
+  // the original in your PDF folder on the Mac (0.14.4)
+  if (doc.file) {
+    head = setField(head, 'file', q(doc.file), ['text_fetched']);
+    head = setField(head, 'file_sha1', q(doc.fileSha1 || ''), ['file']);
+  }
   const next = `${head}\n${composeBody(parts, change)}`;
   if (next === text) return false;
   await writeNode(path, next);

@@ -205,6 +205,10 @@ export function summary(node) {
     // going through a website (0.14.3): a clip is a page or a document of a run; a folder names its run
     kind: m.type === 'clip' && m.kind ? String(m.kind) : '',
     crawl: m.type === 'research' && m.crawl && typeof m.crawl === 'object' ? { start: String(m.crawl.start || ''), scope: String(m.crawl.scope || ''), state: String(m.crawl_state || ''), pages: Number(m.crawl_pages) || 0, date: String(m.crawl_date || '') } : null,
+    // the PDF folder on your Mac (0.14.4): a clip names its original, the folder of your inbox says so
+    file: m.type === 'clip' && m.file ? String(m.file) : '',
+    fileSha1: m.type === 'clip' && m.file_sha1 ? String(m.file_sha1) : '',
+    pdfInbox: m.type === 'research' && m.pdf_inbox === true,
     // your libraries (0.14.2): a page names its library
     library: m.type === 'page' && m.library ? String(m.library) : '',
     question: m.question ? String(m.question) : '',

@@ -3,7 +3,7 @@
 import { h, toast, modal, confirmDialog } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t } from '../i18n/i18n.js';
-import { hasWorker, researchSettings } from '../services/research.js';
+import { hasFetcher, researchSettings } from '../services/research.js';
 import {
   CrawlError, crawlDefaults, crawlState, loadCrawl, onCrawl, parseStart, pauseCrawl, recrawl, resumeCrawl, scopeFor, scopeFromText,
   scopeLabel, inScope, startCrawl, stopCrawl, treePath,
@@ -22,7 +22,7 @@ export function crawlErrorText(code, status = '') {
 // Resolves to the new folder's path, or null.
 export async function crawlDialog({ start = '' } = {}) {
   const d = crawlDefaults();
-  const worker = hasWorker(researchSettings());
+  const worker = hasFetcher(researchSettings());
   const startUrl = parseStart(start) || '';
   const field = (label, input, hint) => h('label', { class: 'set-field' }, h('span', { class: 'field-label', text: label }), input, hint ? h('span', { class: 'field-hint', text: hint }) : null);
   const startIn = h('input', { class: 'field', type: 'url', inputmode: 'url', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', placeholder: 'docs.scipy.org/doc/scipy/tutorial', value: startUrl || start, id: 'crawl-start' });
@@ -128,7 +128,7 @@ export function crawlPanel(folder) {
       buttons.push(btn(t('crawl.pause'), 'pause', () => pauseCrawl(folder.path)), btn(t('crawl.stop'), 'stop', () => stopCrawl(folder.path)));
     } else if (b && (status === 'paused' || status === 'error')) {
       buttons.push(btn(t('crawl.resume'), 'play', act(() => resumeCrawl(folder.path)), true), btn(t('crawl.again'), 'refresh', again));
-      if (['no-worker', 'worker-token', 'worker-origin', 'worker'].includes(b.why)) buttons.push(h('a', { class: 'btn small', href: '#/settings/research' }, iconEl('settings'), h('span', { text: t('research.toSettings') })));
+      if (['no-worker', 'worker-token', 'worker-origin', 'worker', 'helper-token', 'helper-origin', 'helper'].includes(b.why)) buttons.push(h('a', { class: 'btn small', href: '#/settings/research' }, iconEl('settings'), h('span', { text: t('research.toSettings') })));
     } else if (b && status === 'done' && b.why === 'limit') {
       const more = crawlDefaults().max;
       buttons.push(btn(t('crawl.more', { n: more }), 'play', act(() => resumeCrawl(folder.path, { more })), true), btn(t('crawl.again'), 'refresh', again));
@@ -138,7 +138,7 @@ export function crawlPanel(folder) {
     const bits = [];
     if (counts.updated || counts.same) bits.push(t('crawl.count.recrawl', { saved: counts.saved || 0, updated: counts.updated || 0, same: counts.same || 0 }));
     if (counts.sitemap) bits.push(t('crawl.count.sitemap', { n: counts.sitemap }));
-    for (const k of ['robots', 'outside', 'noindex', 'empty', 'dup', 'type', 'missing', 'blocked', 'failed']) if (counts[k]) bits.push(t(`crawl.count.${k}`, { n: counts[k] }));
+    for (const k of ['rendered', 'robots', 'outside', 'noindex', 'empty', 'dup', 'type', 'missing', 'blocked', 'failed']) if (counts[k]) bits.push(t(`crawl.count.${k}`, { n: counts[k] }));
     const skipped = b?.skipped || [];
     const details = skipped.length ? h('details', { class: 'cr-skipped', open: openSkipped ? true : null },
       h('summary', { class: 'small', text: t('crawl.skippedList', { n: skipped.length }) }),
