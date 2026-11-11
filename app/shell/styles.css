@@ -989,3 +989,16 @@ a.rd-cite:hover { background: color-mix(in srgb, var(--accent) 12%, transparent)
 .cr-page-path { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .cr-page-path .rs-tag { font-size: 11px; padding: 1px 6px; }
 .cr-page-path .rs-tag.ok .ic { width: 12px; height: 12px; color: var(--ok); }
+
+/* settings as an encrypted file (0.14.4.1) */
+.backup-form .set-field { margin-bottom: 10px; }
+.backup-actions { justify-content: flex-end; margin-top: 8px; }
+.backup-error:empty { display: none; }
+.backup-done { display: flex; align-items: center; gap: 6px; }
+.backup-done .icon { color: var(--ok, #2e7d32); }
+.backup-file-name { overflow-wrap: anywhere; }
+.backup-list { list-style: none; margin: 8px 0; padding: 0; max-height: 50vh; overflow: auto; }
+.backup-list li { border-bottom: 1px solid var(--border); }
+.backup-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 2px; cursor: pointer; }
+.backup-row > span { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; }
+.backup-values { flex-basis: 100%; overflow-wrap: anywhere; }
