@@ -208,6 +208,18 @@ export function noteChange(path, what) {
   return refreshPending();
 }
 
+// Several changes at once (0.14.3: a run through a website writes many clips), with one look at the status afterwards.
+export function noteChanges(entries) {
+  const notes = loadPref('sync.notes', {});
+  for (const [path, what] of entries) {
+    const before = notes[path];
+    if (before === 'added' && what === 'removed') delete notes[path];
+    else notes[path] = before === 'added' && what === 'edited' ? 'added' : what;
+  }
+  savePref('sync.notes', notes);
+  return refreshPending();
+}
+
 // Number of changes on this device that GitHub does not have yet, for the status bar.
 export async function refreshPending() {
   try { state.pending = await pendingChanges(); } catch { state.pending = 0; }

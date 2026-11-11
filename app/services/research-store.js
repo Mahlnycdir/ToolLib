@@ -23,7 +23,9 @@ export const foldersWith = (slug) => folders().filter((f) => f.clips.includes(sl
 export function clipFor(work) {
   const doi = work.ids?.doi;
   const arxiv = work.ids?.arxiv;
-  return allNodes().find((d) => d.type === 'clip' && !d.conflict && ((doi && d.doi === doi) || (arxiv && d.arxiv === arxiv))) || null;
+  // a single page (0.14.3) has neither: the same address is the same clip
+  const url = !doi && !arxiv && work.type === 'page' ? work.versions?.[0]?.url : '';
+  return allNodes().find((d) => d.type === 'clip' && !d.conflict && ((doi && d.doi === doi) || (arxiv && d.arxiv === arxiv) || (url && d.url === url))) || null;
 }
 
 async function freePath(dir, base) {
@@ -41,12 +43,13 @@ async function written(paths, what) {
 }
 
 // ------------------------------------------------------------------ folders
-export async function createFolder({ title, question = '' }) {
+// extra: more lines for the front matter (a run through a website, 0.14.3, adds crawl: …).
+export async function createFolder({ title, question = '', extra = [] }) {
   const name = String(title).trim();
   if (!name) throw new Error('A folder needs a title');
   const path = await freePath('research', slugify(name).slice(0, 40) || 'research');
   const head = ['---', 'type: research', `title: ${q(name)}`, question.trim() ? `question: ${q(question.trim())}` : null,
-    'clips: []', `created: ${q(today())}`, 'source: you', '---'].filter(Boolean);
+    'clips: []', ...extra, `created: ${q(today())}`, 'source: you', '---'].filter(Boolean);
   await writeNode(path, `${head.join('\n')}\n\n`);
   await written([path], 'added');
   return path;
@@ -124,7 +127,7 @@ export function clipText(work, { query = '', problem = '', date = today() } = {}
   const head = [
     '---',
     'type: clip',
-    `kind: ${q(work.type === 'book' || work.type === 'chapter' ? work.type : work.type === 'thesis' ? 'thesis' : 'paper')}`,
+    `kind: ${q(work.type === 'book' || work.type === 'chapter' || work.type === 'page' ? work.type : work.type === 'thesis' ? 'thesis' : 'paper')}`,
     `title: ${q(work.title)}`,
     work.authors.length ? `authors: ${yamlValue(work.authors.slice(0, 30))}` : null,
     work.year ? `year: ${Number(work.year)}` : null,
@@ -170,6 +173,17 @@ export async function keepWork(work, { folderPath, query = '', problem = '' } = 
   return { clipPath, slug, existed };
 }
 
+// What the details show as abstract: the lead of the clip (not the stored text); for a page or a document you went
+// through (0.14.3) its first paragraphs.
+function abstractOf(body, kind) {
+  const b = parseBody(body);
+  if (b.lead || !['page', 'document'].includes(kind)) return b.lead;
+  const paras = b.text.split(/\n\s*\n/).map((p) => p.trim()).filter((p) => p && !/^(#|```|~~~|\$\$|\||>|---)/.test(p));
+  let out = '';
+  for (const p of paras) { if (out.length > 300) break; out += `${out ? '\n\n' : ''}${p}`; }
+  return out.length > 900 ? `${out.slice(0, 899).trimEnd()}…` : out;
+}
+
 // A kept clip as a work again, for the details next to the results.
 export async function workFromClip(path) {
   const node = parseNode(await readNodeText(path), path);
@@ -180,8 +194,8 @@ export async function workFromClip(path) {
   return {
     key: ids.doi ? `doi:${ids.doi}` : ids.arxiv ? `arxiv:${ids.arxiv}` : `clip:${node.slug}`,
     title: String(m.title || node.slug), authors: asList(m.authors), year: Number(m.year) || null, venue: String(m.venue || ''),
-    type: m.kind === 'book' || m.kind === 'chapter' || m.kind === 'thesis' ? String(m.kind) : 'article',
-    abstract: node.body.trim(), cited: 0, ids, versions: orderVersions(versions), free: versions.some((v) => v.free),
+    type: ['book', 'chapter', 'thesis', 'page', 'document'].includes(m.kind) ? String(m.kind) : 'article',
+    abstract: abstractOf(node.body, m.kind), cited: 0, ids, versions: orderVersions(versions), free: versions.some((v) => v.free),
     sources: asList(m.found_in), ranks: {}, clip: { path, slug: node.slug, fetched: String(m.fetched || ''), verified: m.verified === true },
     text: m.text_via ? { via: String(m.text_via), url: String(m.text_url || ''), fetched: String(m.text_fetched || '') } : null,
   };

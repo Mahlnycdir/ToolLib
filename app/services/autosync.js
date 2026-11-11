@@ -13,6 +13,15 @@ const TYPING = 6000;
 
 export const autoOn = () => loadPref('sync.auto', true) !== false;
 
+// While something writes many files (a run through a website, 0.14.3), Sync by itself waits: at most one sync in
+// HELD_EVERY, and one right after it ends.
+const HELD_EVERY = 300000;
+const holds = new Set();
+let kick = null;
+export function holdAutoSync(reason, on) {
+  if (on) holds.add(reason); else if (holds.delete(reason)) kick?.(AFTER_CHANGE);
+}
+
 export function startAutoSync({ onDone } = {}) {
   let timer = 0;
   let lastTry = 0;
@@ -22,6 +31,7 @@ export function startAutoSync({ onDone } = {}) {
   document.addEventListener('input', () => { lastInput = Date.now(); }, true);
 
   const schedule = (ms) => { clearTimeout(timer); timer = setTimeout(attempt, ms); };
+  kick = schedule;
 
   async function attempt() {
     if (!autoOn() || !isConfigured() || !navigator.onLine || document.hidden) return;
@@ -29,6 +39,7 @@ export function startAutoSync({ onDone } = {}) {
     if (s.busy || !s.last) return;                                       // not while one runs; the first sync is yours
     if (failedAt && Date.now() - failedAt < BACKOFF) return;
     if (Date.now() - lastInput < TYPING) { schedule(TYPING); return; }   // do not move files under your hands
+    if (holds.size && Date.now() - lastTry < HELD_EVERY) { schedule(HELD_EVERY - (Date.now() - lastTry)); return; }
     lastTry = Date.now();
     try {
       const r = await syncKnowledge({ auto: true });

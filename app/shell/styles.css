@@ -658,6 +658,7 @@ table.symbols td:first-child { white-space: nowrap; }
 .rs-switch { margin: 4px 0 8px; }
 .rs-switch button:disabled { opacity: 0.5; cursor: default; }
 .rs-sources { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
+.rs-sources[hidden] { display: none; }
 .rs-src { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); font-size: 13px; cursor: pointer; }
 .rs-src .ic { width: 14px; height: 14px; }
 .rs-src-n { font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -938,3 +939,48 @@ a.rd-cite:hover { background: color-mix(in srgb, var(--accent) 12%, transparent)
   .pe-status { min-width: 0; }
   .pe-suggest { left: 8px; right: 8px; }
 }
+
+/* Going through a website (0.14.3): dialog, panel on top of the folder, pages as a tree */
+.rs-head-btns { display: flex; gap: 6px; }
+.rs-folder.crawl .icon { color: var(--accent); }
+.rs-address p { display: flex; align-items: center; gap: 6px; margin: 0 0 10px; overflow-wrap: anywhere; }
+.rs-address .btn-row { flex-wrap: wrap; }
+.cr-dialog { display: flex; flex-direction: column; gap: 4px; }
+.cr-dialog .set-field, .cr-row .set-field { margin-top: 8px; }
+.cr-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.cr-error { margin-top: 8px; }
+.cr-wrap, .cr-tree-wrap { list-style: none; }
+.cr-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.cr-panel[data-status="running"] { border-color: var(--accent); }
+.cr-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cr-head .icon { color: var(--accent); }
+.cr-scope { text-decoration: none; overflow-wrap: anywhere; }
+.cr-line { margin: 0; font-size: 14px; }
+.cr-line.warn { color: var(--warn); }
+.cr-current { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cr-bar { height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--accent) 14%, transparent); overflow: hidden; }
+.cr-bar span { display: block; height: 100%; background: var(--accent); transition: width .3s; }
+.cr-actions { flex-wrap: wrap; }
+.cr-counts { margin: 0; }
+.cr-skipped summary { cursor: pointer; color: var(--muted); }
+.cr-skip-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow: auto; }
+.cr-skip-list li { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+.cr-skip-list a { overflow-wrap: anywhere; min-width: 0; }
+.cr-tree { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.cr-tree .cr-tree { padding-left: 14px; border-left: 2px solid var(--border); margin: 4px 0 2px 8px; }
+.cr-page { display: flex; align-items: center; gap: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 2px 6px 2px 2px; min-width: 0; }
+.cr-page.on { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent); }
+.cr-page-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; border: 0; background: none; text-align: left; cursor: pointer; border-radius: 8px; color: inherit; font: inherit; }
+.cr-page-title { font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.cr-page-path { overflow-wrap: anywhere; }
+.cr-page .icon-btn { width: 34px; height: 34px; flex: none; }
+.cr-dir > summary { display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 2px; color: var(--muted); font-size: 14px; list-style: none; }
+.cr-dir > summary::-webkit-details-marker { display: none; }
+.cr-dir-name { font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
+.rd-inner a.rd-local { text-decoration-style: dotted; text-decoration-thickness: 2px; }
+@media (max-width: 759px) {
+  .cr-row { grid-template-columns: 1fr; gap: 0; }
+}
+.cr-page-path { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cr-page-path .rs-tag { font-size: 11px; padding: 1px 6px; }
+.cr-page-path .rs-tag.ok .ic { width: 12px; height: 12px; color: var(--ok); }

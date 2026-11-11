@@ -14,6 +14,7 @@ import { nodeByPath } from '../services/search.js';
 import { cardDialog } from './card-dialog.js';
 import { nodeHref, typeLabel } from './node-view.js';
 import { buildIndex, findQuote, selectionQuote, unwrap, wrapRange } from './reader-marks.js';
+import { clipByUrl } from '../services/crawl.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const narrow = () => window.matchMedia('(max-width: 759px)').matches;
@@ -178,6 +179,25 @@ export function mountReader(host, opts) {
 
   const withId = (hl) => ({ ...hl, id: `h${++state.seq}`, els: [] });
 
+  // Links to pages you went through (0.14.3) open them here, from your knowledge, also offline.
+  function markLocal(sec) {
+    if (!opts.onOpenClip) return;
+    for (const a of sec.querySelectorAll('a[href^="http"]')) {
+      const d = clipByUrl(a.href);
+      if (!d || d.path === state.clipPath) continue;
+      a.classList.add('rd-local');
+      a.dataset.clip = d.path;
+      a.removeAttribute('target');
+      a.title = t('reader.localLink', { title: d.title });
+    }
+  }
+  inner.addEventListener('click', (e) => {
+    const a = e.target.closest?.('a.rd-local');
+    if (!a || !opts.onOpenClip || e.metaKey || e.ctrlKey) return;
+    e.preventDefault();
+    opts.onOpenClip(a.dataset.clip);
+  });
+
   // ---------------------------------------------------------------- showing the text
   async function show() {
     const token = ++renderToken;
@@ -197,6 +217,7 @@ export function mountReader(host, opts) {
       if (token !== renderToken || destroyed) return;
       const sec = h('section', { class: 'rd-sec' }, renderMarkdown(chunks[i], { onCopy }));
       if (doc.references?.length) linkCitations(sec, (n) => !!referenceEntry(doc.references, n));
+      markLocal(sec);
       inner.append(sec);
       applyHighlights(sec);
       if (i === 0) restorePosition();

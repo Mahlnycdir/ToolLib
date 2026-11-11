@@ -16,6 +16,7 @@ import {
 import { researchSettings, saveResearchSetting, setSourceOn, sourceOn, testResearch } from '../services/research.js';
 import { SOURCES } from '../services/research-sources.js';
 import { errorText } from './research-view.js';
+import { crawlDefaults } from '../services/crawl.js';
 
 // Progress of the current stage: the formulary (stage 3). The foundation and stage 2 are done.
 // Mark a point as done when it is delivered; ENTE decides the order of the open ones.
@@ -308,12 +309,28 @@ function researchCard() {
       test.disabled = false;
     }
   });
+  // going through a website (0.14.3): what a new run starts with
+  const cd = crawlDefaults();
+  const crawlNum = (key, label, value, attrs, hint) => {
+    const input = h('input', { class: 'field', type: 'number', id: `crawl-set-${key}`, value: String(value), ...attrs });
+    input.addEventListener('change', () => { const n = Number(input.value); if (Number.isFinite(n)) savePref(`crawl.${key}`, key === 'gap' ? Math.max(0.5, n) : n); input.value = String(crawlDefaults()[key]); });
+    return h('label', { class: 'set-field', for: `crawl-set-${key}` }, h('span', { class: 'field-label', text: label }), input, h('span', { class: 'field-hint', text: hint }));
+  };
+  const pdfs = h('label', { class: 'set-check' }, h('input', { type: 'checkbox', id: 'crawl-set-pdfs', checked: cd.pdfs ? true : null }),
+    h('span', {}, h('b', { text: t('crawl.pdfs') }), h('span', { class: 'field-hint', text: t('crawl.pdfs.hint') })));
+  pdfs.firstChild.addEventListener('change', (e) => savePref('crawl.pdfs', e.target.checked));
   return h('section', { class: 'card', id: 'settings-research' },
     h('h2', { text: t('settings.research') }),
     h('p', { class: 'muted', text: t('settings.research.hint') }),
     worker.row, token.row, oa.row, s2.row,
     h('h3', { class: 'set-sub', text: t('settings.research.sources') }), list,
-    h('div', { class: 'btn-row' }, test), result);
+    h('div', { class: 'btn-row' }, test), result,
+    h('h3', { class: 'set-sub', text: t('settings.crawl') }),
+    h('p', { class: 'muted small', text: t('settings.crawl.hint') }),
+    h('div', { class: 'cr-row' }, crawlNum('depth', t('crawl.depth'), cd.depth, { min: '0', max: '10', step: '1' }, t('crawl.depth.hint')),
+      crawlNum('max', t('crawl.max'), cd.max, { min: '1', max: '5000', step: '1' }, t('crawl.max.hint'))),
+    crawlNum('gap', t('settings.crawl.gap'), cd.gap, { min: '0.5', max: '120', step: '0.5' }, t('settings.crawl.gap.hint')),
+    pdfs);
 }
 
 // Python for running snippets: what Toollib ships and whether it is stored on this device for offline use.

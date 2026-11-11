@@ -19,6 +19,8 @@ import { mountReader } from './reader-view.js';
 import { createLibrary, libraries, pagesOf } from '../services/library-store.js';
 import { mountLibrary } from './library-view.js';
 import { createFromWork } from './card-dialog.js';
+import { crawlState, onCrawl, pageWork, parseStart } from '../services/crawl.js';
+import { crawlDialog, crawlPanel, pageTree } from './crawl-view.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const solo = () => new URLSearchParams(location.search).has('solo');
@@ -43,8 +45,10 @@ const st = {
   read: null,            // { work, version }: the reader is open
   lib: null,             // { path, page, at }: your library is open (0.14.2), kept in library.open
   libSeen: 0,
+  address: '',           // an address in the search field (0.14.3): go through the website or read the page
 };
 let view = null;         // the mounted view: { root, draw* }
+let panel = null;        // the panel of the crawl folder that is open (0.14.3)
 
 const KIND_LABEL = { published: 'research.kind.published', accepted: 'research.kind.accepted', preprint: 'research.kind.preprint', other: 'research.kind.other' };
 // Why a source did not answer, in words for this source when there are any ("DOAB refuses servers").
@@ -106,6 +110,10 @@ export function renderResearch(main) {
   view = {
     root, input,
     drawAll() { drawTabs(); drawFolders(); drawFilters(); drawSwitch(); drawSources(); drawNotice(); drawList(); drawDetail(); },
+    drawList: () => drawList(),
+    drawFolders: () => drawFolders(),
+    folderPath: () => st.folder,
+    listMode: () => st.list,
   };
 
   function setPane(p) { st.pane = p; root.dataset.pane = p; drawTabs(); }
@@ -123,6 +131,11 @@ export function renderResearch(main) {
       work, version, folderPath: st.folder, query: st.result?.query.text || st.query || '',
       onBack: closeReader,
       onSearch: async (term) => { await closeReader(); input.value = term; run(term); },
+      // a link to another page you went through (0.14.3) opens that page here
+      onOpenClip: async (path) => {
+        const next = await workFromClip(path).catch(() => null);
+        if (next) { st.kept = next; st.selected = null; openReader(next); }
+      },
       onChange: () => { if (view?.root.isConnected) drawList(); },
     });
   }
@@ -199,11 +212,14 @@ export function renderResearch(main) {
       const path = await newFolder(st.query);
       if (path) { st.folder = path; savePref('research.folder', path); st.list = 'kept'; view.drawAll(); }
     });
+    const crawlBtn = h('button', { type: 'button', class: 'icon-btn rs-crawl-new', title: t('crawl.title'), 'aria-label': t('crawl.title'), html: icon('globe') });
+    crawlBtn.addEventListener('click', () => openCrawl(''));
     const items = h('ul', { class: 'rs-folder-list' });
     for (const f of all) {
       const on = f.path === st.folder;
-      const b = h('button', { type: 'button', class: `rs-folder${on ? ' on' : ''}`, 'aria-current': on ? 'true' : null },
-        iconEl(on ? 'folderOpen' : 'folder'), h('span', { class: 'rs-folder-name', text: f.title }), h('span', { class: 'rs-count', text: String(f.clips.length) }));
+      const running = f.crawl && crawlState(f.path)?.status === 'running';
+      const b = h('button', { type: 'button', class: `rs-folder${on ? ' on' : ''}${f.crawl ? ' crawl' : ''}`, 'aria-current': on ? 'true' : null },
+        iconEl(running ? 'refresh' : f.crawl ? 'globe' : on ? 'folderOpen' : 'folder', running ? 'spin' : ''), h('span', { class: 'rs-folder-name', text: f.title }), h('span', { class: 'rs-count', text: String(f.clips.length) }));
       b.addEventListener('click', () => {
         st.folder = on ? '' : f.path;
         savePref('research.folder', st.folder);
@@ -231,7 +247,7 @@ export function renderResearch(main) {
     const libList = h('ul', { class: 'rs-folder-list rs-lib-list' }, ...libs.map((l) => h('li', {}, h('button', { type: 'button', class: 'rs-folder rs-lib', onclick: () => openLibrary(l.path) },
       iconEl('book'), h('span', { class: 'rs-folder-name', text: l.title }), h('span', { class: 'rs-count', text: String(pagesOf(l.slug).length) })))));
     left.replaceChildren(
-      h('div', { class: 'rs-head' }, h('h2', { text: t('research.folders') }), add),
+      h('div', { class: 'rs-head' }, h('h2', { text: t('research.folders') }), h('div', { class: 'rs-head-btns' }, crawlBtn, add)),
       all.length ? items : h('p', { class: 'muted small', text: t('research.folder.none') }),
       h('div', { class: 'rs-head rs-lib-head' }, h('h2', { text: t('library.libraries') }), addLib),
       libs.length ? libList : h('p', { class: 'muted small', text: t('library.none') }),
@@ -313,6 +329,17 @@ export function renderResearch(main) {
     drawSwitch();
     list.replaceChildren();
     if (st.list === 'kept') return drawKept();
+    if (st.address && !st.result) {
+      const read = () => { const w = pageWork(st.address); st.kept = null; st.selected = null; openReader(w); };
+      list.append(h('li', { class: 'rs-empty rs-address' },
+        h('p', {}, iconEl('globe'), h('span', { text: ` ${t('crawl.address', { address: st.address.replace(/^https?:\/\//, '') })}` })),
+        h('div', { class: 'btn-row' },
+          h('button', { type: 'button', class: 'btn primary rs-address-crawl', onclick: () => openCrawl(st.address) }, iconEl('globe'), h('span', { text: t('crawl.title') })),
+          h('button', { type: 'button', class: 'btn rs-address-read', onclick: read }, iconEl('book'), h('span', { text: t('crawl.readOne') })),
+          h('button', { type: 'button', class: 'btn rs-address-words', onclick: () => run(st.query, { words: true }) }, iconEl('search'), h('span', { text: t('crawl.asWords') }))),
+        h('p', { class: 'muted small', text: t('crawl.address.hint') })));
+      return;
+    }
     if (!st.result) {
       list.append(h('li', { class: 'rs-empty' }, h('p', { text: t('research.intro') }),
         h('ul', { class: 'muted small' }, ['research.example.topic', 'research.example.doi', 'research.example.arxiv', 'research.example.pmid'].map((k) => h('li', { text: t(k) })))));
@@ -355,6 +382,21 @@ export function renderResearch(main) {
     const f = currentFolder();
     if (!f) return;
     const clips = clipsIn(f);
+    if (f.crawl) {
+      // a folder of a run through a website (0.14.3): its progress on top, the pages as a tree by path
+      if (panel?.folder !== f.path) { panel?.destroy(); panel = crawlPanel(f); } else panel.setFolder(f);
+      list.append(h('li', { class: 'cr-wrap' }, panel.el));
+      if (!clips.length) { list.append(h('li', { class: 'rs-empty muted', text: t('crawl.noPages') })); return; }
+      const pick = async (d) => {
+        st.kept = await workFromClip(d.path);
+        st.selected = null;
+        drawList(); drawDetail(); drawTabs();
+        if (narrow()) setPane('detail');
+      };
+      const read = async (d) => { const w = await workFromClip(d.path).catch(() => null); if (w) { st.kept = w; st.selected = null; openReader(w); } };
+      list.append(h('li', { class: 'cr-tree-wrap' }, pageTree(f, clips, { selected: st.kept?.clip?.path || '', onPick: pick, onRead: read })));
+      return;
+    }
     if (!clips.length) { list.append(h('li', { class: 'rs-empty muted', text: t('research.folder.empty') })); return; }
     for (const d of clips) {
       const on = st.kept?.clip?.path === d.path;
@@ -432,7 +474,8 @@ export function renderResearch(main) {
     more.addEventListener('click', () => moreVersions(w));
     const readable = !!w.text || planFor(w).steps.length > 0;
     const read = readable ? h('button', { type: 'button', class: 'btn small primary', onclick: () => openReader(w) }, iconEl('book'), h('span', { text: t('research.read') })) : null;
-    const row = h('div', { class: 'btn-row rs-work-actions' }, read, more);
+    // a page or a document you went through (0.14.3) has no other versions to look for
+    const row = h('div', { class: 'btn-row rs-work-actions' }, read, ['page', 'document'].includes(w.type) ? null : more);
     if (vs && vs !== 'busy') {
       const why = vs.failed.filter((x) => x.error === 'no-worker').length ? ` ${t('research.versionsNoWorker')}` : '';
       box.append(h('p', { class: 'muted small rs-versions-note', text: `${vs.added ? t('research.versionsAdded', { n: vs.added }) : t('research.versionsNone')}${why}` }));
@@ -586,7 +629,25 @@ export function renderResearch(main) {
     return box;
   }
 
+  // going through a website (0.14.3): the dialog, then its folder
+  async function openCrawl(start) {
+    const folderPath = await crawlDialog({ start });
+    if (!folderPath) return;
+    st.folder = folderPath;
+    savePref('research.folder', folderPath);
+    st.list = 'kept';
+    st.kept = null;
+    st.address = '';
+    st.lib = null;
+    savePref('library.open', null);
+    applyMode();
+    view.drawAll();
+    if (narrow()) setPane('results');
+  }
+
   view.drawAll();
+  const pendingCrawl = loadPref('crawl.open', '');
+  if (pendingCrawl) { savePref('crawl.open', ''); setTimeout(() => openCrawl(pendingCrawl), 50); }
   // a library opened from its node ("Write"): it comes to the front, also over the reader
   const open = loadPref('library.open', null);
   st.lib = open?.path && (!indexState().ready || nodeByPath(open.path)) ? open : null;
@@ -604,12 +665,25 @@ export function queueSearch(q) {
 }
 
 // ------------------------------------------------------------------ searching
-function run(raw) {
+function run(raw, { words = false } = {}) {
   const q = String(raw || '').trim();
   if (!q) return;
   st.query = q;
   savePref('research.query', q);
   st.search?.cancel();
+  // an address (0.14.3): go through the website or read the page, instead of searching it as words
+  const address = !words && parseQuery(q).kind === 'text' ? parseStart(q) : null;
+  st.address = address || '';
+  if (address) {
+    st.search = null;
+    st.result = null;
+    st.selected = null;
+    st.kept = null;
+    st.list = 'hits';
+    if (narrow()) st.pane = 'results';
+    if (view?.root.isConnected) { view.root.dataset.pane = st.pane; view.drawAll(); }
+    return;
+  }
   st.selected = null;
   st.kept = null;
   st.extra.clear();
@@ -681,3 +755,19 @@ export function citation(w) {
 // The sync and other windows change folders and clips: draw the lists again.
 onIndexChange((s) => { if (!s.building && view?.root.isConnected) view.drawAll(); });
 window.addEventListener('toollib:nodes', () => { if (view?.root.isConnected) view.drawAll(); });
+
+// A run through a website (0.14.3): new pages come into the tree, the folder list shows which one runs.
+let lastCrawl = { status: '', pages: -1, at: 0 };
+let crawlTimer = 0;
+onCrawl((b) => {
+  if (!view?.root.isConnected) return;
+  const statusChanged = b.status !== lastCrawl.status;
+  const pagesChanged = b.pages !== lastCrawl.pages;
+  lastCrawl = { status: b.status, pages: b.pages, at: lastCrawl.at };
+  if (statusChanged) view.drawFolders();
+  if (!pagesChanged && !statusChanged) return;
+  if (view.folderPath() !== b.folder || view.listMode() !== 'kept') { if (pagesChanged) view.drawFolders(); return; }
+  clearTimeout(crawlTimer);
+  const wait = Math.max(0, 1200 - (Date.now() - lastCrawl.at));
+  crawlTimer = setTimeout(() => { lastCrawl.at = Date.now(); if (view?.root.isConnected) { view.drawFolders(); view.drawList(); } }, statusChanged ? 0 : wait);
+});

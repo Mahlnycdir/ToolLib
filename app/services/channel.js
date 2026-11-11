@@ -20,6 +20,11 @@ export function announce(paths) {
   try { open()?.postMessage({ kind: 'nodes', paths: [...paths] }); } catch { /* other windows read it when they draw again */ }
 }
 
+// Any other message ({ kind: 'crawl', … } since 0.14.3: how a run through a website goes, and commands for it).
+export function post(msg) {
+  try { open()?.postMessage(msg); } catch { /* other windows read the files when they draw again */ }
+}
+
 export function onAnnounce(fn) {
   open();
   listeners.add(fn);

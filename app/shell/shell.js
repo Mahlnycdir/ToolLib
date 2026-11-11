@@ -16,6 +16,8 @@ import { queueSearch, renderResearch } from './research-view.js';
 import { parseQuery } from '../services/research-merge.js';
 import { onAnnounce } from '../services/channel.js';
 import { startAutoSync } from '../services/autosync.js';
+import { parseStart, resumeInterrupted } from '../services/crawl.js';
+import { savePref } from '../services/prefs.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -269,6 +271,12 @@ export function startShell(root) {
     if (q.length >= 3) {
       const research = { label: t('cmd.research', { query: q }), keys: '', icon: 'globe', accent: 'scraper', run: () => { queueSearch(q); go('#/m/scraper'); } };
       if (parseQuery(q).kind !== 'text') list.unshift(research); else list.push(research);
+      // an address or "crawl <address>" (0.14.3): go through the website
+      const address = parseQuery(q).kind === 'text' ? parseStart(q) : null;
+      if (address) {
+        const crawl = { label: t('cmd.crawl', { address: address.replace(/^https?:\/\//, '') }), keys: '', icon: 'globe', accent: 'scraper', run: () => { savePref('crawl.open', address); go('#/m/scraper'); } };
+        list.unshift(crawl);
+      }
     }
     return list;
   }
@@ -494,4 +502,6 @@ export function startShell(root) {
   render();
   buildIndex();
   refreshPending(); // changes from an earlier visit that are not uploaded yet
+  // a run through a website the app was closed in (0.14.3) goes on
+  resumeInterrupted().then((title) => { if (title) toast(t('crawl.resumed', { title }), 'info', 4000); }).catch((e) => console.warn('Crawl not resumed', e));
 }

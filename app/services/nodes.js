@@ -202,6 +202,9 @@ export function summary(node) {
     arxiv: m.arxiv ? String(m.arxiv).toLowerCase() : '',
     url: m.url ? String(m.url) : '',
     clips: m.type === 'research' ? asList(m.clips) : [],
+    // going through a website (0.14.3): a clip is a page or a document of a run; a folder names its run
+    kind: m.type === 'clip' && m.kind ? String(m.kind) : '',
+    crawl: m.type === 'research' && m.crawl && typeof m.crawl === 'object' ? { start: String(m.crawl.start || ''), scope: String(m.crawl.scope || ''), state: String(m.crawl_state || ''), pages: Number(m.crawl_pages) || 0, date: String(m.crawl_date || '') } : null,
     // your libraries (0.14.2): a page names its library
     library: m.type === 'page' && m.library ? String(m.library) : '',
     question: m.question ? String(m.question) : '',
