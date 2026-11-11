@@ -225,7 +225,7 @@ export function pageParts(html, url) {
 
 // Links in the text Toollib keeps (the main content, without menus): what a page is about points there.
 export function textLinks(markdown) {
-  return [...new Set([...String(markdown).matchAll(/\]\((https?:\/\/[^)\s]+)\)/g)].map((m) => urlKey(m[1])).filter(Boolean))];
+  return [...new Set([...String(markdown).matchAll(/\]\((https?:\/\/[^)\s]+)(?:\s+"[^"]*")?\)/g)].map((m) => urlKey(m[1])).filter(Boolean))];
 }
 
 function fnv(s) {

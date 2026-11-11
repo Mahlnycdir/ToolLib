@@ -74,6 +74,9 @@ const P = {
   translate: '<path d="M4 5.5h9M8.5 4v1.5M6 5.5c.8 3 3 5.5 6 7M11 5.5c-.8 3-3 5.5-6.5 7.5M13 20l4-9 4 9M14.3 17h5.4"/>',
   palette: '<path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.2 0 1.8-.8 1.8-1.7 0-1.2-1-1.6-1-2.6 0-.9.7-1.6 1.6-1.6H17a3.5 3.5 0 0 0 3.5-3.5c0-4.3-3.8-7.6-8.5-7.6z"/><path d="M7.5 11.5h.01M10 7.5h.01M14.5 7.5h.01"/>',
   dot: '<circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/>',
+  // the frame (0.15.0)
+  target: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/>',
+  inbox: '<path d="M4 13.5 6.5 5.5h11l2.5 8v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M4 13.5h4.5a3.5 3.5 0 0 0 7 0H20"/>',
 };
 
 export function icon(name, cls = '') {

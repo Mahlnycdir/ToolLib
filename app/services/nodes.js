@@ -149,6 +149,14 @@ export function linksOf(node) {
   return [...out];
 }
 
+// The steps of a project: the "- [ ] …" lines under "## Next". { open, done, next } with the first open one.
+export function projectSteps(body) {
+  const part = String(body).split(/^## /m).find((x) => /^Next\b/.test(x)) || '';
+  const items = [...part.matchAll(/^- \[([ xX])\] (.*)$/gm)].map((x) => ({ done: x[1] !== ' ', text: x[2].trim() }));
+  const open = items.filter((x) => !x.done);
+  return { open: open.length, done: items.length - open.length, next: open[0]?.text || '' };
+}
+
 // Plain text of all languages for the search: prose, code and formulas.
 export function searchText(node) {
   // a kept full text can be long: the index takes the start (the abstract and the first pages)
@@ -165,7 +173,8 @@ export function leadOf(body, lang, max = 140) {
   for (const para of localize(plainSpots(body), lang).split(/\n\s*\n/)) {
     const p = para.trim();
     if (!p || /^(```|~~~|\$\$|#|\||>|[-*+] |\d+[.)] )/.test(p)) continue;
-    const text = p.replace(/\s+/g, ' ').replace(/[*`]/g, '').replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, a, b) => b || a);
+    const text = p.replace(/\s+/g, ' ').replace(/[*`]/g, '').replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, a, b) => b || a)
+      .replace(/\[([^\]]+)\]\((?:[^()\s]|\([^()\s]*\))+(?:\s+"[^"]*")?\)/g, '$1');   // a link shows as its text (0.15.0)
     return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
   }
   return '';
@@ -216,6 +225,15 @@ export function summary(node) {
     pdfInbox: m.type === 'research' && m.pdf_inbox === true,
     // your libraries (0.14.2): a page names its library
     library: m.type === 'page' && m.library ? String(m.library) : '',
+    // the frame (0.15.0): what a node links to (so every node knows who links to it), when it was made, the run a
+    // page of a website belongs to and whether you marked something in it; a project names its goal and next step
+    links: linksOf(node),
+    at: String(m.at || m.created || ''),
+    run: m.type === 'clip' && m.crawl ? String(m.crawl) : '',
+    marked: m.type === 'clip' && /^## Highlights\s*$/m.test(node.body),
+    goal: m.type === 'project' && m.goal ? String(m.goal) : '',
+    state: m.type === 'project' ? String(m.state || 'active') : '',
+    steps: m.type === 'project' ? projectSteps(node.body) : null,
     question: m.question ? String(m.question) : '',
     source: m.source ? String(m.source) : '',
     // where a card comes from (0.14.1): the links of its sources, so a work finds the cards made from it

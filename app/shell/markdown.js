@@ -162,7 +162,7 @@ function table(rows, options) {
 const INLINE = new RegExp([
   '`([^`]+)`', // 1 code
   '\\[\\[([^\\]|]+)(?:\\|([^\\]]+))?\\]\\]', // 2,3 node link
-  '\\[([^\\]]+)\\]\\(([^)\\s]+)\\)', // 4,5 link
+  '\\[((?:[^\\]\\\\]|\\\\.)+)\\]\\(((?:[^()\\s]|\\([^()\\s]*\\))+)(?:\\s+"[^"]*")?\\)', // 4,5 link, also [text](address "title") and a (bracket) in the address
   '\\*\\*([^*]+)\\*\\*', // 6 bold (no __bold__: Python names like __init__ stay as they are)
   '\\*([^*\\s][^*]*?)\\*', // 7 italic (no _italic_ for the same reason)
   '\\$([^$\\n]+?)\\$', // 8 inline formula
@@ -185,7 +185,9 @@ export function inline(text, options = {}) {
       frag.append(target ? h('a', { href: target.href, class: 'node-link', text: label }) : h('span', { class: 'node-link missing', title: t('node.missing'), text: label }));
     } else if (m[4] != null) {
       const url = safeUrl(m[5]);
-      frag.append(url ? h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, inline(m[4], options)) : m[4]);
+      // "#" and "¶" behind a heading are the permalink marks of documentation pages (Sphinx, MkDocs): no text of yours
+      if (/^[#¶§🔗]$/u.test(m[4].trim())) continue;
+      frag.append(url ? h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, inline(m[4], options)) : inline(m[4], options));
     } else if (m[6] != null) frag.append(h('strong', {}, inline(m[6], options)));
     else if (m[7] != null) frag.append(h('em', {}, inline(m[7], options)));
     else if (m[8] != null) frag.append(typeset(h('span', { class: 'math-inline', title: unmarkTex(m[8]), dataset: { tex: unmarkTex(m[8]) } }), m[8], false));

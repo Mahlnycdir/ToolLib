@@ -2,6 +2,7 @@
 // middle (Markdown and how it looks), on the right what you take over: your highlights from works, your knowledge and
 // the sources of the page. On the iPhone the three are tabs. The order lives in the library node, the text in the
 // page nodes (services/library-store.js); everything is saved by itself and synced like other nodes.
+import { mark } from '../services/trail.js';
 import { h, toast, debounce, loadPref, savePref, promptDialog, confirmDialog, actionSheet } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { getLang, t } from '../i18n/i18n.js';
@@ -195,6 +196,7 @@ export function mountLibrary(host, opts) {
     state.page = page;
     state.dirty = false;
     savePref('library.open', { path: opts.path, page: path });
+    mark('write', { path, lib: opts.path, title: page.title || '' });
     const tg = loadPref('library.target', null);
     if (!tg || tg.path !== path) savePref('library.target', { path, at: page.body.length });
     drawMid();

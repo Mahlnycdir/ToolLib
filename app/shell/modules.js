@@ -13,17 +13,26 @@ export const ACCENTS = [
   { id: 'yellow', color: '#f2c94c', ink: '#0f1f3d' },
 ];
 
-// step: the foundation step that brings the module; null = after the foundation
+// The tools of the shell, in the order of the module bar: projects hold everything together, research collects,
+// formulary and cheatsheet keep, Kobra applies. planned: true = not built yet; such a tool is named on Start under
+// "Planned" and stays out of the module bar. A new tool is one line here, its texts in strings.json
+// (module.<id>.name, module.<id>.desc), its view in VIEWS of shell.js and, if it creates something, an entry in
+// CREATORS of create.js; types: the kinds of nodes it shows, which take its colour.
 export const MODULES = [
-  { id: 'cheatsheet', icon: 'book', accent: 'sky', step: 5 },
-  { id: 'formulary', icon: 'vars', accent: 'rose', step: null },   // formulary, stage 3 (0.12.0)
-  { id: 'parts', icon: 'chip', accent: 'teal', step: null },
-  { id: 'pins', icon: 'board', accent: 'green', step: null },
-  { id: 'kobra', icon: 'code', accent: 'yellow', step: null, href: 'kobra/' },   // Kobra as its own page (0.11.0)
-  { id: 'kladde', icon: 'edit', accent: 'orange', step: null },
-  { id: 'workmode', icon: 'chalkboard', accent: 'violet', step: null },
-  { id: 'scraper', icon: 'globe', accent: 'blue', step: null },     // research window (0.14.0)
+  { id: 'projects', icon: 'target', accent: 'violet', types: ['project', 'note'] },                 // 0.15.0
+  { id: 'scraper', icon: 'globe', accent: 'blue', types: ['clip', 'research', 'library', 'page'] }, // research window (0.14.0)
+  { id: 'formulary', icon: 'vars', accent: 'rose', types: ['formula', 'convention', 'definition', 'theorem', 'term', 'topic'] },   // stage 3 (0.12.0)
+  { id: 'cheatsheet', icon: 'book', accent: 'sky', types: ['snippet', 'recipe'] },
+  { id: 'kobra', icon: 'code', accent: 'yellow', href: 'kobra/', types: [] },   // Kobra as its own page (0.11.0)
+  { id: 'parts', icon: 'chip', accent: 'teal', planned: true, types: ['part', 'device'] },
+  { id: 'pins', icon: 'board', accent: 'green', planned: true, types: ['rule', 'pin_map'] },
+  { id: 'kladde', icon: 'edit', accent: 'orange', planned: true, types: [] },
+  { id: 'workmode', icon: 'chalkboard', accent: 'violet', planned: true, types: ['card'] },
 ];
+export const READY = MODULES.filter((m) => !m.planned);
+export const PLANNED = MODULES.filter((m) => m.planned);
+// the module whose colour a kind of node takes
+export const moduleOfType = (type) => MODULES.find((m) => m.types.includes(type))?.id || 'shell';
 
 export const SHELL = { id: 'shell', icon: 'home', accent: 'blue' };
 

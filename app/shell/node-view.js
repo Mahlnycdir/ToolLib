@@ -6,7 +6,7 @@ import { t, getLang } from '../i18n/i18n.js';
 import { getNode, isOwn, linksOf, localize, readNodeText, replaceBlock, runParts, setVerified, sourcesOf, summary, titleOf, writeNode } from '../services/nodes.js';
 import { allNodes, bestProblem, indexState, nodeByPath, nodeBySlug, onIndexChange, refreshNode, searchNodes } from '../services/search.js';
 import { githubRepo, isConfigured, noteChange, repoUrl } from '../services/sync.js';
-import { paintAccent } from './modules.js';
+import { moduleOfType, paintAccent } from './modules.js';
 import { renderMarkdown } from './markdown.js';
 import { runControls } from './run-panel.js';
 import { CARD_TYPES, cardSections, shownElsewhere, topicChips } from './formulary.js';
@@ -17,18 +17,18 @@ import { loadLibrary } from '../services/library-store.js';
 import { workFromClip } from '../services/research-store.js';
 import { createFromWork } from './card-dialog.js';
 import { openOriginal } from '../services/pdf-inbox.js';
+import { contextBox } from './context.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 
 // ------------------------------------------------------------------ kinds of nodes
 const TYPE_ICON = {
   snippet: 'code', recipe: 'list', topic: 'outline', formula: 'vars', convention: 'outline', definition: 'book', term: 'book', theorem: 'book',
-  rule: 'warn', part: 'chip', device: 'chip', pin_map: 'board', tool: 'wand', note: 'edit', project: 'folder',
+  rule: 'warn', part: 'chip', device: 'chip', pin_map: 'board', tool: 'wand', note: 'edit', project: 'target',
   card: 'chalkboard', clip: 'globe', research: 'search', library: 'book', page: 'file',
 };
-const TYPE_ACCENT = { formula: 'formulary', convention: 'formulary', definition: 'formulary', theorem: 'formulary', term: 'formulary', topic: 'formulary', snippet: 'cheatsheet', recipe: 'cheatsheet', part: 'parts', device: 'parts', rule: 'pins', pin_map: 'pins', card: 'workmode', clip: 'scraper', research: 'scraper', library: 'scraper', page: 'scraper' };
 export const typeIcon = (type) => TYPE_ICON[type] || 'file';
-export const typeAccent = (type) => TYPE_ACCENT[type] || 'shell';
+export const typeAccent = (type) => moduleOfType(type);
 export const typeLabel = (type) => (t(`type.${type}`) === `type.${type}` ? type : t(`type.${type}`));
 export const groupLabel = (group) => (t(`group.${group}`) === `group.${group}` ? group : t(`group.${group}`));
 export const GROUP_ORDER = ['control-flow', 'functions-classes', 'errors-files', 'data', 'data-structures', 'numpy', 'scipy', 'matplotlib', 'animation', 'lattice', 'sympy', 'debugging', 'threading', 'gui', 'git', 'science', 'imports'];
@@ -106,6 +106,7 @@ export async function renderNode(main, path, ctx) {
     await renderNode(main, path, ctx);
     main.scrollTop = top;
   };
+  main.dataset.view = 'node';
   const box = h('article', { class: 'node' });
   const back = h('button', { type: 'button', class: 'btn small back-btn', onclick: () => (history.length > 1 ? history.back() : go('#/home')) },
     iconEl('chevronLeft'), h('span', { text: t('action.back') }));
@@ -328,6 +329,8 @@ export async function renderNode(main, path, ctx) {
   foot.append(h('p', { class: 'muted small' }, h('code', { class: 'path', text: path }),
     gh ? h('a', { class: 'gh-link', href: `https://github.com/${gh.owner}/${gh.name}/blob/HEAD/${path.split('/').map(encodeURIComponent).join('/')}`, target: '_blank', rel: 'noopener noreferrer', text: t('node.onGithub') }) : null));
   box.append(foot);
+  // what the node belongs to (0.15.0): its projects, who links to it, what to do next
+  if (!node.conflict) main.append(contextBox(d, { go, redraw }));
 }
 
 // ------------------------------------------------------------------ Python cheatsheet

@@ -199,7 +199,13 @@ async function run() {
 // ------------------------------------------------------------------ changes made in Toollib
 // What changed on this device and why, e.g. { "nodes/snippets/py-for-in.md": "verified" }. The next sync
 // names it in the commit message ("Sync from Mac: verified py-for-in"), so GitHub's history stays readable.
+// Parts of the app that want to know about every change (0.15.0: what is new joins the project in focus).
+const changeListeners = new Set();
+export function onNoteChange(fn) { changeListeners.add(fn); return () => changeListeners.delete(fn); }
+const tellChange = (entries) => { for (const fn of changeListeners) { try { fn(entries); } catch (e) { console.warn(e); } } };
+
 export function noteChange(path, what) {
+  tellChange([[path, what]]);
   const notes = loadPref('sync.notes', {});
   const before = notes[path];
   if (before === 'added' && what === 'removed') delete notes[path];   // it never reached GitHub
@@ -210,6 +216,7 @@ export function noteChange(path, what) {
 
 // Several changes at once (0.14.3: a run through a website writes many clips), with one look at the status afterwards.
 export function noteChanges(entries) {
+  tellChange(entries);
   const notes = loadPref('sync.notes', {});
   for (const [path, what] of entries) {
     const before = notes[path];
@@ -415,7 +422,7 @@ async function blobAt(commit, filepath, cache) {
 // at a clash (0.14.1.1): lists such as "clips" are joined, a changed value of this device wins, and
 // two different notes are both kept.
 const LINES = /^.*(\r?\n|$)/gm;
-const JOINABLE = /^(research|clips)\/.*\.md$/;
+const JOINABLE = /^(research|clips|projects|notes)\/.*\.md$/;   // projects and notes since 0.15.0
 function mergeText(base, ours, theirs, path = '') {
   const dec = new TextDecoder('utf-8', { fatal: true });
   let o, a, b;

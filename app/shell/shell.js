@@ -1,11 +1,13 @@
 // The shell: command bar, module bar, workspace and status bar.
-// Routes live in the URL hash: #/home, #/settings (or #/settings/<section>), #/m/<module id>, #/n/<path of a node>,
+// Routes live in the URL hash: #/home (Start), #/settings (or #/settings/<section>), #/m/<module id>, #/n/<path of a node>,
 // #/new (a new snippet of yours) and #/edit/<path> (change one of yours).
+// Since 0.15.0 the shell is built around one way of working: Start says where to begin, a project in focus takes in
+// whatever you create, "+" creates anything from anywhere, and every node shows what it belongs to.
 import { h, toast, modal, closeTopModal } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, getLang, setLang, onLangChange } from '../i18n/i18n.js';
-import { ACCENTS, MODULES, moduleById, paintAccent, setAccent } from './modules.js';
-import { formatTime, renderHome, renderModule, renderSettings } from './views.js';
+import { ACCENTS, READY, moduleById, paintAccent, setAccent } from './modules.js';
+import { formatTime, renderModule, renderSettings } from './views.js';
 import { applyUpdate, checkForUpdate, onPwaChange, pwaState } from '../services/pwa.js';
 import { isConfigured, onSyncChange, phaseText, refreshPending, syncKnowledge, syncState } from '../services/sync.js';
 import { bestProblem, buildIndex, indexState, nodeByPath, onIndexChange, refreshNode, searchNodes } from '../services/search.js';
@@ -20,8 +22,22 @@ import { parseStart, resumeInterrupted } from '../services/crawl.js';
 import { watchInbox } from '../services/pdf-inbox.js';
 import { startBackground } from '../services/background.js';
 import { savePref } from '../services/prefs.js';
+import { getNode } from '../services/nodes.js';
+import { renderStart } from './start.js';
+import { paintProject, renderNote, renderProject, renderProjects } from './projects-view.js';
+import { CREATORS, createMenu } from './create.js';
+import { focusProject, onFocusChange, startAutoLink } from '../services/projects.js';
+import { capture } from '../services/notes.js';
+import { mark } from '../services/trail.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
+// The view of every tool that has one. A new tool: one line here and one in MODULES (modules.js).
+const VIEWS = {
+  projects: (main, mod, ctx) => renderProjects(main, mod, ctx),
+  cheatsheet: (main, mod, ctx) => renderCheatsheet(main, mod, ctx),
+  formulary: (main, mod) => renderFormulary(main, mod),
+  scraper: (main, mod) => renderResearch(main, mod),
+};
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 
 export function startShell(root) {
@@ -125,16 +141,28 @@ export function startShell(root) {
     const nodeType = route.kind === 'node' ? nodeByPath(route.path)?.type : null;
     paintAccent(main, route.kind === 'module' ? route.mod.id : route.kind === 'node' ? typeAccent(nodeType) : route.kind === 'form' ? 'cheatsheet' : 'shell');
     if (route.kind === 'settings') renderSettings(main, { onChange: refresh, onCheckUpdate: runUpdateCheck, onSync: runSync, section: route.section });
-    else if (route.kind === 'module' && route.mod.id === 'cheatsheet') renderCheatsheet(main, route.mod, { go });
-    else if (route.kind === 'module' && route.mod.id === 'formulary') renderFormulary(main, route.mod);
-    else if (route.kind === 'module' && route.mod.id === 'scraper') renderResearch(main, route.mod);
+    else if (route.kind === 'module' && VIEWS[route.mod.id]) VIEWS[route.mod.id](main, route.mod, { go });
     else if (route.kind === 'module') renderModule(main, route.mod);
     else if (route.kind === 'form') renderSnippetForm(main, { mode: route.mode, path: route.path, go, isCurrent: () => token === renderToken });
     else if (route.kind === 'node') {
-      renderNode(main, route.path, { isCurrent: () => token === renderToken, go, onSync: runSync }).then(() => restoreScroll(entry, token));
-    } else renderHome(main, { onSync: runSync, onSetup: () => go('#/settings/sync') });
+      renderAnyNode(route.path, { isCurrent: () => token === renderToken, go, onSync: runSync }).then(() => restoreScroll(entry, token));
+    } else renderStart(main, { go, onSync: runSync, onSetup: () => go('#/settings/sync'), focusCommand: () => input.focus() });
+    app.dataset.route = route.kind;
     renderRail(route);
     restoreScroll(entry, token);
+  }
+
+  // A project and a note have views of their own; every other node shows in the node view. What you open is
+  // remembered, so Start can offer to go on with it.
+  async function renderAnyNode(path, ctx) {
+    const node = await getNode(path);
+    if (!ctx.isCurrent()) return;
+    const type = node && !node.conflict && !node.error ? node.meta.type : '';
+    if (node) mark('node', { path, title: String(node.meta.title || node.slug) });
+    if (type === 'project' || type === 'note') { paintAccent(main, 'projects'); renderRail(); }
+    if (type === 'project') return renderProject(main, path, ctx);
+    if (type === 'note') return renderNote(main, path, ctx);
+    return renderNode(main, path, ctx);
   }
 
   function refresh() {
@@ -148,8 +176,10 @@ export function startShell(root) {
   function railButton({ id, iconName, label, active, onclick, accentId }) {
     const tile = iconEl(iconName, 'tile');
     paintAccent(tile, accentId);
+    // on a wide screen the short name stands under the icon (0.15.0), in the drawer of the phone the full one beside it
+    const short = t(`rail.${id}`) === `rail.${id}` ? label : t(`rail.${id}`);
     const b = h('button', { type: 'button', class: `rail-btn${active ? ' active' : ''}`, 'aria-label': label, title: label, 'aria-current': active ? 'page' : null, dataset: { id }, onclick },
-      tile, h('span', { class: 'rail-label', text: label }));
+      tile, h('span', { class: 'rail-label', text: label }), h('span', { class: 'rail-short', 'aria-hidden': 'true', text: short }));
     return b;
   }
 
@@ -159,8 +189,9 @@ export function startShell(root) {
       h('img', { src: 'icons/favicon-64.png', alt: '', width: 32, height: 32 }), h('span', { class: 'brand-name', text: t('app.name') })));
     rail.append(railButton({ id: 'home', iconName: 'home', label: t('nav.home'), active: route.kind === 'home', accentId: 'shell', onclick: () => go('#/home') }));
     const list = h('div', { class: 'rail-modules' });
-    for (const m of MODULES) {
-      const active = (route.kind === 'module' && route.mod.id === m.id) || (route.kind === 'node' && typeAccent(nodeByPath(route.path)?.type) === m.id) || (route.kind === 'form' && m.id === 'cheatsheet');
+    const nodeModule = route.kind === 'node' ? (route.path.startsWith('projects/') || route.path.startsWith('notes/') ? 'projects' : typeAccent(nodeByPath(route.path)?.type)) : '';
+    for (const m of READY) {
+      const active = (route.kind === 'module' && route.mod.id === m.id) || nodeModule === m.id || (route.kind === 'form' && m.id === 'cheatsheet');
       list.append(railButton({ id: m.id, iconName: m.icon, label: t(`module.${m.id}.name`), active, accentId: m.id, onclick: () => (m.href ? location.assign(m.href) : go(`#/m/${m.id}`)) }));
     }
     rail.append(list);
@@ -195,6 +226,20 @@ export function startShell(root) {
   const results = h('div', { class: 'cmd-results', id: 'cmd-results', role: 'listbox' });
   const menuBtn = h('button', { type: 'button', class: 'icon-btn menu-btn', onclick: () => setDrawer(!app.classList.contains('drawer-open')) });
   const kbd = h('kbd', { class: 'cmd-kbd', text: isMac ? '⌘K' : 'Ctrl K' });
+  // "+" creates anything from anywhere; the pill names the project in focus and leads to it
+  const plusBtn = h('button', { type: 'button', class: 'icon-btn plus-btn', onclick: () => openCreate() });
+  const pill = h('button', { type: 'button', class: 'focus-pill', hidden: true });
+  const openCreate = () => { hideResults(); input.blur(); createMenu({ go, paint: paintAccent }); };
+  function renderPill() {
+    const f = focusProject();
+    pill.hidden = !f;
+    if (!f) return;
+    paintProject(pill, f.slug);
+    pill.replaceChildren(iconEl('target'), h('span', { class: 'focus-pill-title', text: f.title }));
+    pill.title = t('focus.pill', { title: f.title });
+    pill.setAttribute('aria-label', pill.title);
+    pill.onclick = () => go(nodeHref(f.path));
+  }
   let selected = 0;
   let shown = [];
 
@@ -203,9 +248,13 @@ export function startShell(root) {
     menuBtn.setAttribute('aria-label', t('nav.menu'));
     input.placeholder = t('commandbar.placeholder');
     input.setAttribute('aria-label', t('commandbar.placeholder'));
+    plusBtn.innerHTML = icon('plus');
+    plusBtn.title = `${t('create.title')} (N)`;
+    plusBtn.setAttribute('aria-label', t('create.title'));
     if (!cmd.firstChild) {
-      cmd.append(menuBtn, h('div', { class: 'cmd-field' }, iconEl('search', 'cmd-icon'), input, kbd), results);
+      cmd.append(menuBtn, h('div', { class: 'cmd-field' }, iconEl('search', 'cmd-icon'), input, kbd), plusBtn, pill, results);
     }
+    renderPill();
     if (app.classList.contains('cmd-open')) showResults();
   }
 
@@ -216,7 +265,7 @@ export function startShell(root) {
       { label: t('cmd.lang.en'), keys: 'language sprache english englisch en', icon: 'translate', run: () => setLang('en') },
       { label: t('cmd.lang.de'), keys: 'language sprache german deutsch de', icon: 'translate', run: () => setLang('de') },
     ];
-    for (const m of MODULES) {
+    for (const m of READY) {
       const name = t(`module.${m.id}.name`);
       list.push({ label: t('cmd.open', { module: name }), keys: `${m.id} module modul ${t(`module.${m.id}.desc`)}`, icon: m.icon, accent: m.id, run: () => (m.href ? location.assign(m.href) : go(`#/m/${m.id}`)) });
     }
@@ -226,7 +275,9 @@ export function startShell(root) {
     list.splice(2, 0, isConfigured()
       ? { label: t('cmd.sync'), keys: 'sync abgleichen abgleich git github pull push holen hochladen knowledge wissen', icon: 'refresh', run: runSync }
       : { label: t('cmd.syncSetup'), keys: 'sync abgleichen abgleich einrichten setup git github token knowledge wissen', icon: 'refresh', run: () => go('#/settings/sync') });
-    list.push({ label: t('cmd.newSnippet'), keys: 'new neu neues snippet anlegen erstellen create own eigenes schreiben', icon: 'plus', accent: 'cheatsheet', run: () => go('#/new') });
+    for (const c of CREATORS) {
+      list.push({ label: t(`create.${c.id}.cmd`), keys: `new neu neue neues neuer anlegen erstellen create ${c.keys}`, icon: c.icon, accent: c.accent, run: () => c.run({ go }) });
+    }
     list.push({ label: t('cmd.update'), keys: 'update aktualisieren version', icon: 'cloudDown', run: runUpdateCheck });
     list.push({ label: t('cmd.help'), keys: 'help hilfe shortcuts tastenkürzel keyboard', icon: 'info', run: showHelp });
     return list;
@@ -269,6 +320,16 @@ export function startShell(root) {
     const ql = q.toLowerCase();
     const strong = q && cmds.length && cmds[0].label.toLowerCase().split(/\s+/).some((w) => w.startsWith(ql));
     const list = strong ? [...cmds.slice(0, 3), ...nodes] : [...nodes, ...cmds.slice(0, nodes.length ? 3 : 8)];
+    // Catch what you typed as a note (0.15.0): into the project in focus, otherwise into the inbox. "+ text" puts it first.
+    const plus = /^\+\s*\S/.test(q);
+    const noteText = plus ? q.replace(/^\+\s*/, '') : q;
+    if (noteText.length >= 2 && indexState().hasKnowledge) {
+      const f = focusProject();
+      const note = { label: f ? t('cmd.noteIn', { text: noteText, title: f.title }) : t('cmd.note', { text: noteText }), keys: '', icon: 'edit', accent: 'projects', capture: noteText,
+        run: async () => { try { await capture(noteText); toast(f ? t('note.keptIn', { title: f.title }) : t('note.keptInbox'), 'ok'); if (currentRoute().kind === 'home') render(); } catch { toast(t('create.failed'), 'error', 5000); } } };
+      if (plus) return [note];
+      list.push(note);
+    }
     // Search the literature for what you typed (0.14.0); a DOI or an arXiv id comes first.
     if (q.length >= 3) {
       const research = { label: t('cmd.research', { query: q }), keys: '', icon: 'globe', accent: 'scraper', run: () => { queueSearch(q); go('#/m/scraper'); } };
@@ -345,6 +406,7 @@ export function startShell(root) {
     if (e.key === 'ArrowDown') { e.preventDefault(); selected = Math.min(selected + 1, shown.length - 1); showResults(); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); selected = Math.max(selected - 1, 0); showResults(); }
     else if (e.key === 'Enter' && e.shiftKey && shown[selected]?.node?.code) { e.preventDefault(); copyWithToast(shown[selected].node.code); }
+    else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); const i = shown.findIndex((c) => c.capture); if (i >= 0) runAt(i); }
     else if (e.key === 'Enter') { e.preventDefault(); runAt(selected); }
     else if (e.key === 'Escape') { e.preventDefault(); input.value = ''; hideResults(); input.blur(); }
   });
@@ -353,12 +415,15 @@ export function startShell(root) {
     const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); input.focus(); }
     else if (e.key === '/' && !typing) { e.preventDefault(); input.focus(); }
+    else if (e.key.toLowerCase() === 'n' && !typing && !e.metaKey && !e.ctrlKey && !e.altKey && !document.querySelector('.modal-backdrop, .sheet-backdrop')) { e.preventDefault(); openCreate(); }
     else if (e.key === 'Escape' && !typing) { if (!closeTopModal()) setDrawer(false); }
   });
 
   function showHelp() {
     const rows = [
       [isMac ? '⌘K  /' : 'Ctrl K  /', t('help.focus')],
+      ['N', t('help.create')],
+      [isMac ? '⌘ Enter' : 'Ctrl Enter', t('help.note')],
       ['↑ ↓', t('help.choose')],
       ['Enter', t('help.run')],
       ['⇧ Enter', t('help.copy')],
@@ -410,9 +475,12 @@ export function startShell(root) {
       b.classList.toggle('busy', s.busy);
       b.lastChild.textContent = s.busy ? (phaseText(s) || t('status.sync.busy')) : t('action.sync');
     }
-    if (wasBusy && !s.busy && currentRoute().kind === 'home') render();
+    if (wasBusy && !s.busy && currentRoute().kind === 'home' && !typingInMain()) render();
     wasBusy = s.busy;
   });
+
+  // a view is not drawn again under your fingers while you type in it
+  const typingInMain = () => main.contains(document.activeElement) && /INPUT|TEXTAREA/.test(document.activeElement.tagName) && document.activeElement.value;
 
   // ---------------------------------------------------------------- status bar
   function statusItems() {
@@ -495,8 +563,23 @@ export function startShell(root) {
   onIndexChange((s) => {
     if (s.building) return;
     if (app.classList.contains('cmd-open')) showResults();
-    const kind = currentRoute().kind;
-    if (kind === 'home' || kind === 'node') render();
+    renderPill();
+    const route = currentRoute();
+    if (typingInMain()) return;
+    if (route.kind === 'home' || route.kind === 'node' || (route.kind === 'module' && route.mod.id === 'projects')) render();
+  });
+
+  // What is new joins the project in focus (0.15.0); a change of the focus shows in the pill and on Start.
+  startAutoLink();
+  onFocusChange(() => {
+    renderPill();
+    const route = currentRoute();
+    if (route.kind === 'home' || (route.kind === 'module' && route.mod.id === 'projects')) render();
+  });
+  // the project in focus took a node in: the node you look at shows it
+  window.addEventListener('toollib:linked', (e) => {
+    const route = currentRoute();
+    if (route.kind === 'node' && (e.detail || []).includes(route.path) && !typingInMain() && !document.querySelector('.modal-backdrop, .sheet-backdrop')) render();
   });
 
   renderCmd();

@@ -108,6 +108,8 @@ export async function htmlToDoc(html, url) {
   const maths = takeMath(doc);
   takeInlineTex(doc, maths);
   for (const el of doc.querySelectorAll(JUNK)) el.remove();
+  // permalink marks behind headings (Sphinx "#", MkDocs "¶", GitHub's anchor): no part of the text
+  for (const el of doc.querySelectorAll('a.headerlink, a.anchor, a.anchorjs-link, a.header-anchor, a.heading-anchor, a.hash-link, a[title^="Link to this"], a[title^="Permalink"], a[aria-label^="Permalink"], a[aria-label^="Link to this"]')) el.remove();
 
   let article = null;
   try { article = new Readability(doc.cloneNode(true), { charThreshold: 150, keepClasses: false }).parse(); } catch { article = null; }
@@ -129,6 +131,18 @@ export async function htmlToDoc(html, url) {
     },
   });
   td.remove(['figcaption']);
+  // links without their title ("(in NumPy v2.4)"), so the text stays readable and every reader shows them
+  td.addRule('plainLink', {
+    filter: (node) => node.nodeName === 'A' && node.getAttribute('href'),
+    replacement: (content, node) => {
+      const text = content.replace(/\s+/g, ' ').trim();
+      let href = node.getAttribute('href') || '';
+      try { href = new URL(href, url).href; } catch { /* stays as written */ }
+      href = href.replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/\s/g, '%20');
+      if (!text) return '';
+      return /^https?:/i.test(href) ? `[${text}](${href})` : text;
+    },
+  });
   td.addRule('image', { filter: 'img', replacement: (c, node) => { const alt = (node.getAttribute('alt') || '').replace(/\s+/g, ' ').trim(); return alt.length > 12 && !alt.includes(MATH_OPEN) ? `*[${alt}]*` : ''; } });
   td.addRule('plainHeading', {
     filter: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'],

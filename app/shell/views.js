@@ -1,16 +1,14 @@
-// Views of the workspace: Home, Settings and the placeholder of a module that is still planned.
+// Views of the workspace: Settings and the placeholder of a module that is still planned (Start is in start.js).
 import { h, toast, confirmDialog, formatBytes, modal } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, getLang, setLang } from '../i18n/i18n.js';
-import { ACCENTS, MODULES, SHELL, accentOf, setAccent, paintAccent } from './modules.js';
-import { isStandalone, platform, pwaState } from '../services/pwa.js';
+import { ACCENTS, READY, SHELL, accentOf, setAccent, paintAccent } from './modules.js';
+import { pwaState } from '../services/pwa.js';
 import { storageInfo } from '../services/storage.js';
 import { loadPref, savePref } from '../services/prefs.js';
-import { nodeHref, recentList } from './node-view.js';
-import { conflictActions } from './conflict-actions.js';
 import { pythonBundle, pythonStorage, removePython, storePython } from '../services/python.js';
 import {
-  explainSyncError, isConfigured, kobraSettings, knowledgeStats, pendingChanges, phaseText, removeLocalCopy,
+  explainSyncError, kobraSettings, knowledgeStats, pendingChanges, phaseText, removeLocalCopy,
   saveSyncSetting, syncSettings, syncState, testConnection,
 } from '../services/sync.js';
 import { researchSettings, saveResearchSetting, setSourceOn, sourceOn, testResearch } from '../services/research.js';
@@ -53,77 +51,6 @@ export function syncButton(onSync, { primary = true } = {}) {
     iconEl('refresh'), label);
 }
 
-const originalOf = (copy) => copy.replace(/\.conflict-[a-z0-9-]+(\.[^./]+)?$/, '$1');
-
-export function renderHome(main, { onSync, onSetup }) {
-  main.append(h('h1', { class: 'view-title', text: t('home.title') }));
-  main.append(h('p', { class: 'lead', text: t('app.tagline') }));
-
-  if (!isStandalone()) {
-    const how = { ios: 'home.install.ios', mac: 'home.install.mac' }[platform()] || 'home.install.other';
-    main.append(card(t('home.install.title'), h('p', { class: 'muted', text: t(how) })));
-  }
-
-  // Knowledge on this device: filled once the file system has answered.
-  const know = card(t('home.knowledge.title'));
-  main.append(know);
-  fillKnowledgeCard(know, { onSync, onSetup });
-
-  const steps = h('ol', { class: 'steps' });
-  STAGE.forEach((p, i) => {
-    steps.append(h('li', { class: p.done ? 'done' : '' },
-      h('span', { class: 'dot', html: p.done ? icon('check') : String(i + 1) }),
-      h('span', { text: t(`home.${p.key}`) })));
-  });
-  main.append(card(t('home.progress.title'), steps, h('p', { class: 'muted small', text: t('home.progress.foundation') })));
-
-  const grid = h('div', { class: 'grid-2' },
-    card(t('home.projects.title'), h('p', { class: 'muted', text: t('home.projects.empty') })),
-    card(t('home.recent.title'), recentList() || h('p', { class: 'muted', text: t('home.recent.empty') })));
-  main.append(grid);
-}
-
-async function fillKnowledgeCard(box, { onSync, onSetup }) {
-  if (!isConfigured()) {
-    box.append(h('p', { class: 'muted', text: t('home.knowledge.setup') }),
-      h('button', { type: 'button', class: 'btn primary', onclick: onSetup }, iconEl('settings'), h('span', { text: t('action.setup') })));
-    return;
-  }
-  let stats = null;
-  try { stats = await knowledgeStats(); } catch (e) { console.warn(e); }
-  const s = syncState();
-  if (!stats) {
-    box.append(h('p', { class: 'muted', text: t('home.knowledge.first') }));
-    if (s.error) box.append(h('p', { class: 'error-text', text: s.error }));
-    box.append(syncButton(onSync));
-    return;
-  }
-  box.append(h('div', { class: 'know-head' },
-    h('span', { class: 'know-count', text: t('home.knowledge.count', { count: stats.total }) }),
-    syncButton(onSync)));
-  if (s.last?.time) {
-    box.append(h('p', { class: 'muted small', text: t('home.knowledge.last', { time: formatTime(s.last.time), head: (stats.head || '').slice(0, 7) }) }));
-  }
-  if (s.error) box.append(h('p', { class: 'error-text', text: s.error }));
-  const chips = h('div', { class: 'chips' });
-  for (const [group, n] of stats.groups) chips.append(h('span', { class: 'chip' }, h('span', { text: group }), h('b', { text: String(n) })));
-  box.append(chips);
-  if (stats.conflicts.length) {
-    const list = h('ul', { class: 'conflicts' });
-    const note = h('div', { class: 'note warn' });
-    for (const copy of stats.conflicts) {
-      const li = h('li', {}, h('a', { href: nodeHref(copy), text: copy }), ' ',
-        h('span', { class: 'muted small', text: t('home.knowledge.conflictOf', { path: originalOf(copy) }) }),
-        conflictActions(copy, () => { li.remove(); if (!list.children.length) note.remove(); }));
-      list.append(li);
-    }
-    note.append(iconEl('warn'), h('div', {},
-      h('p', { text: t('home.knowledge.conflicts', { count: stats.conflicts.length }) }), list));
-    box.append(note);
-  }
-  box.append(h('p', { class: 'muted small', text: t('home.knowledge.readSoon') }));
-}
-
 export function renderModule(main, mod) {
   const head = h('div', { class: 'module-head' },
     iconEl(mod.icon, 'tile big'),
@@ -160,7 +87,7 @@ export function renderSettings(main, { onChange, onCheckUpdate, onSync, section 
 
   // Accents: one row per module
   const rows = h('div', { class: 'accent-rows' });
-  for (const mod of [SHELL, ...MODULES]) {
+  for (const mod of [SHELL, ...READY]) {
     const current = accentOf(mod.id).id;
     const swatches = h('div', { class: 'swatches' });
     for (const a of ACCENTS) {
@@ -185,6 +112,17 @@ export function renderSettings(main, { onChange, onCheckUpdate, onSync, section 
   main.append(card(t('settings.about'),
     h('p', {}, h('span', { class: 'muted', text: `${t('settings.version')}: ` }), h('span', { text: version || '–' })),
     h('button', { type: 'button', class: 'btn', onclick: onCheckUpdate }, iconEl('refresh'), h('span', { text: t('cmd.update') }))));
+
+  // The build plan of the current stage (on Home until 0.14): what is done and what comes
+  const steps = h('ol', { class: 'steps' });
+  STAGE.forEach((p, i) => {
+    steps.append(h('li', { class: p.done ? 'done' : '' },
+      h('span', { class: 'dot', html: p.done ? icon('check') : String(i + 1) }),
+      h('span', { text: t(`home.${p.key}`) })));
+  });
+  const plan = card(t('home.progress.title'), steps, h('p', { class: 'muted small', text: t('home.progress.foundation') }));
+  plan.id = 'settings-plan';
+  main.append(plan);
 
   if (section) requestAnimationFrame(() => main.querySelector(`#settings-${section}`)?.scrollIntoView({ block: 'start' }));
 }

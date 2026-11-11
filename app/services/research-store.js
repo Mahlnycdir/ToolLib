@@ -6,7 +6,7 @@
 import { KNOWLEDGE, exists } from './storage.js';
 import { deleteNode, parseNode, readNodeText, setField, slugify, writeNode, yamlValue } from './nodes.js';
 import { allNodes, forgetNode, nodeByPath, nodeBySlug, refreshNode } from './search.js';
-import { noteChange } from './sync.js';
+import { noteChange, noteChanges } from './sync.js';
 import { announce } from './channel.js';
 import { normArxiv, normDoi, orderVersions } from './research-merge.js';
 import { composeBody, parseBody } from './reader.js';
@@ -61,6 +61,30 @@ export async function deleteFolder(folderPath) {
   forgetNode(folderPath);
   await noteChange(folderPath, 'removed');
   announce([folderPath]);
+}
+
+// Works you kept that sit in no folder (0.15.0): they show under "No folder" instead of vanishing from the window.
+export function looseClips() {
+  const filed = new Set(folders().flatMap((f) => f.clips));
+  return allNodes().filter((d) => d.type === 'clip' && !d.conflict && !filed.has(d.slug)).sort((a, b) => a.title.localeCompare(b.title));
+}
+// Pages of a run through a website whose folder is gone: nothing leads to them any more.
+export const orphanPages = () => looseClips().filter((d) => d.run && !d.marked);
+
+// Deletes clips for good (pages of a run you no longer want). Returns how many.
+export async function deleteClips(paths) {
+  const done = [];
+  for (const p of paths) {
+    try { await deleteNode(p); forgetNode(p); done.push(p); } catch (e) { console.warn('Could not delete', p, e); }
+  }
+  if (done.length) { await noteChanges(done.map((p) => [p, 'removed'])); announce(done); }
+  return done.length;
+}
+
+// The pages of a run that go with its folder: in no other folder, and nothing marked in them.
+export function runPages(folder) {
+  const elsewhere = new Set(folders().filter((f) => f.path !== folder.path).flatMap((f) => f.clips));
+  return allNodes().filter((d) => d.type === 'clip' && !d.conflict && d.run === folder.slug && !d.marked && !elsewhere.has(d.slug));
 }
 
 async function changeClips(folderPath, change) {
