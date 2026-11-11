@@ -5,6 +5,9 @@
 #   - show pages that build their content with JavaScript (a real Chromium through Playwright)
 #   - keep the PDFs Toollib reads as originals in ~/Toollib-PDFs/<site>/, and hand Toollib the PDFs you put into
 #     ~/Toollib-PDFs/Eingang/ (Toollib turns them into clips with their text; then they move to Eigene/)
+#   - search the web through SearXNG next to it (only on 127.0.0.1, ~/.toollib-helper/searxng)
+#   - run Toollib without a window (part 2): it syncs every minute and goes through websites marked "on the Mac"
+#     while you have closed Toollib everywhere else (python helper.py background setup <settings file>)
 # It speaks HTTPS with a certificate of its own (Safari refuses plain http from https pages), answers only your pages
 # (allowed_origins) and only with your token. Setup: README.md next to this file, or ./install.sh.
 #
@@ -14,11 +17,17 @@
 #   GET  /files                        -> {"files":[{"path":"Eingang/x.pdf","name":…,"size":…,"mtime":…,"sha1":…}]}
 #   GET  /file?path=<rel>[&sha1=…]     -> a PDF from the folder (found by its sha1 when it moved)
 #   POST /files/imported {"path":…}    -> moves a PDF from Eingang/ to Eigene/: {"ok":true,"path":"Eigene/x.pdf"}
+#   GET  /search?q=<words>[&page=2]    -> {"ok":true,"results":[{"title","url","content","engines","published"}],…}
+#   GET  /background                   -> {"ok":true,"enabled":true,"alive":true,"status":{…}} (Toollib without a window)
+#   POST /background/wake              -> it syncs and looks for work now instead of within the minute
 #
 #   python helper.py setup | run | info | trust | autostart on|off | renew [--ca] | token [--new]
+#                    background setup <settings file> | background off [--forget] | background status
 # Everything it keeps lives in ~/.toollib-helper (config.json, certs/, files.json, helper.log).
 import argparse
 import asyncio
+import base64
+import getpass
 import hashlib
 import hmac
 import ipaddress
@@ -37,7 +46,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote, unquote, urljoin, urlsplit
 
-VERSION = '0.14.4'
+VERSION = '0.14.4.2'
 HOME = Path(os.environ.get('TOOLLIB_HELPER_HOME') or '~/.toollib-helper').expanduser()
 CONFIG = HOME / 'config.json'
 STATE = HOME / 'files.json'
@@ -45,6 +54,11 @@ CERTS = HOME / 'certs'
 LOG = HOME / 'helper.log'
 LABEL = 'de.toollib.helper'
 PLIST = Path('~/Library/LaunchAgents').expanduser() / f'{LABEL}.plist'
+BROWSER = HOME / 'browser'                  # the Chromium profile of Toollib without a window
+SEARXNG_DIR = HOME / 'searxng'              # SearXNG from source (install.sh), its venv and settings next to it
+SEARXNG_VENV = HOME / 'searxng-venv'
+SEARXNG_SETTINGS = HOME / 'searxng-settings.yml'
+SEARXNG_LOG = HOME / 'searxng.log'
 DEFAULTS = {
     'port': 8413,
     'bind': '0.0.0.0',                      # 127.0.0.1: only this Mac (no iPhone at home)
@@ -59,6 +73,10 @@ DEFAULTS = {
     'user_agent': '',
     'allow_private': False,                 # tests only: fetch addresses in your own network too
     'mock_upstream': '',                    # tests only: every fetch goes to <mock>/?url=<address>
+    'background': False,                    # Toollib without a window (python helper.py background setup <file>)
+    'app_url': 'https://mahlnycdir.github.io/ToolLib/',
+    'search_port': 8888,                    # SearXNG, only on 127.0.0.1
+    'search_url': '',                       # tests, or another SearXNG of yours: ask that one instead
 }
 FORWARD = ['accept', 'accept-language', 'x-api-key', 'range', 'if-none-match', 'if-modified-since']
 PASS_BACK = ['content-type', 'content-disposition', 'content-range', 'retry-after', 'last-modified', 'etag', 'link',
@@ -535,6 +553,254 @@ class Renderer:
         return Renderer._agent
 
 
+# ------------------------------------------------------------------ the web through SearXNG (0.14.4)
+SEARXNG_YML = """# SearXNG for the Toollib Mac helper: only on this Mac, answers in JSON too. Made by helper.py; yours to change.
+use_default_settings: true
+general:
+  instance_name: "Toollib"
+  enable_metrics: false
+search:
+  safe_search: 0
+  autocomplete: ""
+  formats: [html, json]
+server:
+  bind_address: "127.0.0.1"
+  port: {port}
+  secret_key: "{secret}"
+  limiter: false
+  public_instance: false
+  image_proxy: false
+"""
+
+
+class Search:
+    """SearXNG next to the helper: started with it, bound to 127.0.0.1, asked with format=json."""
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.external = cfg['search_url'].rstrip('/')
+        self.python = SEARXNG_VENV / 'bin' / 'python'
+        self.base = self.external or f"http://127.0.0.1:{cfg['search_port']}"
+        self.proc = None
+        self.started = 0.0
+        self.lock = asyncio.Lock()
+
+    @property
+    def installed(self):
+        return bool(self.external) or (self.python.exists() and (SEARXNG_DIR / 'searx').is_dir())
+
+    def write_settings(self):
+        if not SEARXNG_SETTINGS.exists():
+            SEARXNG_SETTINGS.write_text(SEARXNG_YML.format(port=int(self.cfg['search_port']), secret=secrets.token_hex(32)), 'utf-8')
+        os.chmod(SEARXNG_SETTINGS, 0o600)
+
+    async def start(self):
+        if self.external or not self.installed:
+            return
+        async with self.lock:
+            if self.proc and self.proc.returncode is None:
+                return
+            self.write_settings()
+            if SEARXNG_LOG.exists() and SEARXNG_LOG.stat().st_size > 5 * 1024 * 1024:
+                SEARXNG_LOG.replace(SEARXNG_LOG.with_suffix('.log.1'))
+            env = {k: v for k, v in os.environ.items() if not k.startswith('SEARXNG_')}
+            env['SEARXNG_SETTINGS_PATH'] = str(SEARXNG_SETTINGS)
+            with open(SEARXNG_LOG, 'ab') as log:
+                self.proc = await asyncio.create_subprocess_exec(
+                    str(self.python), '-m', 'searx.webapp', cwd=str(SEARXNG_DIR), env=env,
+                    stdin=subprocess.DEVNULL, stdout=log, stderr=log)
+            self.started = time.time()
+            say(f'SearXNG started on {self.base} (pid {self.proc.pid}, log {shown(SEARXNG_LOG)})')
+
+    async def search(self, session, q, page=1, lang=''):
+        import aiohttp
+        await self.start()
+        params = {'q': q, 'format': 'json', 'pageno': str(page), 'safesearch': '0'}
+        if lang:
+            params['language'] = lang
+        for attempt in range(40):   # it needs a few seconds after starting
+            try:
+                async with session.get(f'{self.base}/search', params=params, timeout=aiohttp.ClientTimeout(total=25)) as r:
+                    if r.status != 200:
+                        raise aiohttp.ClientResponseError(r.request_info, r.history, status=r.status, message='searxng')
+                    return await r.json(content_type=None)
+            except aiohttp.ClientConnectorError:
+                if self.external or time.time() - self.started > 30:
+                    raise
+                await asyncio.sleep(0.5)
+        raise aiohttp.ClientError('searxng-not-ready')
+
+    async def stop(self):
+        if self.proc and self.proc.returncode is None:
+            self.proc.terminate()
+            try:
+                await asyncio.wait_for(self.proc.wait(), 5)
+            except asyncio.TimeoutError:
+                self.proc.kill()
+            say('SearXNG stopped')
+
+
+# ------------------------------------------------------------------ Toollib without a window (0.14.4 part 2)
+# The helper opens Toollib (app_url) in a Chromium of its own, headless, with its own profile in ~/.toollib-helper/
+# browser. Your settings come in once from your encrypted settings file (background setup); after that the page lives
+# there like Toollib in a browser tab: it syncs every minute and goes through the websites you marked "on the Mac".
+# Its Chromium trusts the helper's own certificate by its public key only, and asks the helper on localhost.
+def ca_spki():
+    from cryptography import x509
+    from cryptography.hazmat.primitives import serialization
+    ca = x509.load_pem_x509_certificate((CERTS / 'ca.pem').read_bytes())
+    der = ca.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+    return base64.b64encode(hashlib.sha256(der).digest()).decode()
+
+
+def app_origin(cfg):
+    u = urlsplit(cfg['app_url'])
+    return f'{u.scheme}://{u.netloc}'
+
+
+def init_script(cfg, background):
+    """Runs before Toollib's own scripts, only on Toollib's page: the helper on this Mac and its token, every time."""
+    put = {'research.helper': f'https://localhost:{cfg["port"]}', 'research.helperToken': cfg['token'], 'helper.mode': bool(background)}
+    return ('(() => { if (location.origin !== %s) return; try {\n'
+            '  for (const [k, v] of Object.entries(%s)) localStorage.setItem("toollib." + k, JSON.stringify(v));\n'
+            '  if (!localStorage.getItem("toollib.sync.device")) localStorage.setItem("toollib.sync.device", JSON.stringify("Mac-Helfer"));\n'
+            '} catch (e) { /* no storage */ } })();') % (json.dumps(app_origin(cfg)), json.dumps(put))
+
+
+async def open_app(pw, cfg, background):
+    BROWSER.mkdir(parents=True, exist_ok=True)
+    os.chmod(BROWSER, 0o700)
+    args = ['--disable-features=LocalNetworkAccessChecks,PrivateNetworkAccessSendPreflights,'
+            'PrivateNetworkAccessRespectPreflightResults,BlockInsecurePrivateNetworkRequests',
+            f'--ignore-certificate-errors-spki-list={ca_spki()}']
+    try:
+        ctx = await pw.chromium.launch_persistent_context(str(BROWSER), headless=True, args=args, accept_downloads=False,
+                                                          viewport={'width': 1280, 'height': 900})
+    except Exception as e:
+        if 'ProcessSingleton' in str(e) or 'SingletonLock' in str(e):
+            raise RuntimeError('profile-in-use') from e
+        raise
+    await ctx.add_init_script(script=init_script(cfg, background))
+    page = ctx.pages[0] if ctx.pages else await ctx.new_page()
+    page.on('pageerror', lambda e: say('background page error:', str(e)[:300]))
+    page.on('console', lambda m: m.type == 'error' and 'Failed to load resource' not in m.text and say('background console:', m.text[:300]))
+    return ctx, page
+
+
+def app_page(cfg, background):
+    return cfg['app_url'] + ('?helper=1' if background else '')
+
+
+class Background:
+    EVERY = 30
+    RELOAD = 6 * 3600
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.pw = self.ctx = self.page = None
+        self.status = None
+        self.error = ''
+        self.loaded = 0.0
+        self.caff = None
+        self.task = None
+
+    @property
+    def alive(self):
+        return bool(self.page and not self.page.is_closed())
+
+    async def _open(self):
+        from playwright.async_api import async_playwright
+        if not self.pw:
+            self.pw = await async_playwright().start()
+        self.ctx, self.page = await open_app(self.pw, self.cfg, True)
+        await self.page.goto(app_page(self.cfg, True), wait_until='load', timeout=90000)
+        self.loaded = time.time()
+        say('Toollib without a window is open:', app_page(self.cfg, True))
+
+    async def _close(self):
+        ctx, self.ctx, self.page = self.ctx, None, None
+        if ctx:
+            try:
+                await ctx.close()
+            except Exception:   # noqa: BLE001 – it crashed already
+                pass
+
+    def _awake(self, on):
+        """While a run goes on, the Mac does not fall asleep by itself (caffeinate ends with the helper)."""
+        if sys.platform != 'darwin':
+            return
+        if on and not (self.caff and self.caff.poll() is None):
+            self.caff = subprocess.Popen(['caffeinate', '-i', '-s', '-w', str(os.getpid())])
+            say('keeping the Mac awake while it goes through a website')
+        elif not on and self.caff and self.caff.poll() is None:
+            self.caff.terminate()
+            self.caff = None
+
+    async def loop(self):
+        wait = self.EVERY
+        while True:
+            try:
+                if not self.alive:
+                    await self._close()
+                    await self._open()
+                st = await asyncio.wait_for(self.page.evaluate('() => window.toollibBackground ? window.toollibBackground.status() : null'), 20)
+                if st is None and time.time() - self.loaded > 90:
+                    raise RuntimeError('Toollib did not start in the page')
+                self.status = st
+                self.error = (st or {}).get('error') or ''
+                running = bool(st and st.get('running'))
+                self._awake(running)
+                if not running and time.time() - self.loaded > self.RELOAD:   # now and then the newest Toollib
+                    await self.page.reload(wait_until='load', timeout=90000)
+                    self.loaded = time.time()
+                wait = self.EVERY
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:   # noqa: BLE001 – the page or Chromium broke: open it again a little later
+                self.error = str(e)[:200]
+                say('background:', repr(e)[:300])
+                self._awake(False)
+                await self._close()
+                wait = min(wait * 2, 600)
+            await asyncio.sleep(wait)
+
+    async def fresh(self):
+        """The state right now instead of the last look (every 30 s)."""
+        if not self.alive:
+            return
+        try:
+            st = await asyncio.wait_for(self.page.evaluate('() => window.toollibBackground ? window.toollibBackground.status() : null'), 5)
+            if st is not None:
+                self.status = st
+        except Exception:   # noqa: BLE001 – the loop finds out what broke
+            pass
+
+    async def wake(self):
+        if not self.alive:
+            return False
+        try:
+            await asyncio.wait_for(self.page.evaluate('() => { if (window.toollibBackground) window.toollibBackground.wake(); return true; }'), 10)
+            return True
+        except Exception:   # noqa: BLE001
+            return False
+
+    def start(self):
+        self.task = asyncio.create_task(self.loop())
+
+    async def stop(self):
+        if self.task:
+            self.task.cancel()
+            try:
+                await self.task
+            except (asyncio.CancelledError, Exception):   # noqa: BLE001
+                pass
+        self._awake(False)
+        await self._close()
+        if self.pw:
+            await self.pw.stop()
+            self.pw = None
+
+
 # ------------------------------------------------------------------ the server
 def make_app(cfg):
     import aiohttp
@@ -570,6 +836,8 @@ def make_app(cfg):
             return r.status, {k.lower(): v for k, v in r.headers.items()}, b''.join(chunks)
 
     renderer = Renderer(cfg, upstream)
+    search = Search(cfg)
+    background = Background(cfg) if cfg['background'] else None
 
     def cors_for(origin):
         if not origin or origin.rstrip('/') not in origins:
@@ -611,7 +879,8 @@ def make_app(cfg):
     async def ping(request):
         return web.json_response({'ok': True, 'name': 'toollib-mac-helper', 'version': VERSION, 'maxBytes': cfg['max_bytes'],
                                   'render': renderer.available, 'pdfDir': shown(files.root), 'inboxDir': shown(files.inbox), 'ownDir': shown(files.own), 'inbox': len(await asyncio.to_thread(files.inbox_files)),
-                                  'names': host_names(cfg), 'port': cfg['port']}, headers={'Cache-Control': 'no-store'})
+                                  'names': host_names(cfg), 'port': cfg['port'], 'search': search.installed,
+                                  'background': bool(background)}, headers={'Cache-Control': 'no-store'})
 
     async def fetch(request):
         url = request.query.get('url', '')
@@ -694,7 +963,53 @@ def make_app(cfg):
             return jerr('not-found', 404)
         return web.json_response({'ok': True, 'path': new})
 
+    async def web_search(request):
+        q = request.query.get('q', '').strip()[:400]
+        if not q:
+            return jerr('bad-request', 400)
+        if not search.installed:
+            return jerr('no-search', 501)
+        try:
+            page = max(1, min(10, int(request.query.get('page', '1'))))
+        except ValueError:
+            page = 1
+        lang = re.sub(r'[^A-Za-z-]', '', request.query.get('lang', ''))[:10]
+        try:
+            data = await search.search(await session(), q, page, lang)
+        except asyncio.TimeoutError:
+            return jerr('timeout', 504)
+        except aiohttp.ClientError as e:
+            return jerr('search-down', 502, detail=str(e)[:200])
+        results, seen = [], set()
+        for r in data.get('results') or []:
+            url = str(r.get('url') or '')
+            if not url.startswith(('http://', 'https://')) or url in seen:
+                continue
+            seen.add(url)
+            results.append({'title': str(r.get('title') or '')[:300], 'url': url, 'content': str(r.get('content') or '')[:600],
+                            'engines': [str(e) for e in (r.get('engines') or [r.get('engine')]) if e][:6],
+                            'published': str(r.get('publishedDate') or '')[:40]})
+        down = [str(e[0]) for e in data.get('unresponsive_engines') or [] if e]
+        return web.json_response({'ok': True, 'query': q, 'page': page, 'results': results,
+                                  'suggestions': [str(x) for x in data.get('suggestions') or []][:8], 'unresponsive': down},
+                                 headers={'Cache-Control': 'no-store'})
+
+    async def background_state(request):
+        if not background:
+            return web.json_response({'ok': True, 'enabled': False}, headers={'Cache-Control': 'no-store'})
+        await background.fresh()
+        return web.json_response({'ok': True, 'enabled': True, 'alive': background.alive, 'status': background.status,
+                                  'error': background.error, 'app': cfg['app_url']}, headers={'Cache-Control': 'no-store'})
+
+    async def background_wake(request):
+        if not background:
+            return web.json_response({'ok': True, 'enabled': False})
+        return web.json_response({'ok': True, 'enabled': True, 'woke': await background.wake()})
+
     async def closing(app):
+        if background:
+            await background.stop()
+        await search.stop()
         if state['session']:
             await state['session'].close()
         if renderer.browser:
@@ -704,6 +1019,10 @@ def make_app(cfg):
 
     async def starting(app):
         app['idle'] = asyncio.create_task(renderer.close_idle())
+        if search.installed:
+            asyncio.create_task(search.start())
+        if background:
+            background.start()
 
     app = web.Application(middlewares=[guard], client_max_size=1 << 20)
     app.router.add_get('/ping', ping)
@@ -712,6 +1031,9 @@ def make_app(cfg):
     app.router.add_get('/files', list_files)
     app.router.add_get('/file', get_file)
     app.router.add_post('/files/imported', imported)
+    app.router.add_get('/search', web_search)
+    app.router.add_get('/background', background_state)
+    app.router.add_post('/background/wake', background_wake)
     app.on_startup.append(starting)
     app.on_cleanup.append(closing)
     return app
@@ -777,7 +1099,9 @@ def cmd_info(cfg, args):
     print(f'  PDF-Ordner:          {shown(pdf_root(cfg))}  (Eingang: {cfg["inbox"]}/)')
     print(f'  Zertifikat:          {shown(CERTS / "ca.pem")}  (fürs iPhone: {shown(HOME / "toollib-helper-ca.cer")})')
     print(f'  Erlaubte Seiten:     {", ".join(cfg["allowed_origins"])}')
-    print(f'  Startet von selbst:  {"ja" if PLIST.exists() else "nein"}  (python helper.py autostart on|off)\n')
+    print(f'  Startet von selbst:  {"ja" if PLIST.exists() else "nein"}  (python helper.py autostart on|off)')
+    print(f'  Suche im Netz:       {"ja (SearXNG)" if Search(cfg).installed else "nein (install.sh richtet SearXNG ein)"}')
+    print(f'  Im Hintergrund:      {"ja" if cfg["background"] else "nein"}  (python helper.py background setup <Einstellungs-Datei>)\n')
 
 
 def cmd_trust(cfg, args):
@@ -791,12 +1115,37 @@ def cmd_trust(cfg, args):
     print('Vertraut. Safari und Chrome nehmen den Helfer jetzt an.')
 
 
+def launchd_loaded():
+    return subprocess.run(['launchctl', 'print', f'gui/{os.getuid()}/{LABEL}'], capture_output=True).returncode == 0
+
+
+def launchd_stop():
+    """Takes the helper out of launchd and waits until it is really gone (bootout returns before that)."""
+    r = subprocess.run(['launchctl', 'bootout', f'gui/{os.getuid()}/{LABEL}'], capture_output=True)
+    for _ in range(40):
+        if not launchd_loaded():
+            break
+        time.sleep(0.25)
+    return r.returncode == 0
+
+
+def launchd_start():
+    """Hands the helper to launchd; right after a bootout launchd answers "5: Input/output error" for a moment."""
+    err = ''
+    for attempt in range(8):
+        r = subprocess.run(['launchctl', 'bootstrap', f'gui/{os.getuid()}', str(PLIST)], capture_output=True, text=True)
+        if r.returncode == 0 or launchd_loaded():
+            return True
+        err = (r.stderr or r.stdout or '').strip()
+        time.sleep(1 + attempt)
+    raise RuntimeError(f'launchd nimmt den Helfer nicht an: {err}')
+
+
 def cmd_autostart(cfg, args):
     if sys.platform != 'darwin':
         print('Von selbst starten geht hier über launchd nur auf dem Mac.')
         return
-    uid = os.getuid()
-    subprocess.run(['launchctl', 'bootout', f'gui/{uid}/{LABEL}'], capture_output=True)
+    launchd_stop()
     if args.state == 'off':
         PLIST.unlink(missing_ok=True)
         print('Der Helfer startet nicht mehr von selbst und läuft nicht mehr.')
@@ -818,8 +1167,126 @@ def cmd_autostart(cfg, args):
 </dict></plist>
 '''
     PLIST.write_text(plist, 'utf-8')
-    subprocess.run(['launchctl', 'bootstrap', f'gui/{uid}', str(PLIST)], check=True)
+    try:
+        launchd_start()
+    except RuntimeError as e:
+        sys.exit(f'{e}\nNoch einmal versuchen: python helper.py autostart on (oder ab- und wieder anmelden).')
     print(f'Der Helfer läuft und startet bei jeder Anmeldung von selbst (Protokoll: {shown(LOG)}).')
+
+
+def service(action):
+    """Stops or starts the helper of launchd (only one Chromium may use the profile at a time). True: it was running."""
+    if sys.platform != 'darwin' or not PLIST.exists():
+        return False
+    if action == 'stop':
+        return launchd_stop()
+    try:
+        return launchd_start()
+    except RuntimeError as e:
+        print(f'{e}\nStarte ihn mit: python helper.py autostart on')
+        return False
+
+
+# Your settings go in here once: the page decrypts the file itself (the same code as "Load settings" in Toollib), takes
+# everything but the helper address and its token (those point to this Mac), and syncs your knowledge for the first time.
+SETUP_JS = """async ({ text, password }) => {
+  const base = new URL('./', location.href).href;
+  const file = await import(base + 'app/services/settings-file.js');
+  let opened;
+  try { opened = await file.readSettingsFile(text, password); } catch (e) { return { ok: false, error: e.code || String(e.message || e) }; }
+  const skip = new Set(['toollib.research.helper', 'toollib.research.helperToken']);
+  const rows = file.diffSettings(opened.settings).filter((r) => !skip.has(r.key));
+  const applied = file.applySettings(rows);
+  localStorage.setItem('toollib.sync.auto', 'true');
+  return { ok: true, applied, device: opened.device || '', created: opened.created || '' };
+}"""
+SYNC_JS = """async () => {
+  const sync = await import(new URL('./', location.href).href + 'app/services/sync.js');
+  if (!sync.isConfigured()) return { ok: false, error: 'no-sync' };
+  try { const r = await sync.syncKnowledge({ auto: false }); return { ok: true, result: r ? JSON.parse(JSON.stringify(r)) : null }; }
+  catch (e) { return { ok: false, error: e.code || String(e.message || e) }; }
+}"""
+
+
+async def background_setup(cfg, text, password):
+    from playwright.async_api import async_playwright
+    async with async_playwright() as pw:
+        ctx, page = await open_app(pw, cfg, False)
+        try:
+            await page.goto(app_page(cfg, False), wait_until='load', timeout=90000)
+            r = await page.evaluate(SETUP_JS, {'text': text, 'password': password})
+            if not r.get('ok'):
+                return r
+            say('settings taken over:', r['applied'], 'from', r.get('device') or 'a device', '– first Sync (this may take a few minutes) …')
+            await page.reload(wait_until='load', timeout=90000)
+            s = await page.evaluate(SYNC_JS)
+            return {**r, 'sync': s}
+        finally:
+            await ctx.close()
+
+
+def cmd_background(cfg, args):
+    if args.state == 'status':
+        print(f'Im Hintergrund: {"ja" if cfg["background"] else "nein"}  ·  Toollib von {cfg["app_url"]}  ·  Profil {shown(BROWSER)}')
+        return
+    if args.state == 'off':
+        cfg['background'] = False
+        save_config(cfg)
+        was = service('stop')
+        if args.forget and BROWSER.exists():
+            shutil.rmtree(BROWSER)
+            print('Das Profil mit deinen Einstellungen auf dem Helfer ist gelöscht.')
+        if was:
+            service('start')
+        print('Der Helfer arbeitet nicht mehr im Hintergrund. Wieder an: python helper.py background setup <Einstellungs-Datei>')
+        return
+    if not cfg['token']:
+        sys.exit('Erst einrichten: python helper.py setup')
+    try:
+        import playwright  # noqa: F401
+    except ImportError:
+        sys.exit('Dafür braucht der Helfer Playwright: bash install.sh')
+    if not args.file:
+        sys.exit('Welche Datei? python helper.py background setup ~/Downloads/toollib-settings-….json')
+    path = Path(args.file).expanduser()
+    try:
+        text = path.read_text('utf-8')
+    except OSError as e:
+        sys.exit(f'Die Datei lässt sich nicht lesen: {e}')
+    password = sys.stdin.readline().rstrip('\n') if args.password_stdin else getpass.getpass('Passwort der Einstellungs-Datei: ')
+    ensure_certs(cfg)
+    was = service('stop')
+    try:
+        r = asyncio.run(background_setup(cfg, text, password))
+    except RuntimeError as e:
+        if str(e) == 'profile-in-use':
+            sys.exit('Ein anderer Helfer benutzt das Profil gerade. Halte ihn an (Ctrl+C oder python helper.py autostart off) und versuch es noch einmal.')
+        raise
+    finally:
+        if was and not cfg['background']:
+            service('start')
+    if not r.get('ok'):
+        why = {'wrong-password': 'Das Passwort passt nicht zu dieser Datei (oder die Datei wurde verändert).',
+               'not-settings': 'Das ist keine Toollib-Einstellungs-Datei.', 'unsupported': 'Diese Datei kennt der Helfer noch nicht.',
+               'too-large': 'Die Datei ist zu groß.'}.get(r.get('error'), r.get('error'))
+        if was:
+            service('start')
+        sys.exit(f'Nicht übernommen: {why}')
+    print(f'Übernommen: {r["applied"]} Einstellung(en) aus der Datei{" von " + r["device"] if r.get("device") else ""}.')
+    sync = r.get('sync') or {}
+    if sync.get('ok'):
+        print('Erster Sync: fertig.')
+    elif sync.get('error') == 'no-sync':
+        print('Achtung: In der Datei steht kein Sync (Repository und Token). Ohne Sync sieht der Helfer keine Aufträge.')
+    else:
+        print(f'Erster Sync: nicht geklappt ({sync.get("error")}). Der Helfer versucht es jede Minute wieder.')
+    cfg['background'] = True
+    save_config(cfg)
+    if was:
+        service('start')
+        print('Der Helfer läuft wieder, jetzt auch im Hintergrund.')
+    else:
+        print('Fertig. Starte den Helfer (python helper.py run oder autostart on); dann arbeitet er im Hintergrund.')
 
 
 def cmd_renew(cfg, args):
@@ -850,6 +1317,11 @@ def main():
     r.add_argument('--ca', action='store_true')
     t = sub.add_parser('token')
     t.add_argument('--new', action='store_true')
+    b = sub.add_parser('background')
+    b.add_argument('state', choices=['setup', 'off', 'status'])
+    b.add_argument('file', nargs='?')
+    b.add_argument('--password-stdin', action='store_true', help='read the password from the first line of stdin')
+    b.add_argument('--forget', action='store_true', help='with off: delete the profile with your settings too')
     args = ap.parse_args()
     cfg = load_config()
     if args.cmd == 'run':
@@ -862,7 +1334,8 @@ def main():
         except KeyboardInterrupt:
             pass
         return
-    {'setup': cmd_setup, 'info': cmd_info, 'trust': cmd_trust, 'autostart': cmd_autostart, 'renew': cmd_renew, 'token': cmd_token}[args.cmd](cfg, args)
+    {'setup': cmd_setup, 'info': cmd_info, 'trust': cmd_trust, 'autostart': cmd_autostart, 'renew': cmd_renew, 'token': cmd_token,
+     'background': cmd_background}[args.cmd](cfg, args)
 
 
 if __name__ == '__main__':

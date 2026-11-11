@@ -2,12 +2,15 @@
 // at the top of the folder, and the pages of the folder as a tree by their path below the start.
 import { h, toast, modal, confirmDialog } from '../services/ui.js';
 import { icon } from '../services/icons.js';
-import { t } from '../i18n/i18n.js';
-import { hasFetcher, researchSettings } from '../services/research.js';
+import { getLang, t } from '../i18n/i18n.js';
+import { hasFetcher, helperFetch, researchSettings } from '../services/research.js';
 import {
-  CrawlError, crawlDefaults, crawlState, loadCrawl, onCrawl, parseStart, pauseCrawl, recrawl, resumeCrawl, scopeFor, scopeFromText,
+  CrawlError, commandMac, crawlDefaults, crawlState, loadCrawl, onCrawl, parseStart, pauseCrawl, queueCrawl, recrawl, resumeCrawl, scopeFor, scopeFromText,
   scopeLabel, inScope, startCrawl, stopCrawl, treePath,
 } from '../services/crawl.js';
+import { loadPref, savePref } from '../services/prefs.js';
+import { isHelperMode } from '../services/background.js';
+import { isSyncing, syncKnowledge } from '../services/sync.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
@@ -31,6 +34,15 @@ export async function crawlDialog({ start = '' } = {}) {
   const maxIn = h('input', { class: 'field', type: 'number', min: '1', max: '5000', step: '1', value: String(d.max), id: 'crawl-max' });
   const pdfIn = h('input', { type: 'checkbox', id: 'crawl-pdfs', checked: d.pdfs ? true : null });
   const nameIn = h('input', { class: 'field', type: 'text', id: 'crawl-name' });
+  // where the run goes (0.14.4): here, or on the Mac in the background (it gets the folder by Sync)
+  const helperMode = isHelperMode();
+  const onMac = !helperMode && loadPref('crawl.where', 'here') === 'mac';
+  const whereHere = h('input', { type: 'radio', name: 'crawl-where', id: 'crawl-where-here', value: 'here', checked: onMac ? null : true });
+  const whereMac = h('input', { type: 'radio', name: 'crawl-where', id: 'crawl-where-mac', value: 'mac', checked: onMac ? true : null });
+  const where = helperMode ? null : h('fieldset', { class: 'cr-where' },
+    h('legend', { class: 'field-label', text: t('crawl.where') }),
+    h('label', { class: 'set-check', for: 'crawl-where-here' }, whereHere, h('span', {}, h('b', { text: t('crawl.where.here') }), h('span', { class: 'field-hint', text: t('crawl.where.here.hint') }))),
+    h('label', { class: 'set-check', for: 'crawl-where-mac' }, whereMac, h('span', {}, h('b', { text: t('crawl.where.mac') }), h('span', { class: 'field-hint', text: t('crawl.where.mac.hint') }))));
   const error = h('p', { class: 'rs-line warn cr-error', hidden: true });
   let scopeTouched = false;
   let nameTouched = false;
@@ -52,6 +64,7 @@ export async function crawlDialog({ start = '' } = {}) {
     h('div', { class: 'cr-row' }, field(t('crawl.depth'), depthIn, t('crawl.depth.hint')), field(t('crawl.max'), maxIn, t('crawl.max.hint'))),
     h('label', { class: 'set-check', for: 'crawl-pdfs' }, pdfIn, h('span', {}, h('b', { text: t('crawl.pdfs') }), h('span', { class: 'field-hint', text: t('crawl.pdfs.hint') }))),
     field(t('crawl.folder'), nameIn, t('crawl.folder.hint')),
+    where,
     h('p', { class: 'muted small', text: t('crawl.rules', { gap: String(d.gap).replace('.', t('crawl.decimal')) }) }),
     error);
   const say = (key) => { error.hidden = false; error.replaceChildren(iconEl('warn'), h('span', { text: t(key) })); };
@@ -65,7 +78,7 @@ export async function crawlDialog({ start = '' } = {}) {
       {
         label: t('crawl.go'), kind: 'primary',
         value: () => {
-          if (!worker) { say('crawl.needWorker'); return undefined; }
+          if (!worker && !whereMac.checked) { say('crawl.needWorker'); return undefined; }
           const url = parseStart(startIn.value);
           if (!url) { say('crawl.badUrl'); return undefined; }
           const scope = scopeFromText(scopeIn.value) || scopeFor(url);
@@ -75,13 +88,21 @@ export async function crawlDialog({ start = '' } = {}) {
             depth: Math.round(Math.min(10, Math.max(0, num(depthIn.value, d.depth)))),
             max: Math.round(Math.min(5000, Math.max(1, num(maxIn.value, d.max)))),
             pdfs: pdfIn.checked,
+            mac: !helperMode && whereMac.checked,
           };
         },
       },
     ],
   });
   if (!opts) return null;
+  if (!helperMode) savePref('crawl.where', opts.mac ? 'mac' : 'here');
   try {
+    if (opts.mac) {
+      const folder = await queueCrawl(opts);
+      toast(t('crawl.mac.queuedToast'), 'ok', 5000);
+      tellMac();
+      return folder;
+    }
     const folder = await startCrawl(opts);
     toast(t('crawl.started', { scope: scopeLabel(opts.scope) }), 'ok');
     return folder;
@@ -91,8 +112,61 @@ export async function crawlDialog({ start = '' } = {}) {
   }
 }
 
+// A run for the Mac or a command for it: sync now, and wake the helper when this device reaches it.
+// A sync already going may not carry the change yet: then once more after it.
+async function tellMac() {
+  try {
+    if (isSyncing()) await syncKnowledge().catch(() => {});
+    await syncKnowledge();
+  } catch { /* the next sync takes it along */ }
+  helperFetch('/background/wake', { method: 'POST', json: {} }).catch(() => {});
+}
+
+// The panel of a run on the Mac (0.14.4), as other devices see it: what the folder says after the last sync.
+function macPanel(folder) {
+  const el = h('section', { class: 'cr-panel cr-mac', 'aria-live': 'polite' });
+  const draw = () => {
+    const c = folder.crawl || {};
+    const pending = c.cmdAt && c.cmdAt > (c.cmdDone || '');
+    const time = c.at ? new Date(c.at) : null;
+    const when = time && !Number.isNaN(time.getTime()) ? time.toLocaleString(getLang() === 'de' ? 'de-DE' : undefined, { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : c.date || '?';
+    const line = c.state === 'queued' ? t('crawl.mac.queued')
+      : c.state === 'running' ? t('crawl.mac.running', { pages: c.pages, queue: c.queue, when })
+        : c.state === 'paused' ? t('crawl.mac.paused', { pages: c.pages, queue: c.queue, when })
+          : c.state === 'done' ? (c.why === 'limit' ? t('crawl.mac.limit', { pages: c.pages, queue: c.queue, when }) : t('crawl.mac.done', { pages: c.pages, when }))
+            : c.state === 'stopped' ? t('crawl.mac.stopped', { pages: c.pages, when })
+              : c.state === 'error' ? t('crawl.mac.error', { why: crawlErrorText(c.why) }) : t('crawl.mac.queued');
+    const send = (cmd) => async () => {
+      try {
+        await commandMac(folder.path, cmd);
+        toast(t('crawl.mac.sentToast'), 'ok', 4000);
+        tellMac();
+      } catch (e) { toast(crawlErrorText(e instanceof CrawlError ? e.code : 'failed'), 'error', 6000); }
+    };
+    const btn = (label, iconName, cmd, primary = false) => h('button', { type: 'button', class: `btn small${primary ? ' primary' : ''}`, dataset: { cmd }, onclick: send(cmd) }, iconEl(iconName), h('span', { text: label }));
+    const buttons = [];
+    if (c.state === 'running') buttons.push(btn(t('crawl.pause'), 'pause', 'pause'), btn(t('crawl.stop'), 'stop', 'stop'));
+    else if (c.state === 'queued') buttons.push(btn(t('crawl.mac.cancel'), 'stop', 'stop'));
+    else if (c.state === 'paused' || c.state === 'error' || c.state === 'stopped') buttons.push(btn(t('crawl.resume'), 'play', 'go', true), btn(t('crawl.again'), 'refresh', 'again'));
+    else if (c.state === 'done' && c.why === 'limit') buttons.push(btn(t('crawl.more', { n: c.max || crawlDefaults().max }), 'play', 'more', true), btn(t('crawl.again'), 'refresh', 'again'));
+    else buttons.push(btn(t('crawl.again'), 'refresh', 'again'));
+    el.dataset.status = c.state || 'queued';
+    el.replaceChildren(...[
+      h('div', { class: 'cr-head' }, iconEl(c.state === 'running' ? 'refresh' : 'globe', c.state === 'running' ? 'spin' : ''), h('strong', { text: t('crawl.mac.panel') }),
+        h('a', { class: 'rs-tag cr-scope', href: c.start || '#', target: '_blank', rel: 'noopener noreferrer', text: c.scope || '' })),
+      h('p', { class: 'cr-line', text: line }),
+      pending ? h('p', { class: 'cr-line muted small cr-sent', text: t('crawl.mac.sent', { cmd: t(`crawl.mac.cmd.${c.cmd}`) }) }) : null,
+      h('div', { class: 'btn-row cr-actions' }, ...buttons),
+      h('p', { class: 'muted small', text: t('crawl.mac.hint') })].filter(Boolean));
+  };
+  draw();
+  return { el, folder: folder.path, setFolder(f) { folder = f; draw(); }, destroy() {} };
+}
+
 // ------------------------------------------------------------------ the panel at the top of a crawl folder
 export function crawlPanel(folder) {
+  // a run on the Mac: this device only sees the folder (the Toollib in the helper runs it like its own)
+  if (folder.crawl?.on === 'mac' && !isHelperMode()) return macPanel(folder);
   const el = h('section', { class: 'cr-panel', 'aria-live': 'polite' });
   let b = crawlState(folder.path);
   let openSkipped = false;

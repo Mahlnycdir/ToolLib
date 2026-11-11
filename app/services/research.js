@@ -309,6 +309,18 @@ export async function helperFetch(path, { method = 'GET', json = null, signal, s
   return res;
 }
 
+// The web through SearXNG in the Mac helper (0.14.4 part 2), without a profile anywhere: { results: [{ title, url,
+// content, engines, published }], suggestions, unresponsive }. canWebSearch() once the helper said it has SearXNG.
+export const canWebSearch = () => helper.ok === true && !!helper.info?.search;
+export async function webSearch(q, { signal, page = 1, settings = researchSettings() } = {}) {
+  const res = await helperFetch(`/search?q=${encodeURIComponent(String(q || '').slice(0, 400))}&page=${page}`, { signal, settings });
+  const data = await res.json();
+  return {
+    results: (data.results || []).filter((r) => /^https?:\/\//.test(r.url || '')),
+    suggestions: data.suggestions || [], unresponsive: data.unresponsive || [],
+  };
+}
+
 // A page as Chromium on your Mac shows it after its scripts ran (0.14.4): { bytes, finalUrl, contentType, via: 'render' }.
 // Needs the Mac helper; for pages that build their text with JavaScript (the reader and going through ask by themselves).
 export async function renderPage(url, { signal, settings = researchSettings() } = {}) {

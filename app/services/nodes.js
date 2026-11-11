@@ -204,7 +204,12 @@ export function summary(node) {
     clips: m.type === 'research' ? asList(m.clips) : [],
     // going through a website (0.14.3): a clip is a page or a document of a run; a folder names its run
     kind: m.type === 'clip' && m.kind ? String(m.kind) : '',
-    crawl: m.type === 'research' && m.crawl && typeof m.crawl === 'object' ? { start: String(m.crawl.start || ''), scope: String(m.crawl.scope || ''), state: String(m.crawl_state || ''), pages: Number(m.crawl_pages) || 0, date: String(m.crawl_date || '') } : null,
+    crawl: m.type === 'research' && m.crawl && typeof m.crawl === 'object' ? {
+      start: String(m.crawl.start || ''), scope: String(m.crawl.scope || ''), state: String(m.crawl_state || ''), pages: Number(m.crawl_pages) || 0, date: String(m.crawl_date || ''),
+      // a run on the Mac (0.14.4): where it runs, what it was told, what waits, why it ended, when that was
+      max: Number(m.crawl.max) || 0, on: String(m.crawl_on || ''), cmd: String(m.crawl_cmd || ''), cmdAt: String(m.crawl_cmd_at || ''), cmdDone: String(m.crawl_cmd_done || ''),
+      queue: Number(m.crawl_queue) || 0, why: String(m.crawl_why || ''), at: String(m.crawl_at || ''),
+    } : null,
     // the PDF folder on your Mac (0.14.4): a clip names its original, the folder of your inbox says so
     file: m.type === 'clip' && m.file ? String(m.file) : '',
     fileSha1: m.type === 'clip' && m.file_sha1 ? String(m.file_sha1) : '',

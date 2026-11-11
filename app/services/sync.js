@@ -307,6 +307,11 @@ async function update(s, url, cache) {
 
 // Saves everything that changed on this device as one commit. Returns the number of changed files.
 async function commitChanges(s, message, cache) {
+  // A change of the same size in the same second as the last sync looks unchanged by its file stats ("racy git"):
+  // what this device noted is looked at by its content (0.14.4.2: "pause" after "again" right after a sync).
+  for (const [p, what] of Object.entries(loadPref('sync.notes', {}))) {
+    if (what !== 'removed' && await exists(`${dir}/${p}`)) await git.add({ fs, dir, filepath: p, cache }).catch(() => {});
+  }
   const matrix = await git.statusMatrix({ fs, dir, cache });
   const paths = [];
   for (const [filepath, head, work, stage] of matrix) {

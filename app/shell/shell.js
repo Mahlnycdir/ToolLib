@@ -18,6 +18,7 @@ import { onAnnounce } from '../services/channel.js';
 import { startAutoSync } from '../services/autosync.js';
 import { parseStart, resumeInterrupted } from '../services/crawl.js';
 import { watchInbox } from '../services/pdf-inbox.js';
+import { startBackground } from '../services/background.js';
 import { savePref } from '../services/prefs.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
@@ -505,6 +506,8 @@ export function startShell(root) {
   refreshPending(); // changes from an earlier visit that are not uploaded yet
   // a run through a website the app was closed in (0.14.3) goes on
   resumeInterrupted().then((title) => { if (title) toast(t('crawl.resumed', { title }), 'info', 4000); }).catch((e) => console.warn('Crawl not resumed', e));
+  // the Toollib in the Mac helper (0.14.4 part 2): runs that devices hand to the Mac
+  startBackground();
   // PDFs you put into the inbox on your Mac (0.14.4) come in by themselves while Toollib is open and the helper answers
   watchInbox({ title: () => t('inbox.folder'), onDone: (r) => toast(r.added ? t('inbox.done', { n: r.added }) : t('inbox.result', r), r.failed ? 'warn' : 'ok', 5000) })
     .catch((e) => console.warn('PDF inbox', e));

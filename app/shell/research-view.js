@@ -6,7 +6,7 @@ import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
 import { SOURCES, sourceById } from '../services/research-sources.js';
 import { bestFree, rankWorks, parseQuery, webUrl } from '../services/research-merge.js';
-import { findVersions, hasFetcher, helperState, researchSettings, setSourceOn, sourceOn, startSearch } from '../services/research.js';
+import { canWebSearch, findVersions, hasFetcher, helperReady, helperState, researchSettings, setSourceOn, sourceOn, startSearch, webSearch } from '../services/research.js';
 import { importInbox, onInbox, openOriginal } from '../services/pdf-inbox.js';
 import {
   clipFor, clipsIn, createFolder, deleteFolder, folderNotes, folders, foldersWith, keepWork, removeFromFolder, saveFolderNotes,
@@ -47,6 +47,8 @@ const st = {
   lib: null,             // { path, page, at }: your library is open (0.14.2), kept in library.open
   libSeen: 0,
   address: '',           // an address in the search field (0.14.3): go through the website or read the page
+  web: null,             // the same search on the web through SearXNG (0.14.4): { query, state, results, error }
+  webPdf: new Map(),     // key of a work -> { state, results }: "Search the web for a PDF"
 };
 let view = null;         // the mounted view: { root, draw* }
 let panel = null;        // the panel of the crawl folder that is open (0.14.3)
@@ -230,7 +232,7 @@ export function renderResearch(main) {
     const items = h('ul', { class: 'rs-folder-list' });
     for (const f of all) {
       const on = f.path === st.folder;
-      const running = f.crawl && crawlState(f.path)?.status === 'running';
+      const running = f.crawl && (crawlState(f.path)?.status === 'running' || (f.crawl.on === 'mac' && f.crawl.state === 'running'));
       const b = h('button', { type: 'button', class: `rs-folder${on ? ' on' : ''}${f.crawl ? ' crawl' : ''}`, 'aria-current': on ? 'true' : null },
         iconEl(running ? 'refresh' : f.crawl ? 'globe' : f.pdfInbox ? 'download' : on ? 'folderOpen' : 'folder', running ? 'spin' : ''), h('span', { class: 'rs-folder-name', text: f.title }), h('span', { class: 'rs-count', text: String(f.clips.length) }));
       b.addEventListener('click', () => {
@@ -361,10 +363,83 @@ export function renderResearch(main) {
     const works = shownWorks();
     if (!works.length) {
       list.append(h('li', { class: 'rs-empty muted', text: st.result.finished ? t(st.onlyFree && st.result.works.length ? 'research.noneFree' : 'research.none') : t('research.searching') }));
+      appendWeb();
       return;
     }
     for (const w of works.slice(0, 80)) list.append(hitRow(w));
     if (!st.result.finished) list.append(h('li', { class: 'rs-empty muted small' }, iconEl('refresh', 'spin'), h('span', { text: ` ${t('research.more')}` })));
+    appendWeb();
+  }
+
+  // ---------------------------------------------------------------- on the web (SearXNG in the Mac helper, 0.14.4)
+  function appendWeb() {
+    const web = st.web;
+    if (!web || web.query !== st.query) return;
+    list.append(h('li', { class: 'rs-web-head' }, iconEl('globe'), h('strong', { text: t('research.web.title') }),
+      web.state === 'busy' ? iconEl('refresh', 'spin') : h('span', { class: 'rs-count', text: String(web.results.length) })));
+    if (web.state === 'error') { list.append(h('li', { class: 'rs-empty muted small', text: t('research.web.error') })); return; }
+    if (web.state === 'done' && !web.results.length) {
+      list.append(h('li', { class: 'rs-empty muted small', text: web.unresponsive?.length ? t('research.web.noneDown', { engines: web.unresponsive.join(', ') }) : t('research.web.none') }));
+      return;
+    }
+    for (const r of web.results.slice(0, 30)) list.append(webRow(r));
+  }
+
+  function webWork(r) {
+    const w = pageWork(r.url);
+    return { ...w, title: String(r.title || '').trim() || w.title, abstract: String(r.content || '').trim() };
+  }
+
+  function webRow(r, { compact = false } = {}) {
+    let host = '';
+    try { host = new URL(r.url).hostname.replace(/^www\./, ''); } catch { host = r.url; }
+    const read = h('button', { type: 'button', class: 'btn small rs-web-read' }, iconEl('book'), h('span', { text: t('research.read') }));
+    read.addEventListener('click', () => { st.kept = null; st.selected = null; openReader(webWork(r)); });
+    const crawl = compact ? null : h('button', { type: 'button', class: 'btn small rs-web-crawl', title: t('crawl.title') }, iconEl('globe'), h('span', { text: t('research.web.crawl') }));
+    crawl?.addEventListener('click', () => openCrawl(r.url));
+    const keep = compact ? null : h('button', { type: 'button', class: 'btn small rs-web-keep' }, iconEl('bookmark'), h('span', { text: t('research.keep') }));
+    keep?.addEventListener('click', async () => {
+      if (!st.folder) { toast(t('research.web.needFolder'), 'info', 4000); return; }
+      try {
+        const k = await keepWork(webWork(r), { folderPath: st.folder, query: st.query });
+        toast(t(k.existed ? 'research.keptToastAgain' : 'research.keptToast', { folder: currentFolder()?.title || '' }), 'ok');
+      } catch (e) {
+        console.warn('Could not keep the page', e);
+        toast(t('research.keepFailed'), 'error', 5000);
+      }
+      view.drawAll();
+    });
+    return h('li', { class: 'rs-hit rs-web' },
+      h('div', { class: 'rs-hit-main rs-web-main' },
+        h('a', { class: 'rs-hit-title', href: r.url, target: '_blank', rel: 'noopener noreferrer', text: r.title || r.url }),
+        h('span', { class: 'rs-hit-meta muted small', text: [host, r.published ? String(r.published).slice(0, 10) : ''].filter(Boolean).join(' · ') }),
+        r.content ? h('span', { class: 'small rs-web-snippet', text: String(r.content).slice(0, 280) }) : null,
+        /\.pdf($|[?#])/i.test(r.url) ? h('span', { class: 'rs-hit-tags' }, h('span', { class: 'rs-tag', text: 'PDF' })) : null),
+      h('div', { class: 'rs-hit-actions' }, read, crawl, keep));
+  }
+
+  // a free copy somewhere on the web for a work without one: its title in quotes, only PDFs
+  function pdfSearch(w) {
+    const box = h('div', { class: 'rs-web-pdf' });
+    const draw = () => {
+      const x = st.webPdf.get(w.key);
+      const go = h('button', { type: 'button', class: 'btn small rs-web-pdf-go', disabled: x?.state === 'busy' ? true : null }, iconEl(x?.state === 'busy' ? 'refresh' : 'search', x?.state === 'busy' ? 'spin' : ''), h('span', { text: t('research.web.pdf') }));
+      go.addEventListener('click', async () => {
+        st.webPdf.set(w.key, { state: 'busy', results: [] });
+        draw();
+        try {
+          const r = await webSearch(`"${w.title}" filetype:pdf`);
+          st.webPdf.set(w.key, { state: 'done', results: r.results.filter((x) => /\.pdf($|[?#])|\/pdf\b/i.test(x.url)).slice(0, 8) });
+        } catch {
+          st.webPdf.set(w.key, { state: 'error', results: [] });
+        }
+        draw();
+      });
+      box.replaceChildren(go, ...(x?.state === 'done' ? [x.results.length ? h('ol', { class: 'rs-list rs-web-pdf-list' }, x.results.map((r) => webRow(r, { compact: true }))) : h('p', { class: 'muted small', text: t('research.web.pdfNone') })]
+        : x?.state === 'error' ? [h('p', { class: 'muted small', text: t('research.web.error') })] : []));
+    };
+    draw();
+    return box;
   }
 
   function badge(v) {
@@ -545,6 +620,7 @@ export function renderResearch(main) {
         row.append(upd);
       }
     }
+    if (!bestFree(w) && w.title && canWebSearch()) box.append(pdfSearch(w));
     if (!w.clip) box.append(keepForm(w, clip));
     const cite = h('button', { type: 'button', class: 'btn small' }, iconEl('copy'), h('span', { text: t('research.cite') }));
     cite.addEventListener('click', async () => { await copyText(citation(w)); toast(t('research.citeCopied'), 'ok'); });
@@ -747,7 +823,25 @@ function run(raw, { words = false } = {}) {
     },
   });
   st.search = handle;
+  st.web = null;
   view?.drawAll();
+  searchWeb(q);
+}
+
+// The same words on the web, when the Mac helper has SearXNG (0.14.4).
+async function searchWeb(q) {
+  if (!(await helperReady()) || !canWebSearch() || parseQuery(q).kind !== 'text') return;
+  st.web = { query: q, state: 'busy', results: [] };
+  if (view?.root.isConnected) view.drawList();
+  try {
+    const r = await webSearch(q);
+    if (st.web?.query !== q) return;
+    st.web = { query: q, state: 'done', results: r.results, unresponsive: r.unresponsive };
+  } catch (e) {
+    if (st.web?.query !== q) return;
+    st.web = { query: q, state: 'error', results: [] };
+  }
+  if (view?.root.isConnected) view.drawList();
 }
 
 async function newFolder(suggestion) {

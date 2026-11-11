@@ -352,6 +352,61 @@ export async function recrawl(folderPath) {
   go(s);
 }
 
+// ------------------------------------------------------------------ runs on the Mac (0.14.4 part 2)
+// A run for the Mac helper: the folder says crawl_on "mac" and crawl_state "queued"; the Toollib in the helper finds
+// it after a sync, goes through and uploads like any device. Commands from other devices travel the same way:
+// crawl_cmd and crawl_cmd_at in the folder; the helper answers with crawl_cmd_done (never the same line twice, so
+// syncs from both sides merge).
+export const MAC_CMDS = ['pause', 'stop', 'go', 'more', 'again'];
+export async function queueCrawl(opts) {
+  const start = parseStart(opts.start);
+  if (!start) throw new CrawlError('bad-url');
+  const scope = opts.scope || scopeFor(start);
+  if (!inScope(start, scope)) throw new CrawlError('outside-start');
+  const d = crawlDefaults();
+  const set = { depth: opts.depth ?? d.depth, max: opts.max ?? d.max, pdfs: opts.pdfs ?? d.pdfs };
+  const title = String(opts.title || '').trim() || scopeLabel(scope).replace(/\/$/, '');
+  return createFolder({
+    title,
+    extra: [`crawl: ${JSON.stringify({ start, scope: scopeLabel(scope), ...set })}`, 'crawl_on: "mac"', 'crawl_state: "queued"', `crawl_at: ${q(new Date().toISOString())}`],
+  });
+}
+export async function commandMac(folderPath, cmd) {
+  if (!MAC_CMDS.includes(cmd)) throw new CrawlError('failed');
+  await onFolder(folderPath, async () => {
+    const text = await readNodeText(folderPath);
+    let next = setField(text, 'crawl_cmd', q(cmd), ['crawl_on', 'crawl']);
+    next = setField(next, 'crawl_cmd_at', q(new Date().toISOString()), ['crawl_cmd']);
+    await writeNode(folderPath, next);
+    await refreshNode(folderPath);
+  });
+  await noteChanges([[folderPath, 'edited']]);
+  announce([folderPath]);
+}
+// The helper: a command is done (its time goes into crawl_cmd_done).
+export async function commandDone(folderPath, at) {
+  const changed = await onFolder(folderPath, async () => {
+    const text = await readNodeText(folderPath);
+    const next = setField(text, 'crawl_cmd_done', q(at), ['crawl_cmd_at', 'crawl_on']);
+    if (next === text) return false;
+    await writeNode(folderPath, next);
+    await refreshNode(folderPath);
+    return true;
+  });
+  if (changed) await noteChanges([[folderPath, 'edited']]);
+}
+
+// One change of a folder file at a time: the run (its pages, its state) and the helper's answers would otherwise read
+// the same text, and the later write would drop the line of the other.
+const folderQueue = new Map();
+function onFolder(path, fn) {
+  const next = (folderQueue.get(path) || Promise.resolve()).catch(() => {}).then(fn);
+  folderQueue.set(path, next);
+  next.catch(() => {}).finally(() => { if (folderQueue.get(path) === next) folderQueue.delete(path); });
+  return next;
+}
+export const runningCrawl = () => (run ? { ...brief(run.state), ending: run.cmd || '' } : null);   // ending: told to pause or stop
+
 export function pauseCrawl(folderPath) { command(folderPath, 'pause'); }
 export function stopCrawl(folderPath) { command(folderPath, 'stop'); }
 // Pause lets the page being fetched finish (it is not asked twice); Stop ends at once.
@@ -806,16 +861,19 @@ async function flush(s, { links = false, final = false } = {}) {
   const changed = new Map(s._dirty || []);
   if (s._dirty) s._dirty.clear();
   if (s._add?.length) {
-    const text = await readNodeText(s.folder);
-    const node = parseNode(text, s.folder);
-    const before = Array.isArray(node.meta.clips) ? node.meta.clips.map(String) : [];
-    const after = [...before, ...s._add.filter((x) => !before.includes(x))];
+    const add = s._add;
     s._add = [];
-    if (after.length !== before.length) {
+    const grew = await onFolder(s.folder, async () => {
+      const text = await readNodeText(s.folder);
+      const node = parseNode(text, s.folder);
+      const before = Array.isArray(node.meta.clips) ? node.meta.clips.map(String) : [];
+      const after = [...before, ...add.filter((x) => !before.includes(x))];
+      if (after.length === before.length) return false;
       await writeNode(s.folder, setField(text, 'clips', yamlValue(after), ['question', 'title_de', 'title']));
       await refreshNode(s.folder);
-      changed.set(s.folder, 'edited');
-    }
+      return true;
+    });
+    if (grew) changed.set(s.folder, 'edited');
   }
   if (links) for (const p of await linkPass(s)) if (!changed.has(p)) changed.set(p, 'edited');
   if (final) { if (await markFolder(s, s.status)) changed.set(s.folder, 'edited'); }
@@ -848,12 +906,19 @@ async function linkPass(s) {
 }
 
 // crawl_state, crawl_pages and crawl_date in the folder: what other devices see of the run.
-async function markFolder(s, status) {
+function markFolder(s, status) {
+  return onFolder(s.folder, () => markFolderNow(s, status));
+}
+async function markFolderNow(s, status) {
   try {
     const text = await readNodeText(s.folder);
     let next = setField(text, 'crawl_state', q(status), ['crawl', 'clips']);
     next = setField(next, 'crawl_pages', String(Object.keys(s.paths).length), ['crawl_state']);
     next = setField(next, 'crawl_date', q(today()), ['crawl_pages']);
+    // for devices that only see the folder (a run on the Mac, 0.14.4): what waits, why it ended, when this was
+    next = setField(next, 'crawl_queue', String((s.queue || []).length), ['crawl_date']);
+    next = setField(next, 'crawl_why', q(s.why || ''), ['crawl_queue']);
+    next = setField(next, 'crawl_at', q(new Date().toISOString()), ['crawl_why']);
     if (next === text) return false;
     await writeNode(s.folder, next);
     await refreshNode(s.folder);

@@ -15,8 +15,10 @@ export const autoOn = () => loadPref('sync.auto', true) !== false;
 
 // While something writes many files (a run through a website, 0.14.3), Sync by itself waits: at most one sync in
 // HELD_EVERY, and one right after it ends.
-const HELD_EVERY = 300000;
+let HELD_EVERY = 300000;
 const holds = new Set();
+// The Toollib in the Mac helper (0.14.4) syncs more often during a run, so other devices see its progress sooner.
+export function setHeldEvery(ms) { HELD_EVERY = Math.max(60000, Number(ms) || 300000); }
 let kick = null;
 export function holdAutoSync(reason, on) {
   if (on) holds.add(reason); else if (holds.delete(reason)) kick?.(AFTER_CHANGE);

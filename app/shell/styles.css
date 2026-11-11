@@ -957,6 +957,21 @@ a.rd-cite:hover { background: color-mix(in srgb, var(--accent) 12%, transparent)
 .ib-panel p { margin: 0; overflow-wrap: anywhere; }
 .ib-status:empty { display: none; }
 .cr-panel[data-status="running"] { border-color: var(--accent); }
+/* where a run goes, and the run on the Mac (0.14.4) */
+.cr-where { border: 0; margin: 14px 0 0; padding: 0; min-width: 0; }
+.cr-where .set-check { margin-top: 8px; }
+.cr-mac { border-style: dashed; }
+.cr-mac[data-status="running"] { border-style: solid; }
+.cr-sent { font-style: italic; }
+/* on the web: SearXNG in the Mac helper (0.14.4) */
+.rs-web-head { list-style: none; display: flex; align-items: center; gap: 8px; margin: 14px 4px 2px; }
+.rs-web-head .icon { color: var(--accent); }
+.rs-web-main { cursor: default; }
+.rs-web-main .rs-hit-title { text-decoration: none; color: inherit; }
+.rs-web-main .rs-hit-title:hover { text-decoration: underline; }
+.rs-web-snippet { color: var(--muted); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.rs-web-pdf { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; align-items: flex-start; }
+.rs-web-pdf-list { width: 100%; }
 .cr-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .cr-head .icon { color: var(--accent); }
 .cr-scope { text-decoration: none; overflow-wrap: anywhere; }
