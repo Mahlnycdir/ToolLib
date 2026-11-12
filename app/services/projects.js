@@ -244,3 +244,19 @@ export function startAutoLink() {
 
 // Everything that belongs to a project, as summaries in the order it was added; names that are gone are left out.
 export const projectNodes = (links) => asList(links).map((slug) => nodeBySlug(slug)).filter(Boolean);
+
+// What a project collected (0.16.0): kept works (clips), runs through websites and the PDF inbox as one entry each
+// (sites), and the works of folders from before 0.16.0 that belong to it. { sites, clips }
+export function projectWorks(p) {
+  if (!p) return { sites: [], clips: [] };
+  const nodes = projectNodes(p.links);
+  const sites = nodes.filter((n) => n.type === 'research' && (n.crawl || n.pdfInbox));
+  const clips = nodes.filter((n) => n.type === 'clip');
+  const seen = new Set(clips.map((d) => d.slug));
+  for (const f of nodes.filter((n) => n.type === 'research' && !n.crawl && !n.pdfInbox)) {
+    for (const s of f.clips) { const d = nodeBySlug(s); if (d?.type === 'clip' && !seen.has(s)) { seen.add(s); clips.push(d); } }
+  }
+  return { sites, clips: clips.sort((a, b) => a.title.localeCompare(b.title)) };
+}
+// The library that holds the pages of a project, if it has one.
+export const projectLibrary = (p) => (p ? projectNodes(p.links).find((n) => n.type === 'library') || null : null);

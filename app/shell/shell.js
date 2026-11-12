@@ -25,7 +25,7 @@ import { savePref } from '../services/prefs.js';
 import { getNode } from '../services/nodes.js';
 import { renderStart } from './start.js';
 import { renderSource } from './source-editor.js';
-import { renderLibraryHome } from './library-home.js';
+import { renderWrite } from './library-home.js';
 import { paintProject, renderNote, renderProject, renderProjects } from './projects-view.js';
 import { CREATORS, createMenu } from './create.js';
 import { focusProject, onFocusChange, projects, startAutoLink } from '../services/projects.js';
@@ -39,7 +39,6 @@ const VIEWS = {
   cheatsheet: (main, mod, ctx) => renderCheatsheet(main, mod, ctx),
   formulary: (main, mod) => renderFormulary(main, mod),
   scraper: (main, mod) => renderResearch(main, mod),
-  library: (main, mod, ctx) => renderLibraryHome(main, mod, ctx),
 };
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -74,6 +73,8 @@ export function startShell(root) {
     if (location.hash === '#/new') return { kind: 'form', mode: 'new' };
     const [, kind, id] = location.hash.split('/');
     if (kind === 'settings') return { kind: 'settings', section: id };
+    // writing (0.16.0): the pages of a project; libraries are no tool of their own any more
+    if (kind === 'm' && id === 'library') return { kind: 'write' };
     if (kind === 'm' && moduleById(id)) return { kind: 'module', mod: moduleById(id) };
     return { kind: 'home' };
   }
@@ -147,10 +148,11 @@ export function startShell(root) {
     main.replaceChildren();
     delete main.dataset.view;
     const nodeType = route.kind === 'node' ? nodeByPath(route.path)?.type : null;
-    paintAccent(main, route.kind === 'module' ? route.mod.id : route.kind === 'node' ? typeAccent(nodeType) : route.kind === 'form' ? 'cheatsheet' : 'shell');
+    paintAccent(main, route.kind === 'module' ? route.mod.id : route.kind === 'node' ? typeAccent(nodeType) : route.kind === 'form' ? 'cheatsheet' : route.kind === 'write' ? 'projects' : 'shell');
     if (route.kind === 'settings') renderSettings(main, { onChange: refresh, onCheckUpdate: runUpdateCheck, onSync: runSync, section: route.section });
     else if (route.kind === 'module' && VIEWS[route.mod.id]) VIEWS[route.mod.id](main, route.mod, { go });
     else if (route.kind === 'module') renderModule(main, route.mod);
+    else if (route.kind === 'write') renderWrite(main, { go });
     else if (route.kind === 'source') renderSource(main, route.path, { go, isCurrent: () => token === renderToken });
     else if (route.kind === 'form') renderSnippetForm(main, { mode: route.mode, path: route.path, go, isCurrent: () => token === renderToken });
     else if (route.kind === 'node') {
@@ -200,7 +202,7 @@ export function startShell(root) {
     const list = h('div', { class: 'rail-modules' });
     const nodeModule = route.kind === 'node' ? (route.path.startsWith('projects/') || route.path.startsWith('notes/') ? 'projects' : typeAccent(nodeByPath(route.path)?.type)) : '';
     for (const m of READY) {
-      const active = (route.kind === 'module' && route.mod.id === m.id) || nodeModule === m.id || (route.kind === 'form' && m.id === 'cheatsheet');
+      const active = (route.kind === 'module' && route.mod.id === m.id) || nodeModule === m.id || (route.kind === 'form' && m.id === 'cheatsheet') || (route.kind === 'write' && m.id === 'projects');
       list.append(railButton({ id: m.id, iconName: m.icon, label: t(`module.${m.id}.name`), active, accentId: m.id, onclick: () => (m.href ? location.assign(m.href) : go(`#/m/${m.id}`)) }));
     }
     rail.append(list);

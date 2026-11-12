@@ -14,6 +14,7 @@ import {
 } from '../services/library-store.js';
 import { loadClipDoc } from '../services/research-store.js';
 import { knowledgeFor } from '../services/reader-cards.js';
+import { projectWorks } from '../services/projects.js';
 import { mountEditor } from './page-editor.js';
 import { nodeHref, typeLabel } from './node-view.js';
 
@@ -50,9 +51,11 @@ export function mountLibrary(host, opts) {
   // ---------------------------------------------------------------- bar and tabs
   function drawBar() {
     const back = h('button', { type: 'button', class: 'btn small', 'aria-label': t('reader.back'), onclick: leave }, iconEl('chevronLeft'), h('span', { text: t('reader.back') }));
-    const title = h('div', { class: 'rd-title' }, h('span', { text: state.lib?.title || '' }));
+    // the pages of a project (0.16.0): named after it; renaming or deleting them as a whole is not needed there
+    const proj = opts.projectOf?.() || null;
+    const title = h('div', { class: 'rd-title' }, h('span', { text: proj ? t('write.title', { project: proj.title }) : state.lib?.title || '' }));
     const view = state.lib ? h('a', { class: 'btn small', href: nodeHref(state.page?.path || state.lib.path), onclick: () => flush() }, iconEl('book'), h('span', { text: t('library.view') })) : null;
-    const more = h('button', { type: 'button', class: 'btn small', 'aria-label': t('library.more'), title: t('library.more'), onclick: libMenu }, iconEl('more'));
+    const more = proj ? null : h('button', { type: 'button', class: 'btn small', 'aria-label': t('library.more'), title: t('library.more'), onclick: libMenu }, iconEl('more'));
     const focusOn = root.classList.contains('focus');
     const focus = h('button', { type: 'button', class: `btn small lb-focus${focusOn ? ' on' : ''}`, 'aria-pressed': String(focusOn), title: t(focusOn ? 'library.focus.off' : 'library.focus') }, iconEl(focusOn ? 'minimize' : 'maximize'), h('span', { text: t(focusOn ? 'library.focus.off' : 'library.focus') }));
     focus.addEventListener('click', () => { const on = root.classList.toggle('focus'); savePref('library.focus', on); drawBar(); });
@@ -344,7 +347,8 @@ export function mountLibrary(host, opts) {
   const sideBody = h('div', { class: 'lb-side-body' });
   side.append(sideTabs, sideBody);
   function drawSideTabs() {
-    sideTabs.replaceChildren(...[['marks', 'library.side.marks'], ['know', 'library.side.know'], ['sources', 'library.side.sources']].map(([id, key]) => h('button', {
+    const inProject = !!opts.projectOf?.();
+    sideTabs.replaceChildren(...[['marks', inProject ? 'library.side.works' : 'library.side.marks'], ['know', 'library.side.know'], ['sources', 'library.side.sources']].map(([id, key]) => h('button', {
       type: 'button', class: state.side === id ? 'on' : '', 'aria-pressed': String(state.side === id),
       text: id === 'sources' && state.page?.sources.length ? `${t(key)} (${state.page.sources.length})` : t(key),
       onclick: () => { state.side = id; savePref('library.side', id); drawSide(); },
@@ -373,18 +377,39 @@ export function mountLibrary(host, opts) {
     const list = h('div', { class: 'lb-marks' }, h('p', { class: 'muted small', text: t('library.loading') }));
     sideBody.replaceChildren(filter, list);
     filter.addEventListener('input', debounce(() => { state.filter = filter.value.trim(); fill(); }, 150));
+    // the works of a project show at once; the marks of all works follow
+    if (!state.marks && opts.projectOf?.()) fill();
     if (!state.marks) state.marks = await loadMarks();
     if (destroyed || state.side !== 'marks') return;
     fill();
     function fill() {
       const f = state.filter.toLowerCase();
       const cited = new Set(state.page?.links || []);
-      const groups = [...state.marks].sort((a, b) => Number(cited.has(b.d.slug)) - Number(cited.has(a.d.slug)) || a.d.title.localeCompare(b.d.title));
+      const groups = [...(state.marks || [])].sort((a, b) => Number(cited.has(b.d.slug)) - Number(cited.has(a.d.slug)) || a.d.title.localeCompare(b.d.title));
+      // in a project (0.16.0): its works first, also those without a mark yet (read them, mark, take over)
+      const proj = opts.projectOf?.() || null;
+      const own = proj ? projectWorks(proj).clips : [];
+      const ownSet = new Set(own.map((d) => d.slug));
       const blocks = [];
-      for (const g of groups) {
+      const readBtn = (d) => h('button', { type: 'button', class: 'btn small lb-read', title: t('library.marks.read'), onclick: async () => { await flush(); opts.onRead?.(d.path); } }, iconEl('book'), h('span', { text: t('library.marks.read') }));
+      if (proj) {
+        blocks.push(h('h4', { class: 'lb-side-h', text: t('library.side.projectWorks', { project: proj.title }) }));
+        const shown = own.filter((d) => !f || d.title.toLowerCase().includes(f) || (groups.find((g) => g.d.slug === d.slug)?.highlights || []).some((x) => `${x.quote} ${x.note}`.toLowerCase().includes(f)));
+        for (const d of shown) {
+          const g = groups.find((x) => x.d.slug === d.slug);
+          if (g) continue;   // drawn below with its marks
+          blocks.push(h('section', { class: 'lb-mark-group lb-own' }, h('div', { class: 'lb-mark-work' }, h('span', { class: 'lb-mark-title', text: d.title }), readBtn(d)),
+            h('p', { class: 'muted small', text: t('library.side.nothingMarked') })));
+        }
+        if (!own.length) blocks.push(h('p', { class: 'muted small', text: t('library.side.noWorks') }));
+      }
+      const ordered = proj ? [...groups.filter((g) => ownSet.has(g.d.slug)), ...groups.filter((g) => !ownSet.has(g.d.slug))] : groups;
+      let otherHead = false;
+      for (const g of ordered) {
         const hls = g.highlights.filter((x) => !f || `${x.quote} ${x.note} ${x.section} ${g.d.title}`.toLowerCase().includes(f));
         if (!hls.length) continue;
-        const read = h('button', { type: 'button', class: 'btn small', title: t('library.marks.read'), onclick: async () => { await flush(); opts.onRead?.(g.d.path); } }, iconEl('book'), h('span', { text: t('library.marks.read') }));
+        if (proj && !ownSet.has(g.d.slug) && !otherHead) { otherHead = true; blocks.push(h('h4', { class: 'lb-side-h', text: t('library.side.otherWorks') })); }
+        const read = readBtn(g.d);
         blocks.push(h('section', { class: 'lb-mark-group' },
           h('div', { class: 'lb-mark-work' }, h('span', { class: 'lb-mark-title', text: g.d.title }), read),
           h('ul', { class: 'rd-mark-list' }, ...hls.map((x) => h('li', { class: 'rd-mark' },
@@ -400,7 +425,7 @@ export function mountLibrary(host, opts) {
               },
             }, iconEl('plus'), h('span', { text: t('library.insert') }))))))));
       }
-      list.replaceChildren(...(blocks.length ? blocks : [h('p', { class: 'muted small', text: state.marks.length ? t('library.marks.noMatch') : t('library.marks.none') })]));
+      list.replaceChildren(...(blocks.length ? blocks : [h('p', { class: 'muted small', text: state.marks?.length ? t('library.marks.noMatch') : t('library.marks.none') })]));
     }
   }
 

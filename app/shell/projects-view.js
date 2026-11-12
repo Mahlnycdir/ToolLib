@@ -14,7 +14,10 @@ import {
 import { capture, deleteNote, inbox, loadNote, saveNote } from '../services/notes.js';
 import { nodeHref, nodeLead, nodeTitle, typeLabel, typeTile } from './node-view.js';
 import { renderMarkdown } from './markdown.js';
-import { newCard, newCrawl, newFolder, newNote, newPage, newProject, newSnippet } from './create.js';
+import { newCard, newCrawl, newNote, newPage, newProject, newSnippet } from './create.js';
+import { openWriting } from './library-home.js';
+import { loadLibrary } from '../services/library-store.js';
+import { dissolveFolder } from '../services/research-store.js';
 import { queueSearch } from './research-view.js';
 import { cardDialog } from './card-dialog.js';
 import { createCard } from '../services/reader-cards.js';
@@ -26,7 +29,8 @@ export const STATIONS = ['collect', 'keep', 'apply'];
 const STATION = {
   clip: 'collect', research: 'collect',
   formula: 'keep', definition: 'keep', theorem: 'keep', term: 'keep', convention: 'keep', topic: 'keep', note: 'keep', rule: 'keep', part: 'keep', device: 'keep',
-  snippet: 'apply', recipe: 'apply', page: 'apply', library: 'apply', pin_map: 'apply', tool: 'apply',
+  page: 'keep', library: 'keep',   // what you write in the project (0.16.0)
+  snippet: 'apply', recipe: 'apply', pin_map: 'apply', tool: 'apply',
 };
 export const stationOf = (type) => STATION[type] || 'keep';
 const STATION_ICON = { collect: 'search', keep: 'bookmark', apply: 'play' };
@@ -202,6 +206,17 @@ export async function renderProject(main, path, ctx) {
   const row = (n) => {
     const rm = h('button', { type: 'button', class: 'icon-btn small member-rm', title: t('project.takeOut'), 'aria-label': `${t('project.takeOut')}: ${nodeTitle(n, lang)}`, html: icon('close') });
     rm.addEventListener('click', async () => { await removeFromProject(path, n.slug); redraw(); });
+    // a folder from before 0.16.0: one tap moves its works and notes into the project, the folder goes
+    if (n.type === 'research' && !n.crawl && !n.pdfInbox) {
+      const take = h('button', { type: 'button', class: 'btn small member-dissolve', title: t('project.dissolve.hint') }, iconEl('check'), h('span', { text: t('project.dissolve') }));
+      take.addEventListener('click', async () => {
+        take.disabled = true;
+        try { await dissolveFolder(n.path, path); toast(t('research.adopted', { project: p.title }), 'ok'); } catch (e) { console.warn(e); toast(t('create.failed'), 'error', 5000); }
+        redraw();
+      });
+      return h('li', { class: 'member member-old' }, h('a', { class: 'member-main', href: nodeHref(n.path) }, typeTile(n.type, 'small'),
+        h('span', { class: 'member-text' }, h('span', { class: 'member-title', text: nodeTitle(n, lang) }), h('span', { class: 'muted small member-lead', text: t('project.oldFolder', { n: n.clips.length }) }))), take);
+    }
     return h('li', { class: 'member' }, h('a', { class: 'member-main', href: nodeHref(n.path) }, typeTile(n.type, 'small'),
       h('span', { class: 'member-text' }, h('span', { class: 'member-title', text: nodeTitle(n, lang) }), h('span', { class: 'muted small member-lead', text: n.type === 'research' ? t('research.kept', { n: n.clips.length }) : n.type === 'note' ? `${typeLabel('note')}${n.at ? `, ${new Date(n.at).toLocaleDateString(lang === 'de' ? 'de-DE' : 'en-GB')}` : ''}` : nodeLead(n, lang) || typeLabel(n.type) }))), rm);
   };
@@ -213,16 +228,33 @@ export async function renderProject(main, path, ctx) {
     return fn();
   };
   const ACTIONS = {
-    collect: [act('project.do.search', 'search', () => here(() => { queueSearch(p.title); go('#/m/scraper'); })), act('project.do.folder', 'folder', () => here(() => newFolder({ go, title: p.title }))), act('create.crawl', 'globe', () => here(() => newCrawl({ go })))],
-    keep: [act('create.card', 'vars', () => here(() => newCard({ go }))), act('create.note', 'edit', async () => { if (await newNote({ project: path })) redraw(); })],
-    apply: [act('create.snippet', 'code', () => here(() => newSnippet({ go }))), act('create.page', 'file', () => here(() => newPage({ go })))],
+    collect: [act('project.do.search', 'search', () => here(() => { queueSearch(p.title); go('#/m/scraper'); })), act('create.crawl', 'globe', () => here(() => newCrawl({ go })))],
+    keep: [act('project.write', 'file', () => openWriting(path, { go })), act('create.card', 'vars', () => here(() => newCard({ go }))), act('create.note', 'edit', async () => { if (await newNote({ project: path })) redraw(); })],
+    apply: [act('create.snippet', 'code', () => here(() => newSnippet({ go })))],
   };
+  // the pages you write in the project (0.16.0): they sit in its library, shown here by chapter
+  const lib = members.find((n) => n.type === 'library');
+  const pagesBox = h('div', { class: 'project-pages' });
+  if (lib) {
+    loadLibrary(lib.path).then((l) => {
+      const chapters = l.chapters.filter((c) => c.pages.length);
+      if (!chapters.length) { pagesBox.replaceChildren(h('p', { class: 'muted small', text: t('project.pages.empty') })); return; }
+      pagesBox.replaceChildren(...chapters.map((c) => h('div', { class: 'project-chapter' },
+        h('span', { class: 'muted small project-chapter-title', text: c.title }),
+        h('ul', { class: 'members' }, c.pages.map((slug) => {
+          const d = allNodes().find((x) => x.slug === slug && x.type === 'page');
+          return d ? h('li', { class: 'member' }, h('button', { type: 'button', class: 'member-main project-page', onclick: () => openWriting(path, { page: d.path, go }) }, typeTile('page', 'small'),
+            h('span', { class: 'member-text' }, h('span', { class: 'member-title', text: nodeTitle(d, lang) }), h('span', { class: 'muted small member-lead', text: nodeLead(d, lang) || t('project.page') })))) : null;
+        }).filter(Boolean)))));
+    }).catch(() => {});
+  }
   for (const id of STATIONS) {
-    const items = members.filter((n) => stationOf(n.type) === id);
+    const items = members.filter((n) => stationOf(n.type) === id && n.type !== 'library');
     const sec = h('section', { class: `station station-${id}`, id: `station-${id}` },
-      h('h2', {}, iconEl(STATION_ICON[id]), h('span', { text: t(`station.${id}`) }), h('span', { class: 'count', text: String(items.length) })),
+      h('h2', {}, iconEl(STATION_ICON[id]), h('span', { text: t(`station.${id}`) }), h('span', { class: 'count', text: String(items.length + (id === 'keep' && lib ? 1 : 0)) })),
       h('p', { class: 'muted small station-what', text: t(`station.${id}.what`) }),
       id === 'keep' ? quick : null,
+      id === 'keep' && lib ? pagesBox : null,
       items.length ? h('ul', { class: 'members' }, items.map(row)) : null,
       h('div', { class: 'btn-row' }, ACTIONS[id]));
     sections[id] = sec;

@@ -5,11 +5,10 @@ import { h, modal, promptDialog, toast, actionSheet, savePref } from '../service
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
 import { capture } from '../services/notes.js';
-import { createProject, focusProject, setFocus } from '../services/projects.js';
+import { createProject, focusProject, projects, setFocus } from '../services/projects.js';
+import { newPageIn } from './library-home.js';
 import { createCard } from '../services/reader-cards.js';
 import { cardDialog } from './card-dialog.js';
-import { createFolder } from '../services/research-store.js';
-import { createLibrary, createPage, libraries, loadLibrary } from '../services/library-store.js';
 import { parseStart } from '../services/crawl.js';
 import { indexState } from '../services/search.js';
 import { nodeHref } from './node-view.js';
@@ -107,43 +106,29 @@ export function newSnippet({ go, code = '', title = '' } = {}) {
   go?.('#/new');
 }
 
-// A page in one of your libraries; without a library the first one is made here.
-export async function newPage({ go, title = '' } = {}) {
+// A page (0.16.0): it belongs to a project, the one in focus or the one you pick; its pages open with the new page.
+export async function newPage({ go, title = '', project = '' } = {}) {
   if (needsKnowledge()) return null;
-  const libs = libraries();
-  let libPath = '';
-  if (libs.length === 1) libPath = libs[0].path;
-  else if (libs.length > 1) {
-    libPath = await actionSheet(t('create.page.where'), [...libs.map((l) => ({ label: l.title, value: l.path, icon: 'book' })), '-', { label: t('library.new'), value: 'new', icon: 'plus' }]);
-    if (!libPath) return null;
+  let target = project || focusProject()?.path || '';
+  if (!target) {
+    const list = projects().filter((p) => p.state !== 'done');
+    const v = await actionSheet(t('create.page.where'), [...list.map((p) => ({ label: p.title, value: p.path, icon: 'target' })), '-', { label: t('research.into.new'), value: '__new', icon: 'plus' }]);
+    if (!v) return null;
+    target = v === '__new' ? await newProject({}) : v;
+    if (!target) return null;
   }
   try {
-    if (!libPath || libPath === 'new') {
-      const name = await promptDialog(t('library.new'), { label: t('library.name'), value: focusProject()?.title || '', placeholder: t('library.placeholder'), okLabel: t('research.folder.create'), validate: (v) => (v.trim() ? '' : t('library.needTitle')) });
-      if (!name || !name.trim()) return null;
-      libPath = await createLibrary({ title: name, lang: getLang(), firstChapter: t('library.chapter.default', { n: 1 }) });
-    }
     const name = title || await promptDialog(t('create.page'), { label: t('create.page.title'), okLabel: t('research.folder.create'), validate: (v) => (v.trim() ? '' : t('create.page.needTitle')) });
     if (!name || !name.trim()) return null;
-    const lib = await loadLibrary(libPath);
-    const path = await createPage(libPath, Math.max(0, lib.chapters.length - 1), name, lib.lang || getLang());
-    savePref('library.open', { path: libPath, page: path, at: Date.now() });
+    const path = await newPageIn(target, name.trim());
     go?.('#/m/library');
     return path;
   } catch (e) { return failed(e); }
 }
 
-export async function newFolder({ go, title = '' } = {}) {
-  if (needsKnowledge()) return null;
-  const name = await promptDialog(t('research.folder.new'), { label: t('research.folder.title'), value: title || focusProject()?.title || '', placeholder: t('research.folder.placeholder'), okLabel: t('research.folder.create'), validate: (v) => (v.trim() ? '' : t('research.folder.needTitle')) });
-  if (!name || !name.trim()) return null;
-  try {
-    const path = await createFolder({ title: name, question: '' });
-    savePref('research.folder', path);
-    savePref('research.showFolder', path);
-    go?.('#/m/scraper');
-    return path;
-  } catch (e) { return failed(e); }
+// Research (0.16.0): no folder to make first; what you keep goes into the project in focus.
+export function openResearch({ go } = {}) {
+  go?.('#/m/scraper');
 }
 
 export async function newCrawl({ go, address = '' } = {}) {
@@ -159,11 +144,11 @@ export async function newCrawl({ go, address = '' } = {}) {
 export const CREATORS = [
   { id: 'note', icon: 'edit', accent: 'projects', key: 'n', run: newNote, keys: 'note notiz notieren festhalten gedanke idee capture' },
   { id: 'project', icon: 'target', accent: 'projects', key: 'p', run: newProject, keys: 'project projekt vorhaben thema' },
-  { id: 'folder', icon: 'search', accent: 'scraper', key: 'r', run: newFolder, keys: 'research recherche mappe folder suchen' },
+  { id: 'folder', icon: 'search', accent: 'scraper', key: 'r', run: openResearch, keys: 'research recherche suchen lernen finden paper' },
   { id: 'crawl', icon: 'globe', accent: 'scraper', key: 'w', start: false, run: newCrawl, keys: 'website durchgehen crawl seite scrape' },
   { id: 'card', icon: 'vars', accent: 'formulary', key: 'k', run: newCard, keys: 'card karte formel formula definition begriff term satz' },
   { id: 'snippet', icon: 'code', accent: 'cheatsheet', key: 's', run: newSnippet, keys: 'snippet code baustein python' },
-  { id: 'page', icon: 'file', accent: 'library', key: 'b', run: newPage, keys: 'page seite schreiben bibliothek library text' },
+  { id: 'page', icon: 'file', accent: 'projects', key: 'b', run: newPage, keys: 'page seite schreiben bibliothek library text' },
 ];
 
 // The menu behind "+": every creator with its letter. Resolves once something was started.

@@ -10,6 +10,8 @@ import { noteChange, noteChanges } from './sync.js';
 import { announce } from './channel.js';
 import { normArxiv, normDoi, orderVersions } from './research-merge.js';
 import { composeBody, parseBody } from './reader.js';
+import { addToProject, projectsWith, removeFromProject } from './projects.js';
+import { capture } from './notes.js';
 
 const q = (v) => JSON.stringify(String(v));
 const today = () => new Date().toISOString().slice(0, 10);
@@ -61,6 +63,20 @@ export async function deleteFolder(folderPath) {
   forgetNode(folderPath);
   await noteChange(folderPath, 'removed');
   announce([folderPath]);
+}
+
+// A folder from before 0.16.0 goes into a project: its works join the project, its question and notes become a note
+// there, the folder goes (and leaves the projects that named it). Nothing you kept or wrote is lost.
+export async function dissolveFolder(folderPath, projectPath) {
+  const f = nodeByPath(folderPath);
+  if (!f || f.type !== 'research' || f.crawl || f.pdfInbox) return false;
+  if (f.clips.length) await addToProject(projectPath, f.clips);
+  const n = await folderNotes(folderPath).catch(() => null);
+  const text = [n?.question, n?.notes].map((x) => String(x || '').trim()).filter(Boolean).join('\n\n');
+  if (text) await capture(`${f.title}\n\n${text}`, { project: projectPath });
+  for (const p of projectsWith(f.slug)) await removeFromProject(p.path, f.slug);
+  await deleteFolder(folderPath);
+  return true;
 }
 
 // Works you kept that sit in no folder (0.15.0): they show under "No folder" instead of vanishing from the window.

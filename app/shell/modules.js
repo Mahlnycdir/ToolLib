@@ -13,15 +13,15 @@ export const ACCENTS = [
   { id: 'yellow', color: '#f2c94c', ink: '#0f1f3d' },
 ];
 
-// The tools of the shell, in the order of the module bar: projects hold everything together, research collects,
+// The tools of the shell, in the order of the module bar: projects hold everything together (also the pages you
+// write, since 0.16.0), research finds and collects,
 // formulary and cheatsheet keep, Kobra applies. planned: true = not built yet; such a tool is named on Start under
 // "Planned" and stays out of the module bar. A new tool is one line here, its texts in strings.json
 // (module.<id>.name, module.<id>.desc), its view in VIEWS of shell.js and, if it creates something, an entry in
 // CREATORS of create.js; types: the kinds of nodes it shows, which take its colour.
 export const MODULES = [
-  { id: 'projects', icon: 'target', accent: 'violet', types: ['project', 'note'] },                 // 0.15.0
+  { id: 'projects', icon: 'target', accent: 'violet', types: ['project', 'note', 'library', 'page'] },   // 0.15.0; pages since 0.16.0
   { id: 'scraper', icon: 'globe', accent: 'blue', types: ['clip', 'research'] },                    // research window (0.14.0)
-  { id: 'library', icon: 'file', accent: 'teal', types: ['library', 'page'] },                       // its own tool since 0.15.1
   { id: 'formulary', icon: 'vars', accent: 'rose', types: ['formula', 'convention', 'definition', 'theorem', 'term', 'topic'] },   // stage 3 (0.12.0)
   { id: 'cheatsheet', icon: 'book', accent: 'sky', types: ['snippet', 'recipe'] },
   { id: 'kobra', icon: 'code', accent: 'yellow', href: 'kobra/', types: [] },   // Kobra as its own page (0.11.0)
