@@ -1,16 +1,16 @@
 // Projects (0.15.0): the list of your projects, the view of one project and the view of a note.
-// A project shows the way its knowledge takes: collect (works, research folders), keep (cards, notes) and apply
-// (snippets, recipes, pages you write). Each station opens the tool that fills it, and whatever you create there
-// while the project is in focus comes back into the project.
+// Since 0.18.0 a project is a board with your own sections and widgets (project-board.js); the card of a project (list,
+// Start) still shows the way its knowledge takes: collect, keep, apply.
 import { h, toast, confirmDialog, promptDialog, actionSheet, debounce, loadPref, savePref } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
 import { ACCENTS } from './modules.js';
 import { allNodes, indexState, nodeByPath, onIndexChange, searchNodes } from '../services/search.js';
 import {
-  STATES, addStep, addToProject, deleteProject, focusPath, loadProject, projectNodes, projects, projectsWith, removeFromProject, removeStep,
-  saveProjectNotes, setFocus, setProjectField, toggleStep, touchProject,
+  STATES, addToProject, deleteProject, focusPath, loadProject, projectNodes, projects, projectsWith, setFocus, setProjectField, touchProject, stationOf,
+  boardOf, parseSections,
 } from '../services/projects.js';
+import { projectBody, sectionTitle, COLOUR_HEX } from './project-board.js';
 import { capture, deleteNote, inbox, loadNote, saveNote } from '../services/notes.js';
 import { nodeHref, nodeLead, nodeTitle, typeLabel, typeTile } from './node-view.js';
 import { renderMarkdown } from './markdown.js';
@@ -24,15 +24,9 @@ import { createCard } from '../services/reader-cards.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 
-// ------------------------------------------------------------------ the three stations
+// ------------------------------------------------------------------ the three stations (on the cards of projects)
 export const STATIONS = ['collect', 'keep', 'apply'];
-const STATION = {
-  clip: 'collect', research: 'collect',
-  formula: 'keep', definition: 'keep', theorem: 'keep', term: 'keep', convention: 'keep', topic: 'keep', note: 'keep', rule: 'keep', part: 'keep', device: 'keep',
-  page: 'keep', library: 'keep',   // what you write in the project (0.16.0)
-  snippet: 'apply', recipe: 'apply', pin_map: 'apply', tool: 'apply',
-};
-export const stationOf = (type) => STATION[type] || 'keep';
+export { stationOf };
 const STATION_ICON = { collect: 'search', keep: 'bookmark', apply: 'play' };
 
 // Every project has its own colour, from its name: you recognise it before you read it.
@@ -53,15 +47,20 @@ export function stationCounts(d) {
   for (const n of projectNodes(d.links)) counts[stationOf(n.type)]++;
   return counts;
 }
+// The sections of a project's board with their cards, from the index (0.18.0)
+export const boardOfSummary = (d) => boardOf({ sections: parseSections(d.board?.sections || []), board: d.board?.lists || {} }, projectNodes(d.links));
 
 // The track: three stations joined by a line. onStation(id) is what a tap does.
+// Since 0.18.0 the stops are the sections of the board, in their colours and with their names.
 export function track(d, { onStation } = {}) {
-  const counts = stationCounts(d);
-  const el = h('div', { class: 'track', role: 'group', 'aria-label': t('project.track') });
-  STATIONS.forEach((id, i) => {
+  const secs = boardOfSummary(d);
+  const el = h('div', { class: `track${secs.length > 3 ? ' many' : ''}`, role: 'group', 'aria-label': t('project.track') });
+  secs.forEach((s, i) => {
     if (i) el.append(h('span', { class: 'track-line', 'aria-hidden': 'true' }));
-    el.append(h('button', { type: 'button', class: `track-stop${counts[id] ? '' : ' empty'}`, dataset: { station: id }, onclick: () => onStation?.(id) },
-      iconEl(STATION_ICON[id]), h('span', { class: 'track-name', text: t(`station.${id}`) }), h('span', { class: 'track-n', text: String(counts[id]) })));
+    const stop = h('button', { type: 'button', class: `track-stop${s.items.length ? '' : ' empty'}`, dataset: { station: s.id }, onclick: () => onStation?.(s.id) },
+      STATION_ICON[s.id] ? iconEl(STATION_ICON[s.id]) : h('span', { class: 'board-dot' }), h('span', { class: 'track-name', text: sectionTitle(s) }), h('span', { class: 'track-n', text: String(s.items.length) }));
+    stop.style.setProperty('--sec', COLOUR_HEX[s.color] || COLOUR_HEX.slate);
+    el.append(stop);
   });
   return el;
 }
@@ -169,134 +168,17 @@ export async function renderProject(main, path, ctx) {
   box.append(goal);
   if (inFocus) box.append(h('p', { class: 'focus-note small' }, iconEl('target'), h('span', { text: t('project.focus.note') })));
 
-  // the way of the knowledge: three stations; a tap goes to its section
-  const sections = {};
-  box.append(track(d, { onStation: (id) => sections[id]?.scrollIntoView({ block: 'start', behavior: 'smooth' }) }));
-
-  // next steps
-  const steps = h('ul', { class: 'steps-list' });
-  p.steps.forEach((s, i) => {
-    const boxEl = h('input', { type: 'checkbox', checked: s.done ? true : null, 'aria-label': s.text });
-    boxEl.addEventListener('change', async () => { await toggleStep(path, i); redraw(); });
-    const del = h('button', { type: 'button', class: 'icon-btn small step-del', 'aria-label': `${t('action.remove')}: ${s.text}`, title: t('action.remove'), html: icon('close') });
-    del.addEventListener('click', async () => { await removeStep(path, i); redraw(); });
-    steps.append(h('li', { class: s.done ? 'done' : '' }, h('label', {}, boxEl, h('span', { text: s.text })), del));
-  });
-  const stepIn = h('input', { class: 'field step-input', type: 'text', placeholder: t('project.step.add'), 'aria-label': t('project.step.add'), enterkeyhint: 'done' });
-  stepIn.addEventListener('keydown', async (e) => {
-    if (e.key !== 'Enter' || !stepIn.value.trim()) return;
-    e.preventDefault();
-    await addStep(path, stepIn.value);
-    refocus = 'step';
-    redraw();
-  });
-  box.append(h('section', { class: 'project-steps' }, h('h2', { text: t('project.steps') }), steps, stepIn));
-
-  // catch a thought for this project
-  const quick = h('input', { class: 'field quick-note', type: 'text', placeholder: t('project.quick'), 'aria-label': t('project.quick'), enterkeyhint: 'done' });
-  quick.addEventListener('keydown', async (e) => {
-    if (e.key !== 'Enter' || !quick.value.trim()) return;
-    e.preventDefault();
-    try { await capture(quick.value, { project: path }); toast(t('note.kept'), 'ok'); refocus = 'quick'; redraw(); } catch { toast(t('create.failed'), 'error', 5000); }
-  });
-
-  // what belongs to it, by station
-  const members = projectNodes(p.links);
-  const lang = getLang();
-  const row = (n) => {
-    const rm = h('button', { type: 'button', class: 'icon-btn small member-rm', title: t('project.takeOut'), 'aria-label': `${t('project.takeOut')}: ${nodeTitle(n, lang)}`, html: icon('close') });
-    rm.addEventListener('click', async () => { await removeFromProject(path, n.slug); redraw(); });
-    // a folder from before 0.16.0: one tap moves its works and notes into the project, the folder goes
-    if (n.type === 'research' && !n.crawl && !n.pdfInbox) {
-      const take = h('button', { type: 'button', class: 'btn small member-dissolve', title: t('project.dissolve.hint') }, iconEl('check'), h('span', { text: t('project.dissolve') }));
-      take.addEventListener('click', async () => {
-        take.disabled = true;
-        try { await dissolveFolder(n.path, path); toast(t('research.adopted', { project: p.title }), 'ok'); } catch (e) { console.warn(e); toast(t('create.failed'), 'error', 5000); }
-        redraw();
-      });
-      return h('li', { class: 'member member-old' }, h('a', { class: 'member-main', href: nodeHref(n.path) }, typeTile(n.type, 'small'),
-        h('span', { class: 'member-text' }, h('span', { class: 'member-title', text: nodeTitle(n, lang) }), h('span', { class: 'muted small member-lead', text: t('project.oldFolder', { n: n.clips.length }) }))), take);
-    }
-    return h('li', { class: 'member' }, h('a', { class: 'member-main', href: nodeHref(n.path) }, typeTile(n.type, 'small'),
-      h('span', { class: 'member-text' }, h('span', { class: 'member-title', text: nodeTitle(n, lang) }), h('span', { class: 'muted small member-lead', text: n.type === 'research' ? t('research.kept', { n: n.clips.length }) : n.type === 'note' ? `${typeLabel('note')}${n.at ? `, ${new Date(n.at).toLocaleDateString(lang === 'de' ? 'de-DE' : 'en-GB')}` : ''}` : nodeLead(n, lang) || typeLabel(n.type) }))), rm);
-  };
-  const act = (key, iconName, fn) => h('button', { type: 'button', class: 'btn small', onclick: fn }, iconEl(iconName), h('span', { text: t(key) }));
-  // while this project is not in focus, what its buttons create still lands here
-  const here = async (fn) => {
-    const before = focusPath();
-    if (before !== path) setFocus(path);
-    return fn();
-  };
-  const ACTIONS = {
-    collect: [act('project.do.search', 'search', () => here(() => { queueSearch(p.title); go('#/m/scraper'); })), act('create.crawl', 'globe', () => here(() => newCrawl({ go })))],
-    keep: [act('project.write', 'file', () => openWriting(path, { go })), act('create.card', 'vars', () => here(() => newCard({ go }))), act('create.note', 'edit', async () => { if (await newNote({ project: path })) redraw(); })],
-    apply: [act('create.snippet', 'code', () => here(() => newSnippet({ go })))],
-  };
-  // the pages you write in the project (0.16.0): they sit in its library, shown here by chapter
-  const lib = members.find((n) => n.type === 'library');
-  const pagesBox = h('div', { class: 'project-pages' });
-  if (lib) {
-    loadLibrary(lib.path).then((l) => {
-      const chapters = l.chapters.filter((c) => c.pages.length);
-      if (!chapters.length) { pagesBox.replaceChildren(h('p', { class: 'muted small', text: t('project.pages.empty') })); return; }
-      pagesBox.replaceChildren(...chapters.map((c) => h('div', { class: 'project-chapter' },
-        h('span', { class: 'muted small project-chapter-title', text: c.title }),
-        h('ul', { class: 'members' }, c.pages.map((slug) => {
-          const d = allNodes().find((x) => x.slug === slug && x.type === 'page');
-          return d ? h('li', { class: 'member' }, h('button', { type: 'button', class: 'member-main project-page', onclick: () => openWriting(path, { page: d.path, go }) }, typeTile('page', 'small'),
-            h('span', { class: 'member-text' }, h('span', { class: 'member-title', text: nodeTitle(d, lang) }), h('span', { class: 'muted small member-lead', text: nodeLead(d, lang) || t('project.page') })))) : null;
-        }).filter(Boolean)))));
-    }).catch(() => {});
-  }
-  for (const id of STATIONS) {
-    const items = members.filter((n) => stationOf(n.type) === id && n.type !== 'library');
-    const sec = h('section', { class: `station station-${id}`, id: `station-${id}` },
-      h('h2', {}, iconEl(STATION_ICON[id]), h('span', { text: t(`station.${id}`) }), h('span', { class: 'count', text: String(items.length + (id === 'keep' && lib ? 1 : 0)) })),
-      h('p', { class: 'muted small station-what', text: t(`station.${id}.what`) }),
-      id === 'keep' ? quick : null,
-      id === 'keep' && lib ? pagesBox : null,
-      items.length ? h('ul', { class: 'members' }, items.map(row)) : null,
-      h('div', { class: 'btn-row' }, ACTIONS[id]));
-    sections[id] = sec;
-    box.append(sec);
-  }
-
-  // what your knowledge already has on it: one tap adds it
-  const sugIn = h('input', { class: 'field', type: 'search', placeholder: t('project.fromKnowledge'), 'aria-label': t('project.fromKnowledge'), autocapitalize: 'off', spellcheck: 'false' });
-  const sugList = h('ul', { class: 'members suggestions' });
-  const has = new Set(p.links);
-  const drawSug = () => {
-    const query = sugIn.value.trim() || `${p.title} ${p.goal}`.trim();
-    const hits = searchNodes(query, { limit: 8, filter: (n) => n && !n.conflict && n.type !== 'project' && !has.has(n.slug) && !(n.type === 'clip' && n.run) && n.path !== path });
-    sugList.replaceChildren(...hits.map((n) => {
-      const add = h('button', { type: 'button', class: 'btn small member-add', 'aria-label': `${t('project.add')}: ${nodeTitle(n, lang)}` }, iconEl('plus'), h('span', { text: t('project.add') }));
-      add.addEventListener('click', async () => { await addToProject(path, [n.slug]); redraw(); });
-      return h('li', { class: 'member' }, h('a', { class: 'member-main', href: nodeHref(n.path) }, typeTile(n.type, 'small'),
-        h('span', { class: 'member-text' }, h('span', { class: 'member-title', text: nodeTitle(n, lang) }), h('span', { class: 'muted small member-lead', text: typeLabel(n.type) }))), add);
-    }));
-    if (!hits.length) sugList.append(h('li', { class: 'muted small', text: t(sugIn.value.trim() ? 'project.fromKnowledge.none' : 'project.fromKnowledge.empty') }));
-  };
-  sugIn.addEventListener('input', debounce(drawSug, 150));
-  drawSug();
-  box.append(h('section', { class: 'project-suggest' }, h('h2', { text: t('project.fits') }), sugIn, sugList));
-
-  // free notes of the project
-  const notes = h('textarea', { class: 'field project-notes', rows: '6', placeholder: t('project.notesHint'), 'aria-label': t('project.notes') });
-  notes.value = p.notes;
-  const saved = h('span', { class: 'muted small' });
-  const save = async () => { try { if (await saveProjectNotes(path, notes.value)) saved.textContent = t('research.saved'); } catch { saved.textContent = t('research.saveFailed'); } };
-  const later = debounce(save, 1200);
-  notes.addEventListener('input', () => { saved.textContent = ''; later(); });
-  notes.addEventListener('blur', () => { later.cancel(); save(); });
-  box.append(h('section', { class: 'project-notes-box' }, h('h2', { text: t('project.notes') }), notes, saved));
+  // the board (0.18.0): actions, widgets, sections with their cards
+  const fields = {};
+  box.append(...projectBody(p, { path, go, redraw, fields, refocus: { set: (v) => { refocus = v; } } }));
 
   // a station tapped on a card elsewhere: go to its section; after adding a step or a note the field keeps the focus
   const want = loadPref('project.station', null);
-  if (want && want.path === path && Date.now() - want.at < 4000 && sections[want.id]) {
+  if (want && want.path === path && Date.now() - want.at < 4000) {
     savePref('project.station', null);
-    requestAnimationFrame(() => sections[want.id].scrollIntoView({ block: 'start' }));
+    requestAnimationFrame(() => box.querySelector(`.board-col[data-sec="${want.id}"]`)?.scrollIntoView({ block: 'start' }));
   }
-  if (refocus) { (refocus === 'step' ? stepIn : quick).focus({ preventScroll: true }); refocus = ''; }
+  if (refocus) { (refocus === 'step' ? fields.step : box.querySelector('.quick-note'))?.focus({ preventScroll: true }); refocus = ''; }
 }
 
 // ------------------------------------------------------------------ a note

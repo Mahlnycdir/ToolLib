@@ -163,6 +163,7 @@ export function actionSheet(title, items) {
       b.innerHTML = `${it.icon ? icon(it.icon) : ''}<span></span>${it.detail ? '<small></small>' : ''}`;
       b.querySelector('span').textContent = it.label;
       if (it.detail) b.querySelector('small').textContent = it.detail;
+      if (it.color && /^#[0-9a-f]{3,8}$/i.test(it.color)) { b.style.setProperty('--item', it.color); b.classList.add('tinted'); }
       b.addEventListener('click', () => close(it.value));
       sheet.append(b);
     }

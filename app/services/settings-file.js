@@ -28,6 +28,8 @@ const KEYS = {
   'editor.fontSize': 'number', 'editor.shorthand': 'boolean', 'editor.lists': 'boolean', 'editor.brackets': 'boolean',
   'editor.spellcheck': 'boolean', 'editor.mode': 'string', 'editor.commands': 'json', 'editor.macros': 'json',
   keys: 'json', 'learn.off': 'list', 'research.mode': 'string',
+  // 0.18.0: light or dark
+  appearance: 'string',
 };
 const ACCENT = /^accent\.[a-z0-9-]{1,40}$/;
 const KOBRA = { proxy: 'string', token: 'secret', name: 'string', email: 'string' };   // kobra.git.*

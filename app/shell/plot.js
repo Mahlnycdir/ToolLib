@@ -16,6 +16,7 @@ const FN = {
   heaviside: (x) => (x < 0 ? 0 : x > 0 ? 1 : 0.5), sinc: (x) => (x === 0 ? 1 : Math.sin(x) / x),
 };
 const CONST = { pi: Math.PI, e: Math.E, tau: 2 * Math.PI };
+const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);   // so "constructor" or "toString" stay unknown names
 
 function tokens(src) {
   const out = [];
@@ -72,8 +73,8 @@ export function compile(src, vars = ['x']) {
     if (x.k === 'id') {
       const k = vars.indexOf(x.v);
       if (k >= 0) return (s) => s[k];
-      if (x.v in CONST) return () => CONST[x.v];
-      if (x.v in FN && take('(')) {
+      if (own(CONST, x.v)) return () => CONST[x.v];
+      if (own(FN, x.v) && take('(')) {
         const args = [expr()];
         while (take(',')) args.push(expr());
         if (!take(')')) throw new Error(')');

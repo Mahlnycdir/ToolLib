@@ -244,6 +244,11 @@ export function summary(node) {
     goal: m.type === 'project' && m.goal ? String(m.goal) : '',
     state: m.type === 'project' ? String(m.state || 'active') : '',
     steps: m.type === 'project' ? projectSteps(node.body) : null,
+    // the board of a project (0.18.0): its sections and the cards placed in them, so the list of projects shows them
+    board: m.type === 'project' ? {
+      sections: asList(m.sections),
+      lists: Object.fromEntries(Object.entries(m).filter(([k]) => /^board_[a-z0-9-]{1,40}$/.test(k)).map(([k, v]) => [k.slice(6), asList(v)])),
+    } : null,
     question: m.question ? String(m.question) : '',
     source: m.source ? String(m.source) : '',
     // where a card comes from (0.14.1): the links of its sources, so a work finds the cards made from it

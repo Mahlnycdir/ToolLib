@@ -12,9 +12,10 @@ import {
   addChapter, createPage, deleteChapter, deleteLibrary, deletePage, firstFormula, loadLibrary, loadPage, mergeLines, moveChapter,
   movePage, placePage, placeChapter, quoteMarkdown, renameChapter, renameLibrary, savePage, withSource,
 } from '../services/library-store.js';
-import { loadClipDoc } from '../services/research-store.js';
+import { loadClipDoc, keepWork, clipFor } from '../services/research-store.js';
+import { startSearch } from '../services/research.js';
 import { knowledgeFor } from '../services/reader-cards.js';
-import { projectWorks } from '../services/projects.js';
+import { projectWorks, addToProject } from '../services/projects.js';
 import { mountEditor, sectionOf } from './page-editor.js';
 import { draggable, dropZone } from './drag.js';
 import { nodeHref, typeLabel } from './node-view.js';
@@ -392,7 +393,7 @@ export function mountLibrary(host, opts) {
   side.append(sideTabs, sideBody);
   function drawSideTabs() {
     const inProject = !!opts.projectOf?.();
-    sideTabs.replaceChildren(...[['marks', inProject ? 'library.side.works' : 'library.side.marks'], ['know', 'library.side.know'], ['sources', 'library.side.sources']].map(([id, key]) => h('button', {
+    sideTabs.replaceChildren(...[['marks', inProject ? 'library.side.works' : 'library.side.marks'], ['search', 'library.side.search'], ['know', 'library.side.know'], ['sources', 'library.side.sources']].map(([id, key]) => h('button', {
       type: 'button', class: state.side === id ? 'on' : '', 'aria-pressed': String(state.side === id),
       text: id === 'sources' && state.page?.sources.length ? `${t(key)} (${state.page.sources.length})` : t(key),
       onclick: () => { state.side = id; savePref('library.side', id); drawSide(); },
@@ -402,7 +403,63 @@ export function mountLibrary(host, opts) {
     drawSideTabs();
     if (state.side === 'know') drawKnow();
     else if (state.side === 'sources') drawSources();
+    else if (state.side === 'search') drawSearch();
     else drawMarks();
+  }
+
+  // Research while you write (0.18.0): papers and books from the open sources, beside the page. Keep goes into the
+  // project, Cite keeps it and puts [@…] where the cursor is, Read opens the reader and comes back here.
+  let searching = null;
+  function drawSearch() {
+    const input = h('input', { class: 'field lb-search-in', type: 'search', placeholder: t('library.search.placeholder'), 'aria-label': t('library.search.placeholder'), value: state.searchQ || '', enterkeyhint: 'search' });
+    const go = h('button', { type: 'submit', class: 'btn small primary' }, h('span', { class: 'icon', html: icon('search') }), h('span', { text: t('library.search.go') }));
+    const form = h('form', { class: 'lb-search-form' }, input, go);
+    const list = h('div', { class: 'lb-search' });
+    const more = h('a', { href: '#/m/scraper', class: 'small lb-search-more', text: t('library.search.more') });
+    more.addEventListener('click', async () => { await flush(); if (state.searchQ) { const { queueSearch } = await import('./research-view.js'); queueSearch(state.searchQ); } });
+    sideBody.replaceChildren(form, list, more);
+    const draw = (r) => {
+      if (state.side !== 'search' || !list.isConnected) return;
+      const works = (r?.works || []).slice(0, 15);
+      if (!works.length) { list.replaceChildren(h('p', { class: 'muted small', text: r?.finished ? t('library.search.none') : r ? t('library.search.busy') : t('library.search.hint') })); return; }
+      list.replaceChildren(...[...works.map((w) => searchRow(w)), r.finished ? null : h('p', { class: 'muted small', text: t('library.search.busy') })].filter(Boolean));
+    };
+    const run = (q) => {
+      searching?.cancel();
+      state.searchQ = q;
+      if (!q) { draw(null); return; }
+      list.replaceChildren(h('p', { class: 'muted small', text: t('library.search.busy') }));
+      searching = startSearch(q, { onUpdate: (r) => { state.searchResult = r; draw(r); } });
+    };
+    form.addEventListener('submit', (e) => { e.preventDefault(); run(input.value.trim()); });
+    if (state.searchResult && state.searchResult.query?.text === state.searchQ) draw({ ...state.searchResult, finished: true });
+    else draw(null);
+    setTimeout(() => input.focus(), 30);
+  }
+  function searchRow(w) {
+    const who = [String((w.authors || [])[0] || '').split(/\s+/).pop(), w.year].filter(Boolean).join(' ');
+    const kept = clipFor(w);
+    const keepIt = async () => {
+      const r = await keepWork(w, { query: state.searchQ || '' });
+      const p = opts.projectOf?.();
+      if (p) await addToProject(p.path, [r.slug]);
+      return r;
+    };
+    let row = null;
+    // after Cite or Keep the row shows the work as kept; the cursor stays in the page
+    const btn = (key, cls, fn) => h('button', { type: 'button', class: `btn small ${cls}`, onclick: async (e) => {
+      const b = e.currentTarget;
+      b.disabled = true;
+      try { await fn(); if (row?.isConnected) row.replaceWith(searchRow(w)); } catch (err) { console.warn(err); toast(t('research.keepFailed'), 'error', 5000); b.disabled = false; }
+    } }, h('span', { text: t(key) }));
+    row = h('article', { class: 'lb-hit' },
+      h('div', { class: 'lb-hit-title', text: w.title }),
+      who || w.venue ? h('div', { class: 'muted small', text: [who, w.venue].filter(Boolean).join(' · ') }) : null,
+      h('div', { class: 'btn-row' },
+        btn('library.cite', 'primary lb-hit-cite', async () => { const r = await keepIt(); put(`[@${r.slug}]`, { inline: true }); }),
+        kept ? h('span', { class: 'chip small', text: t('library.search.kept') }) : btn('research.keep', 'lb-hit-keep', async () => { await keepIt(); toast(t('library.search.keptHere'), 'ok'); }),
+        btn('research.read', 'lb-hit-read', async () => { const r = await keepIt(); await flush(); opts.onRead?.(r.clipPath); })));
+    return row;
   }
 
   // your highlights in the works you kept, the works this page cites first

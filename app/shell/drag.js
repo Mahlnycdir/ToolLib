@@ -66,6 +66,8 @@ export function draggable(el, { data, label = '' }) {
   });
   // no callout or text selection on a long press
   el.addEventListener('contextmenu', (e) => { if (active) e.preventDefault(); });
+  // a link or picture inside must not start the browser's own dragging, which would cancel ours (0.18.0)
+  el.addEventListener('dragstart', (e) => e.preventDefault());
   return el;
 }
 

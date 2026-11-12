@@ -21,6 +21,7 @@ import { LEARN_SOURCES, learnOn, setLearnOn } from '../services/learn.js';
 import { ACTIONS, AREAS, keysOf, formatCombo, setKeys, resetKeys, isDefault, conflictOf, comboOf, hasKeyboard, onKeysChange } from '../services/keys.js';
 import { SHORTHAND } from './tex-catalog.js';
 import { openTexPalette } from './tex-palette.js';
+import { APPEARANCES, appearance, setAppearance } from '../services/theme.js';
 
 // Progress of the current stage: the formulary (stage 3). The foundation and stage 2 are done.
 // Mark a point as done when it is delivered; ENTE decides the order of the open ones.
@@ -103,7 +104,7 @@ export function renderSettings(main, { onChange, onCheckUpdate, onSync, section 
     access: () => [syncCard({ onSync }), researchCard(), kobraCard()],
     knowledge: () => [syncBehaviourCard({ onSync })],
     research: () => [researchSourcesCard(), learnCard()],
-    look: () => [accentsCard(onChange)],
+    look: () => [appearanceCard(), accentsCard(onChange)],
     python: () => [pythonCard()],
     device: () => [deviceCard({ onChange }), keyboardCard()],
     backup: () => [backupCard()],
@@ -179,6 +180,20 @@ function aboutCard(onCheckUpdate) {
   return card(t('settings.about'),
     h('p', {}, h('span', { class: 'muted', text: `${t('settings.version')}: ` }), h('span', { text: version || '–' })),
     h('button', { type: 'button', class: 'btn', onclick: onCheckUpdate }, iconEl('refresh'), h('span', { text: t('cmd.update') })));
+}
+
+// 0.18.0: light, dark, or as the device is set
+function appearanceCard() {
+  const seg = h('div', { class: 'segmented', role: 'group', 'aria-label': t('settings.appearance') });
+  const draw = () => {
+    const now = appearance();
+    seg.replaceChildren(...APPEARANCES.map((a) => h('button', {
+      type: 'button', class: now === a ? 'on' : '', 'aria-pressed': String(now === a), dataset: { appearance: a }, text: t(`settings.appearance.${a}`),
+      onclick: () => { setAppearance(a); draw(); },
+    })));
+  };
+  draw();
+  return card(t('settings.appearance'), seg, h('p', { class: 'muted small', text: t('settings.appearance.hint') }));
 }
 
 function accentsCard(onChange) {
@@ -745,6 +760,7 @@ const SETTING_LABEL = {
   'editor.brackets': ['settings.sec.write', 'settings.write.brackets'], 'editor.spellcheck': ['settings.sec.write', 'settings.write.spell'], 'editor.mode': ['settings.sec.write', 'settings.write.mode'],
   'editor.commands': ['settings.sec.write', 'settings.write.commands'], 'editor.macros': ['settings.sec.write', 'settings.write.macros'], keys: ['', 'settings.sec.keys'],
   'learn.off': ['settings.research', 'backup.learnOff'], 'research.mode': ['settings.research', 'backup.researchMode'],
+  appearance: ['settings.sec.look', 'settings.appearance'],
 };
 function settingLabel(key) {
   const k = key.replace(/^toollib\./, '');

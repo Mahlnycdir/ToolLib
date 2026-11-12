@@ -10,7 +10,7 @@ import { ACCENTS, READY, moduleById, paintAccent, setAccent } from './modules.js
 import { formatTime, renderModule, renderSettings } from './views.js';
 import { applyUpdate, checkForUpdate, onPwaChange, pwaState } from '../services/pwa.js';
 import { isConfigured, onSyncChange, phaseText, refreshPending, syncKnowledge, syncState } from '../services/sync.js';
-import { bind, matches, keyTitle, formatKeys, helpRows, onKeysChange, hasKeyboard } from '../services/keys.js';
+import { bind, matches, keyTitle, withKeys, formatKeys, helpRows, onKeysChange, hasKeyboard } from '../services/keys.js';
 import { bestProblem, buildIndex, indexState, nodeByPath, onIndexChange, refreshNode, searchNodes } from '../services/search.js';
 import { renderFormulary } from './formulary.js';
 import { copyWithToast, nodeHref, nodeLead, nodeTitle, recentPaths, renderCheatsheet, renderNode, typeAccent, typeIcon, typeLabel } from './node-view.js';
@@ -28,6 +28,7 @@ import { renderStart } from './start.js';
 import { renderSource } from './source-editor.js';
 import { renderWrite } from './library-home.js';
 import { paintProject, renderNote, renderProject, renderProjects } from './projects-view.js';
+import { openProjectDrawer } from './project-board.js';
 import { CREATORS, createMenu } from './create.js';
 import { focusProject, onFocusChange, projects, startAutoLink } from '../services/projects.js';
 import { capture } from '../services/notes.js';
@@ -254,7 +255,9 @@ export function startShell(root) {
     pill.replaceChildren(iconEl('target'), h('span', { class: 'focus-pill-title', text: f.title }));
     pill.title = t('focus.pill', { title: f.title });
     pill.setAttribute('aria-label', pill.title);
-    pill.onclick = () => go(nodeHref(f.path));
+    // the drawer (0.18.0): the project in focus from anywhere; the node on screen goes into a section with one tap
+    pill.onclick = () => { const r = currentRoute(); openProjectDrawer({ go, current: r.kind === 'node' ? r.path : '' }); };
+    pill.title = withKeys(t('focus.pill', { title: f.title }), 'project.drawer');
   }
   let selected = 0;
   let shown = [];
@@ -463,6 +466,7 @@ export function startShell(root) {
     'go.research': () => go('#/m/scraper'),
     'go.settings': () => go('#/settings'),
     sync: () => { runSync(); },
+    'project.drawer': () => { if (document.querySelector('.modal-backdrop, .sheet-backdrop')) return false; const r = currentRoute(); openProjectDrawer({ go, current: r.kind === 'node' ? r.path : '' }); },
   });
   document.addEventListener('keydown', (e) => {
     const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
