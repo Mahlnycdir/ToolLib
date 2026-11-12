@@ -34,7 +34,9 @@ const KEYS = {
   'search.learned': 'json',
 };
 const ACCENT = /^accent\.[a-z0-9-]{1,40}$/;
-const KOBRA = { proxy: 'string', token: 'secret', name: 'string', email: 'string' };   // kobra.git.*
+// kobra.git.*; 0.20.0: Kobras Konten (mit ihren Tokens, also geheim) und die Liste deiner Repositorys
+const KOBRA = { proxy: 'string', token: 'secret', name: 'string', email: 'string', label: 'string', login: 'string', host: 'string', accounts: 'secret-json', repos: 'json' };
+const MERGED = { 'kobra.git.accounts': (x) => x?.id, 'kobra.git.repos': (x) => String(x?.url || '').toLowerCase().replace(/\.git$/, '').replace(/\/+$/, '') };
 
 export class SettingsFileError extends Error {
   constructor(code) { super(code); this.code = code; }   // short, mismatch, not-settings, unsupported, wrong-password, too-large, no-crypto
@@ -49,7 +51,7 @@ function kindOf(storageKey) {
   const m = storageKey.match(/^kobra\.git\.([a-z]+)$/);
   return m ? KOBRA[m[1]] || null : null;
 }
-export const isSecret = (storageKey) => kindOf(storageKey) === 'secret';
+export const isSecret = (storageKey) => ['secret', 'secret-json'].includes(kindOf(storageKey));
 
 function valid(kind, v) {
   if (kind === 'string') return typeof v === 'string' && v.length <= 2000;
@@ -57,7 +59,7 @@ function valid(kind, v) {
   if (kind === 'boolean') return typeof v === 'boolean';
   if (kind === 'number') return typeof v === 'number' && Number.isFinite(v);
   if (kind === 'list') return Array.isArray(v) && v.length <= 50 && v.every((x) => typeof x === 'string' && x.length <= 100);
-  if (kind === 'json') return plainJson(v, 0) && JSON.stringify(v).length <= 60000;
+  if (kind === 'json' || kind === 'secret-json') return plainJson(v, 0) && JSON.stringify(v).length <= 60000;
   return false;
 }
 
@@ -193,9 +195,20 @@ export function applySettings(rows) {
   const before = chosen.map((r) => ({ key: r.key, raw: (() => { try { return localStorage.getItem(r.key); } catch { return null; } })() }));
   try { sessionStorage.setItem(UNDO, JSON.stringify({ at: Date.now(), before })); } catch { /* no way back, but the import still works */ }
   for (const r of chosen) {
-    try { localStorage.setItem(r.key, JSON.stringify(r.next)); } catch { /* storage full */ }
+    try { localStorage.setItem(r.key, JSON.stringify(merged(r.key, r.next))); } catch { /* storage full */ }
   }
   return chosen.length;
+}
+
+// Kobras Konten und Repositorys: was nur hier steht, bleibt; was in der Datei steht, gilt.
+function merged(key, next) {
+  const id = MERGED[key];
+  const now = read(key);
+  if (!id || !Array.isArray(now) || !Array.isArray(next)) return next;
+  const out = [...next];
+  const seen = new Set(next.map(id));
+  for (const x of now) if (id(x) && !seen.has(id(x))) out.push(x);
+  return out.slice(0, 500);
 }
 
 export function undoInfo() {

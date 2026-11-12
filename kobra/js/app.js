@@ -7,7 +7,8 @@ import { CodeEditor } from './editor.js';
 import { ConsoleView, Runner } from './runner.js';
 import { GuiManager } from './gui.js';
 import { PackagePanel } from './packages.js';
-import { GitService, GitPanel, gitSettings } from './git.js';
+import { GitService, GitPanel, explainGitError } from './git.js';
+import { MAIN, accounts, account, accountLabel, saveAccount, removeAccount, newAccountId, checkToken, repos, repoKey, forgetRepo } from './accounts.js';
 import { SNIPPET_GROUPS } from './snippets.js';
 import { renderSpickzettel } from './spickzettel.js';
 
@@ -105,6 +106,8 @@ async function main() {
   const pick = list.find(p => p.name === last) ? last : list[0]?.name;
   await openProject(pick);
   showView(loadPref('view', 'code'));
+  // aus Toollibs Einstellungen: „In Kobra verwalten“
+  if (location.hash === '#settings') { history.replaceState(null, '', location.pathname); openSettings('git'); }
 
   await waitForController(4000);
   runner.start({ packages: PackagePanel.wanted(), version: VERSION });
@@ -229,6 +232,8 @@ function showView(view) {
 function isDark() {
   if (settings.theme === 'dark') return true;
   if (settings.theme === 'light') return false;
+  // „Wie das System“: erst Toollibs Wahl (Einstellungen › Aussehen), dann das Gerät (0.20.0)
+  try { const a = JSON.parse(localStorage.getItem('toollib.appearance') || 'null'); if (a === 'dark' || a === 'light') return a === 'dark'; } catch (e) { /* keine Wahl */ }
   return window.matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
@@ -552,11 +557,33 @@ async function openProjectsSheet() {
   const list = await store.listProjects();
   const body = h('div', { class: 'project-list' });
   const sheet = openSheet('Projekte', body);
+  const here = new Set();
   for (const p of list) {
     const row = h('button', { class: `project-row${p.name === state.project ? ' on' : ''}`, type: 'button', html: `${icon('folder')}<span class="pname"></span>${p.git ? `<span class="tree-tag">Git</span>` : ''}` });
     row.querySelector('.pname').textContent = p.name;
     row.addEventListener('click', async () => { sheet.close(); await openProject(p.name); showView(isWide() ? 'code' : 'files'); });
     body.append(row);
+    if (p.git) { const url = await gitService.originUrl(p.name); if (url) here.add(repoKey(url)); }
+  }
+  // Deine Repositorys, die auf diesem Gerät noch fehlen (die Liste kommt mit der verschlüsselten Einstellungsdatei)
+  const missing = repos().filter((r) => !here.has(repoKey(r.url)));
+  if (missing.length) {
+    body.append(h('h4', { class: 'project-sub', text: 'Noch nicht auf diesem Gerät' }));
+    for (const r of missing) {
+      const acc = r.account && account(r.account);
+      const row = h('div', { class: 'project-row remote' },
+        h('span', { class: 'muted', html: icon('cloudDown') }),
+        h('span', { class: 'pname' }, h('span', { text: r.name || r.url.replace(/^https:\/\//, '') }), h('small', { class: 'muted', text: ` ${r.url.replace(/^https:\/\//, '')}${acc ? ` · ${accountLabel(acc)}` : ''}` })));
+      const get = h('button', { class: 'btn small primary', type: 'button', text: 'Holen', 'aria-label': `${r.name || r.url} auf dieses Gerät holen` });
+      get.addEventListener('click', () => { sheet.close(); gitPanel.cloneDialog(r.url, r.name); });
+      const drop = h('button', { class: 'icon-btn small', type: 'button', html: icon('close'), 'aria-label': 'Aus der Liste nehmen', title: 'Aus der Liste nehmen' });
+      drop.addEventListener('click', async () => {
+        if (!(await confirmDialog('Aus der Liste nehmen', `„${r.name || r.url}“ aus deiner Liste nehmen? Auf GitHub und auf anderen Geräten bleibt alles, wie es ist.`, { okLabel: 'Herausnehmen' }))) return;
+        forgetRepo(r.url); row.remove();
+      });
+      row.append(get, drop);
+      body.append(row);
+    }
   }
   const actions = h('div', { class: 'btn-col' });
   const newBtn = h('button', { class: 'btn primary', type: 'button', html: `${icon('plus')}<span>Neues Projekt</span>` });
@@ -575,7 +602,47 @@ async function openProjectsSheet() {
   const cloneBtn = h('button', { class: 'btn', type: 'button', html: `${icon('cloudDown')}<span>Von GitHub klonen</span>` });
   cloneBtn.addEventListener('click', () => { sheet.close(); gitPanel.cloneDialog(); });
   actions.append(newBtn, zipBtn, cloneBtn);
+  if (here.size) {
+    const allBtn = h('button', { class: 'btn', type: 'button', id: 'pull-all', html: `${icon('refresh')}<span>Alle auf den neuesten Stand</span>` });
+    allBtn.addEventListener('click', () => { sheet.close(); pullAll(); });
+    actions.append(allBtn);
+  }
   body.append(actions);
+}
+
+// Holt jedes Projekt, das mit GitHub verbunden ist. Projekte mit Änderungen, die noch nicht committet sind, bleiben
+// unberührt; hochgeladen wird nichts.
+async function pullAll() {
+  if (!loadPref('git.proxy', '')) { toast('Zum Holen ist ein Git-Proxy nötig (Einstellungen).', 'error', 5000); openSettings('git'); return; }
+  await saveAll(false);
+  const rows = [];
+  const box = h('div', { class: 'pull-all' });
+  const sheet = openSheet('Alle auf den neuesten Stand', box);
+  const line = (name) => { const st = h('span', { class: 'muted', text: 'wartet …' }); box.append(h('div', { class: 'pull-row' }, h('span', { class: 'pname', text: name }), st)); return st; };
+  const list = (await store.listProjects()).filter((p) => p.git);
+  const jobs = [];
+  for (const p of list) if (await gitService.originUrl(p.name)) jobs.push({ name: p.name, st: line(p.name) });
+  let changed = false;
+  for (const j of jobs) {
+    j.st.textContent = 'holt …';
+    try {
+      const status = await gitService.status(j.name);
+      if (status.some((x) => x.kind !== '?')) { j.st.textContent = 'übersprungen: erst committen'; j.st.className = 'warn'; continue; }
+      const before = (await gitService.log(j.name, 1))[0]?.oid;
+      await gitService.pull(j.name);
+      const after = (await gitService.log(j.name, 1))[0]?.oid;
+      const ahead = await gitService.ahead(j.name);
+      j.st.textContent = before === after ? 'schon aktuell' : 'aktualisiert';
+      if (ahead) j.st.textContent += ` · ${ahead} noch hochzuladen`;
+      j.st.className = 'ok';
+      if (before !== after && j.name === state.project) changed = true;
+    } catch (e) { j.st.textContent = explainGitError(e); j.st.className = 'error'; }
+    rows.push(j);
+  }
+  if (!jobs.length) box.append(h('p', { class: 'empty', text: 'Kein Projekt ist mit GitHub verbunden.' }));
+  if (changed) { await refreshTree(); await reloadOpenFiles(); syncProjectToWorker(true); }
+  gitPanel.refresh();
+  return sheet;
 }
 
 async function newProjectDialog() {
@@ -1055,8 +1122,77 @@ async function formatCode() {
 }
 
 // ============================================================ Einstellungen
+// ------------------------------------------------------------------ Konten (0.20.0)
+function accountsList() {
+  const box = h('div', { class: 'accounts', id: 'git-accounts' });
+  const draw = () => {
+    box.textContent = '';
+    for (const a of accounts()) {
+      const row = h('button', { class: 'account-row', type: 'button', dataset: { account: a.id } },
+        h('span', { class: 'acc-icon', html: icon('user') }),
+        h('span', { class: 'acc-text' }, h('span', { class: 'acc-name', text: accountLabel(a) }),
+          h('small', { class: 'muted', text: [a.name, a.email].filter(Boolean).join(' · ') || 'Name und E-Mail fehlen' })),
+        h('span', { class: `acc-token ${a.token ? 'ok' : 'warn'}`, text: a.token ? 'Token' : 'kein Token' }));
+      row.addEventListener('click', async () => { if (await editAccount(a)) draw(); });
+      box.append(row);
+    }
+    const add = h('button', { class: 'btn small', type: 'button', id: 'account-add', html: `${icon('plus')}<span>Konto hinzufügen</span>` });
+    add.addEventListener('click', async () => { if (await editAccount({ id: newAccountId(), label: '', login: '', name: '', email: '', token: '', host: 'github.com' }, true)) draw(); });
+    box.append(add);
+  };
+  draw();
+  return box;
+}
+
+async function editAccount(a, isNew = false) {
+  const f = (id, label, attrs, value) => {
+    const input = h('input', { class: 'field', id: `acc-${id}`, value: value || '', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', ...attrs });
+    return { input, row: h('label', { class: 'set-field', for: `acc-${id}` }, h('span', { class: 'set-label', text: label }), input) };
+  };
+  const label = f('label', 'Bezeichnung', { placeholder: 'z. B. Privat, Uni, Arbeit' }, a.label);
+  const login = f('login', 'GitHub-Name', { placeholder: 'dein-name' }, a.login);
+  const name = f('name', 'Name für Commits', { autocomplete: 'name', placeholder: 'Max Mustermann' }, a.name);
+  const email = f('email', 'E-Mail für Commits', { type: 'email', autocomplete: 'email', placeholder: '123+name@users.noreply.github.com' }, a.email);
+  const token = f('token', 'GitHub-Token', { type: 'password', autocomplete: 'off', placeholder: 'github_pat_…' }, a.token);
+  const host = f('host', 'Rechner', { placeholder: 'github.com' }, a.host === 'github.com' ? '' : a.host);
+  const note = h('p', { class: 'hint', id: 'acc-check-result', role: 'status' });
+  const check = h('button', { class: 'btn small', type: 'button', id: 'acc-check', html: `${icon('check')}<span>Token prüfen</span>` });
+  check.addEventListener('click', async () => {
+    note.textContent = 'Frage GitHub …';
+    const r = await checkToken({ token: token.input.value.trim(), host: host.input.value.trim().toLowerCase() || 'github.com' });
+    if (!r.ok) { note.textContent = r.reason; note.className = 'hint error'; return; }
+    note.className = 'hint ok';
+    note.textContent = `Gültig: gehört @${r.login}.`;
+    if (!login.input.value.trim()) login.input.value = r.login;
+    if (!name.input.value.trim() && r.name) name.input.value = r.name;
+    if (!email.input.value.trim()) { email.input.value = r.email; note.textContent += ' Als E-Mail steht die Adresse ohne Antwort von GitHub drin; damit bleibt deine echte Adresse privat.'; }
+  });
+  const body = h('div', { class: 'form' }, label.row, login.row, name.row, email.row, token.row,
+    h('span', { class: 'set-hint', text: 'Fein-granulares Token mit „Contents: Read and write“ für die Repositorys dieses Kontos. Es geht nur an seinen Rechner, über deinen Git-Proxy.' }),
+    h('div', { class: 'btn-row' }, check), note,
+    h('details', {}, h('summary', { text: 'Anderer Rechner als github.com' }), host.row));
+  const actions = [{ label: 'Abbrechen', value: null }];
+  if (!isNew && a.id !== MAIN) actions.unshift({ label: 'Löschen', kind: 'danger', value: 'delete' });
+  actions.push({ label: 'Sichern', kind: 'primary', value: 'save' });
+  const v = await modal({ title: isNew ? 'Neues Konto' : accountLabel(a), body, actions, wide: true });
+  if (v === 'delete') {
+    if (!(await confirmDialog('Konto löschen', `„${accountLabel(a)}“ auf diesem Gerät löschen? Projekte, die es nahmen, nehmen dann das passende oder das erste Konto.`, { okLabel: 'Löschen', danger: true }))) return false;
+    removeAccount(a.id);
+    toast('Konto gelöscht', 'ok');
+    return true;
+  }
+  if (v !== 'save') return false;
+  const h0 = host.input.value.trim().toLowerCase();
+  if (h0 && !/^[a-z0-9.-]{1,100}(:\d{1,5})?$/.test(h0)) { toast('Der Rechner ist ungültig (z. B. github.com).', 'error'); return false; }
+  try {
+    saveAccount({ id: a.id, label: label.input.value, login: login.input.value.replace(/^@/, ''), name: name.input.value, email: email.input.value, token: token.input.value, host: h0 });
+  } catch (e) { toast(e.message, 'error'); return false; }
+  toast('Konto gesichert', 'ok');
+  gitPanel?.refresh();
+  return true;
+}
+
 async function openSettings(section) {
-  const s = gitSettings();
   const info = await store.storageInfo();
   const field = (label, input, hint) => h('label', { class: 'set-field' }, h('span', { class: 'set-label', text: label }), input, hint ? h('span', { class: 'set-hint', html: hint }) : null);
   const select = (id, value, opts) => {
@@ -1064,16 +1200,13 @@ async function openSettings(section) {
     for (const [v, l] of opts) el.append(h('option', { value: v, text: l, selected: v === value || null }));
     return el;
   };
-  const theme = select('set-theme', settings.theme, [['auto', 'Wie das System'], ['dark', 'Dunkel'], ['light', 'Hell']]);
+  const theme = select('set-theme', settings.theme, [['auto', 'Wie Toollib'], ['dark', 'Dunkel'], ['light', 'Hell']]);
   const size = h('input', { type: 'range', min: '11', max: '22', step: '1', value: String(settings.fontSize), id: 'set-size' });
   const sizeVal = h('span', { class: 'set-val', text: `${settings.fontSize} px` });
   const wrap = h('input', { type: 'checkbox', checked: settings.wrap || null, id: 'set-wrap' });
   const autos = h('input', { type: 'checkbox', checked: settings.autosave || null, id: 'set-autosave' });
   const clear = h('input', { type: 'checkbox', checked: loadPref('clearOnRun', true) || null, id: 'set-clear' });
-  const name = h('input', { class: 'field', type: 'text', value: s.name, placeholder: 'Max Mustermann', autocomplete: 'name', id: 'set-git-name' });
-  const email = h('input', { class: 'field', type: 'email', value: s.email, placeholder: 'max@example.org', autocomplete: 'email', id: 'set-git-email' });
-  const token = h('input', { class: 'field', type: 'password', value: s.token, placeholder: 'github_pat_…', autocomplete: 'off', id: 'set-git-token' });
-  const proxy = h('input', { class: 'field', type: 'url', value: s.proxy, placeholder: 'https://git-proxy.dein-name.workers.dev', autocapitalize: 'off', id: 'set-git-proxy' });
+  const proxy = h('input', { class: 'field', type: 'url', value: loadPref('git.proxy', ''), placeholder: 'https://git-proxy.dein-name.workers.dev', autocapitalize: 'off', id: 'set-git-proxy' });
 
   const body = h('div', { class: 'settings' },
     h('section', { class: 'card' }, h('h3', { text: 'Darstellung' }),
@@ -1086,10 +1219,10 @@ async function openSettings(section) {
       h('label', { class: 'set-switch' }, clear, h('span', { text: 'Konsole vor jedem Start leeren' })),
     ),
     h('section', { class: 'card', id: 'settings-git' }, h('h3', { text: 'Git & GitHub' }),
-      field('Name für Commits', name),
-      field('E-Mail für Commits', email),
-      field('GitHub-Token', token, 'Fein-granulares Token mit „Contents: Read and write“ für die gewünschten Repositorys. Wird nur auf diesem Gerät gespeichert.'),
-      field('Git-Proxy', proxy, 'Browser dürfen nicht direkt mit GitHub-Git sprechen. Ein kleiner eigener Proxy (Cloudflare Worker, kostenlos) leitet weiter – Anleitung in der README.'),
+      h('p', { class: 'hint', text: 'Jedes Projekt committet und lädt mit seinem Konto hoch. Welches, wählst du im Bereich Git oben beim Projekt; sonst nimmt Kobra das Konto, dem das Repository auf GitHub gehört, und sonst das erste.' }),
+      accountsList(),
+      field('Git-Proxy', proxy, 'Browser dürfen nicht direkt mit GitHub-Git sprechen. Ein kleiner eigener Proxy (Cloudflare Worker, kostenlos) leitet weiter – Anleitung in der README. Er gilt für alle Konten.'),
+      h('p', { class: 'hint', text: 'Konten, Tokens und die Liste deiner Repositorys bleiben auf diesem Gerät. Auf andere Geräte bringst du sie in Toollib › Einstellungen › Sichern & Laden als verschlüsselte Datei.' }),
     ),
     h('section', { class: 'card' }, h('h3', { text: 'Speicher' }),
       h('p', { class: 'hint', text: `Belegt: ${formatBytes(info.usage)}${info.quota ? ` von ${formatBytes(info.quota)}` : ''}. ${info.persisted ? 'Dauerhafte Speicherung ist aktiv.' : 'Dauerhafte Speicherung ist nicht bestätigt – als App zum Home-Bildschirm hinzufügen und regelmäßig per Git oder ZIP sichern.'}` }),
@@ -1107,9 +1240,6 @@ async function openSettings(section) {
       settings.wrap = wrap.checked; savePref('wrap', settings.wrap);
       settings.autosave = autos.checked; savePref('autosave', settings.autosave);
       savePref('clearOnRun', clear.checked);
-      savePref('git.name', name.value.trim());
-      savePref('git.email', email.value.trim());
-      savePref('git.token', token.value.trim());
       savePref('git.proxy', proxy.value.trim());
       applyTheme();
       editor.configure({ size: settings.fontSize, wrap: settings.wrap });

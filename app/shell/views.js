@@ -439,6 +439,10 @@ function kobraCard() {
     secretField(field('token', t('settings.sync.token'), { type: 'password', autocomplete: 'off', placeholder: 'github_pat_…' })),
     field('name', t('settings.sync.name'), { type: 'text', autocomplete: 'name' }),
     field('email', t('settings.sync.email'), { type: 'email', autocomplete: 'email' }));
+  // 0.20.0: more accounts and your repositories live in Kobra; here only how many
+  const count = (k) => { try { const v = JSON.parse(localStorage.getItem(`kobra.git.${k}`) || '[]'); return Array.isArray(v) ? v.length : 0; } catch { return 0; } };
+  box.append(h('p', { class: 'muted small', id: 'kobra-more', text: t('settings.kobra.more', { accounts: count('accounts') + 1, repos: count('repos') }) }),
+    h('a', { class: 'btn small', href: 'kobra/#settings', text: t('settings.kobra.open') }));
   return box;
 }
 // A password field with a button to show it.
@@ -793,7 +797,7 @@ function settingLabel(key) {
   if (SETTING_LABEL[k]) return SETTING_LABEL[k].filter(Boolean).map((x) => t(x)).join(' › ');
   if (k.startsWith('accent.')) return `${t('settings.accents')} › ${t(`module.${k.slice(7)}.name`)}`;
   const m = key.match(/^kobra\.git\.([a-z]+)$/);
-  if (m) return `Kobra › ${t(`settings.sync.${m[1]}`)}`;
+  if (m) return `Kobra › ${t(['accounts', 'repos', 'label', 'login', 'host'].includes(m[1]) ? `settings.kobra.${m[1]}` : `settings.sync.${m[1]}`)}`;
   return k;
 }
 function settingValue(r, v) {

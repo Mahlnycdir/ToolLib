@@ -78,7 +78,7 @@ code, pre, .mono { font-family: var(--font-code); }
 /* ------------------------------------------------------------- Rahmen */
 .app {
   position: fixed; left: 0; right: 0; top: var(--app-top, 0); height: var(--app-h, 100%);
-  display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; overflow: hidden;
+  display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); overflow: hidden;
 }
 .topbar {
   grid-row: 1; display: flex; align-items: center; gap: 4px;
@@ -704,3 +704,30 @@ input[type="range"] { accent-color: var(--accent); }
 .snippet-row .snippet { flex: 1; min-width: 0; text-align: left; }
 .snippet-open { align-self: center; white-space: nowrap; color: var(--accent-text, inherit); }
 #btn-toollib img { display: block; border-radius: 6px; }
+
+/* 0.20.0: Konten und deine Repositorys */
+.project-sub { margin: 14px 12px 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.project-row.remote { cursor: default; padding-right: 6px; }
+.project-row.remote .pname { min-width: 0; display: flex; flex-direction: column; }
+.project-row.remote .pname small { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-row.remote .ic { color: var(--muted); }
+.pull-all { display: flex; flex-direction: column; gap: 2px; }
+.pull-row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--border); font-size: 15px; }
+.pull-row .pname { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pull-row > span:last-child { text-align: right; font-size: 13px; }
+.pull-row .ok, .hint.ok { color: var(--ok); }
+.pull-row .warn { color: var(--warn); }
+.pull-row .error, .hint.error { color: var(--danger); }
+.accounts { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 12px; }
+.account-row { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2, transparent); color: var(--fg); text-align: left; cursor: pointer; font: inherit; }
+.account-row .acc-icon .ic { width: 20px; height: 20px; color: var(--blue); }
+.account-row .acc-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.account-row .acc-name { font-weight: 600; }
+.account-row small { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-row .acc-token { font-size: 11px; padding: 2px 7px; border-radius: 6px; background: var(--panel-3); }
+.account-row .acc-token.ok { color: var(--ok); }
+.account-row .acc-token.warn { color: var(--warn); }
+.accounts > .btn { align-self: flex-start; }
+.git-account { display: inline-flex; gap: 5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.form details { margin-top: 6px; }
+.form details summary { cursor: pointer; color: var(--muted); font-size: 13px; padding: 6px 0; }

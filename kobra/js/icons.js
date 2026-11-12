@@ -17,6 +17,7 @@ const P = {
   chevronRight: '<path d="m9.5 6 6 6-6 6"/>',
   chevronDown: '<path d="m6 9.5 6 6 6-6"/>',
   chevronLeft: '<path d="m14.5 6-6 6 6 6"/>',
+  user: '<circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c1.2-3.8 4-5.6 7.5-5.6s6.3 1.8 7.5 5.6"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M4.6 4.6l1.7 1.7M17.7 17.7l1.7 1.7M2.8 12h2.4M18.8 12h2.4M4.6 19.4l1.7-1.7M17.7 6.3l1.7-1.7"/>',
   undo: '<path d="M9 7.5 4.5 12 9 16.5"/><path d="M4.5 12h10a5 5 0 0 1 0 10H12"/>',
   redo: '<path d="m15 7.5 4.5 4.5-4.5 4.5"/><path d="M19.5 12h-10a5 5 0 0 0 0 10H12"/>',

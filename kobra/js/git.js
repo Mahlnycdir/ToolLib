@@ -1,11 +1,15 @@
 // Versionskontrolle mit echtem Git (isomorphic-git) und GitHub-Abgleich.
+// 0.20.0: jedes Projekt committet und lädt mit seinem Konto (accounts.js); geklonte und verbundene Repositorys
+// kommen in die Liste deiner Repositorys, die auf jedem Gerät gleich ist.
 import { git, http, Diff } from '../vendor/vendor.js';
-import { fs, projectPath, readText, exists, isTextFile, flush } from './storage.js';
-import { h, toast, promptDialog, confirmDialog, openSheet, actionSheet, loadPref, savePref, modal } from './ui.js';
+import { fs, projectPath, readText, exists, isTextFile, flush, rmrf } from './storage.js';
+import { h, toast, promptDialog, confirmDialog, openSheet, actionSheet, loadPref, savePref, modal, esc } from './ui.js';
 import { icon } from './icons.js';
+import { MAIN, accounts, account, accountLabel, accountForUrl, tokenFor, authorOf, rememberRepo, repoEntry } from './accounts.js';
 
 const dec = new TextDecoder();
 
+// Das erste Konto und der Proxy (so wie früher; der Proxy gilt für alle Konten).
 export function gitSettings() {
   return {
     name: loadPref('git.name', ''),
@@ -15,18 +19,14 @@ export function gitSettings() {
   };
 }
 
-function authOpts() {
-  const s = gitSettings();
+function authOpts(url, acc) {
+  const proxy = loadPref('git.proxy', '');
   const o = {};
-  if (s.proxy) o.corsProxy = s.proxy.replace(/\/+$/, '');
-  o.onAuth = () => (s.token ? { username: 'x-access-token', password: s.token } : { cancel: true });
-  o.onAuthFailure = () => { toast('GitHub hat die Anmeldung abgelehnt. Token in den Einstellungen prüfen.', 'error', 5000); return { cancel: true }; };
+  if (proxy) o.corsProxy = proxy.replace(/\/+$/, '');
+  const token = tokenFor(acc, url);
+  o.onAuth = () => (token ? { username: 'x-access-token', password: token } : { cancel: true });
+  o.onAuthFailure = () => { toast(`GitHub hat die Anmeldung von „${accountLabel(acc)}“ abgelehnt. Token in den Einstellungen prüfen.`, 'error', 5000); return { cancel: true }; };
   return o;
-}
-
-function author() {
-  const s = gitSettings();
-  return { name: s.name || 'Kobra', email: s.email || 'kobra@example.invalid' };
 }
 
 export function explainGitError(e) {
@@ -36,6 +36,7 @@ export function explainGitError(e) {
       ? 'Keine Verbindung zum Git-Proxy. Internet und Proxy-Adresse in den Einstellungen prüfen.'
       : 'GitHub erlaubt Browsern keinen direkten Git-Zugriff. Bitte in den Einstellungen eine Proxy-Adresse eintragen (Anleitung in der README).';
   }
+  if (/UserCanceled|operation was canceled/i.test(m)) return 'GitHub hat die Anmeldung abgelehnt. Gehört das Repository zum gewählten Konto, und darf dessen Token hineinschreiben?';
   if (/401|403|HttpError.*40[13]/.test(m)) return 'Zugriff verweigert. Ist das GitHub-Token gültig und hat es Schreibrechte für dieses Repository?';
   if (/404/.test(m)) return 'Repository nicht gefunden. Adresse prüfen (und ob es privat ist).';
   if (/MergeConflict|conflict/i.test(m)) return 'Konflikt beim Zusammenführen: Dieselben Zeilen wurden hier und auf GitHub geändert.';
@@ -56,11 +57,28 @@ export class GitService {
 
   async isRepo(project) { return exists(`${this.dir(project)}/.git`); }
 
+  async originUrl(project) {
+    try { return (await git.getConfig({ fs, dir: this.dir(project), path: 'remote.origin.url' })) || ''; } catch (e) { return ''; }
+  }
+
+  // Das Konto eines Projekts: mit GitHub verbunden nach der Liste deiner Repositorys, sonst auf diesem Gerät gemerkt.
+  async accountOf(project) {
+    const url = await this.originUrl(project);
+    if (url) return accountForUrl(url);
+    return account(loadPref(`account.${project}`, MAIN)) || accounts()[0];
+  }
+
+  async setAccount(project, id) {
+    const url = await this.originUrl(project);
+    if (url) rememberRepo({ url, name: project, account: id });
+    else savePref(`account.${project}`, id);
+  }
+
   async init(project) {
     const dir = this.dir(project);
     await git.init({ fs, dir, defaultBranch: 'main' });
     await this.addAll(project);
-    await git.commit({ fs, dir, message: 'Erster Stand', author: author() });
+    await git.commit({ fs, dir, message: 'Erster Stand', author: authorOf(await this.accountOf(project)) });
   }
 
   async status(project) {
@@ -90,7 +108,7 @@ export class GitService {
   async commit(project, message, files) {
     const dir = this.dir(project);
     await this.addAll(project, files);
-    return git.commit({ fs, dir, message, author: author() });
+    return git.commit({ fs, dir, message, author: authorOf(await this.accountOf(project)) });
   }
 
   async log(project, depth = 80) {
@@ -171,7 +189,7 @@ export class GitService {
   async merge(project, theirs) {
     const dir = this.dir(project);
     const ours = await git.currentBranch({ fs, dir });
-    const res = await git.merge({ fs, dir, ours, theirs, author: author() });
+    const res = await git.merge({ fs, dir, ours, theirs, author: authorOf(await this.accountOf(project)) });
     if (res.oid) await git.checkout({ fs, dir, ref: ours });
     return res;
   }
@@ -184,16 +202,29 @@ export class GitService {
     const dir = this.dir(project);
     try { await git.deleteRemote({ fs, dir, remote: 'origin' }); } catch (e) { /* neu */ }
     await git.addRemote({ fs, dir, remote: 'origin', url });
+    rememberRepo({ url, name: project });
   }
 
-  async clone(project, url, onProgress) {
-    await git.clone({ fs, http, dir: this.dir(project), url, singleBranch: true, depth: 50, onProgress, ...authOpts() });
+  // accId: das gewählte Konto (leer: nach dem Besitzer). Danach steht das Repository in deiner Liste.
+  async clone(project, url, onProgress, accId = '') {
+    const acc = (accId && account(accId)) || accountForUrl(url);
+    const branch = repoEntry(url)?.branch || undefined;
+    try {
+      await git.clone({ fs, http, dir: this.dir(project), url, ref: branch, singleBranch: true, depth: 50, onProgress, ...authOpts(url, acc) });
+    } catch (e) {
+      if (!branch || !/NotFound|Could not find/i.test(String(e?.message || e))) throw e;
+      await rmrf(this.dir(project)).catch(() => {});   // der Zweig von früher gibt es nicht mehr: den Standardzweig holen
+      await git.clone({ fs, http, dir: this.dir(project), url, singleBranch: true, depth: 50, onProgress, ...authOpts(url, acc) });
+    }
+    const current = await git.currentBranch({ fs, dir: this.dir(project) }).catch(() => '');
+    rememberRepo({ url, name: project, account: accId || undefined, branch: current || '' });
   }
 
   async push(project, onProgress) {
     const dir = this.dir(project);
     const ref = await git.currentBranch({ fs, dir });
-    const res = await git.push({ fs, http, dir, remote: 'origin', ref, onProgress, ...authOpts() });
+    const url = await this.originUrl(project);
+    const res = await git.push({ fs, http, dir, remote: 'origin', ref, onProgress, ...authOpts(url, await this.accountOf(project)) });
     if (res && res.ok === false) throw new Error(res.error || 'Hochladen abgelehnt');
     return res;
   }
@@ -201,7 +232,9 @@ export class GitService {
   async pull(project, onProgress) {
     const dir = this.dir(project);
     const ref = await git.currentBranch({ fs, dir });
-    await git.pull({ fs, http, dir, remote: 'origin', ref, singleBranch: true, author: author(), onProgress, ...authOpts() });
+    const url = await this.originUrl(project);
+    const acc = await this.accountOf(project);
+    await git.pull({ fs, http, dir, remote: 'origin', ref, singleBranch: true, author: authorOf(acc), onProgress, ...authOpts(url, acc) });
   }
 
   async ahead(project) {
@@ -292,7 +325,7 @@ export class GitPanel {
       this.svc.status(project), this.svc.branches(project), this.svc.remotes(project), this.svc.log(project, 40),
     ]);
     // Branch-Zeile
-    const branchBtn = h('button', { class: 'btn small', type: 'button', html: `${icon('branch')}<span>${br.current || '(losgelöst)'}</span>` });
+    const branchBtn = h('button', { class: 'btn small', type: 'button', html: `${icon('branch')}<span>${esc(br.current || '(losgelöst)')}</span>` });
     branchBtn.addEventListener('click', () => this.branchMenu(br));
     const origin = remotes.find(r => r.remote === 'origin');
     const head = h('section', { class: 'card git-head' },
@@ -312,6 +345,12 @@ export class GitPanel {
       addRemote.addEventListener('click', () => this.remoteDialog(''));
       head.append(addRemote);
     }
+    // Konto: mit wem dieses Projekt committet und hochlädt
+    const acc = await this.svc.accountOf(project);
+    const accBtn = h('button', { class: 'link-btn git-account', type: 'button', id: 'git-account', title: 'Konto für dieses Projekt wählen' });
+    accBtn.append(h('span', { text: accountLabel(acc) }), acc.email ? h('span', { class: 'muted', text: `· ${acc.email}` }) : '');
+    accBtn.addEventListener('click', () => this.accountMenu(project, acc));
+    head.append(h('div', { class: 'remote-row' }, h('span', { class: 'muted', html: icon('user') }), accBtn));
     this.root.append(head);
 
     // Aenderungen
@@ -338,7 +377,7 @@ export class GitPanel {
         const text = msg.value.trim();
         if (!text) { toast('Bitte eine kurze Nachricht eingeben.', 'error'); msg.focus(); throw new Error(''); }
         if (!selected.size) { toast('Keine Datei ausgewählt.', 'error'); throw new Error(''); }
-        if (!gitSettings().name) toast('Tipp: Name und E-Mail für Commits in den Einstellungen eintragen.');
+        if (!acc.name) toast(`Tipp: Name und E-Mail für „${accountLabel(acc)}“ in den Einstellungen eintragen.`);
         await this.svc.commit(project, text, [...selected]);
         toast('Commit gespeichert', 'ok');
       }));
@@ -431,6 +470,18 @@ export class GitPanel {
     }
   }
 
+  async accountMenu(project, current) {
+    const all = accounts();
+    const items = all.map((a) => ({ label: accountLabel(a), detail: [a.name, a.email].filter(Boolean).join(' · ') || (a.token ? '' : 'ohne Token'), value: a.id, icon: a.id === current.id ? 'check' : 'user' }));
+    items.push('-', { label: 'Konten verwalten …', value: '#settings', icon: 'settings' });
+    const v = await actionSheet(`Konto für „${project}“`, items);
+    if (!v) return;
+    if (v === '#settings') { this.openSettings?.('git'); return; }
+    await this.svc.setAccount(project, v);
+    toast(`„${project}“ committet jetzt als ${accountLabel(account(v))}`, 'ok');
+    this.refresh();
+  }
+
   async remoteDialog(current) {
     const url = await promptDialog('GitHub-Repository', {
       label: 'HTTPS-Adresse des Repositorys', value: current, placeholder: 'https://github.com/name/projekt.git',
@@ -442,18 +493,21 @@ export class GitPanel {
   }
 
   async remoteOp(kind) {
-    const s = gitSettings();
-    if (!s.proxy || (kind === 'push' && !s.token)) {
+    const project = this.getProject();
+    const acc = await this.svc.accountOf(project);
+    const url = await this.svc.originUrl(project);
+    const proxy = loadPref('git.proxy', '');
+    if (!proxy || (kind === 'push' && !tokenFor(acc, url))) {
+      const noToken = kind === 'push' && !tokenFor(acc, url);
       const go = await modal({
         title: 'GitHub einrichten',
-        body: h('p', { text: kind === 'push' && !s.token ? 'Zum Hochladen brauchst du ein GitHub-Token. Außerdem braucht der Browser einen kleinen Git-Proxy. Beides trägst du in den Einstellungen ein.' : 'Der Browser braucht einen kleinen Git-Proxy, um mit GitHub zu sprechen. Trage dessen Adresse in den Einstellungen ein.' }),
+        body: h('p', { text: noToken ? (acc.token ? `Das Token von „${accountLabel(acc)}“ gilt für ${acc.host}, dieses Repository liegt woanders. Wähle ein anderes Konto oder trage den Rechner beim Konto ein.` : `Zum Hochladen braucht „${accountLabel(acc)}“ ein GitHub-Token${proxy ? '' : ', und der Browser einen kleinen Git-Proxy'}. Beides trägst du in den Einstellungen ein.`) : 'Der Browser braucht einen kleinen Git-Proxy, um mit GitHub zu sprechen. Trage dessen Adresse in den Einstellungen ein.' }),
         actions: [{ label: 'Abbrechen', value: false }, { label: 'Zu den Einstellungen', kind: 'primary', value: true }],
       });
       if (go) this.openSettings?.('git');
       return;
     }
-    const project = this.getProject();
-    const prog = toastProgress(kind === 'push' ? 'Lade hoch …' : 'Hole Änderungen …');
+    const prog = toastProgress(kind === 'push' ? `Lade als ${accountLabel(acc)} hoch …` : 'Hole Änderungen …');
     await this.guard(async () => {
       try {
         if (kind === 'push') { await this.svc.push(project, prog.update); toast('Auf GitHub hochgeladen', 'ok'); }
@@ -472,26 +526,47 @@ export class GitPanel {
     });
   }
 
-  async cloneDialog() {
-    const url = await promptDialog('Repository klonen', {
-      label: 'HTTPS-Adresse', placeholder: 'https://github.com/name/projekt.git',
-      validate: (s) => /^https:\/\/\S+$/.test(s.trim()) ? null : 'Bitte eine https://-Adresse eingeben.',
+  // url und name: aus der Liste deiner Repositorys (Projekte › „Noch nicht auf diesem Gerät“)
+  async cloneDialog(url0 = '', name0 = '') {
+    const all = accounts();
+    const urlIn = h('input', { class: 'field', type: 'url', value: url0, placeholder: 'https://github.com/name/projekt.git', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', id: 'clone-url' });
+    const accIn = h('select', { class: 'field', id: 'clone-account' });
+    const auto = h('option', { value: '', text: 'Passend zum Besitzer' });
+    accIn.append(auto, ...all.map((a) => h('option', { value: a.id, text: accountLabel(a) })));
+    const guess = () => { const a = /^https:\/\/\S+$/.test(urlIn.value.trim()) ? accountForUrl(urlIn.value.trim()) : null; auto.textContent = a ? `Passend zum Besitzer (${accountLabel(a)})` : 'Passend zum Besitzer'; };
+    urlIn.addEventListener('input', guess);
+    const chosen = url0 && repoEntry(url0)?.account;
+    if (chosen && all.some((a) => a.id === chosen)) accIn.value = chosen;
+    guess();
+    const err = h('div', { class: 'field-error' });
+    const body = h('div', { class: 'form' },
+      h('label', { class: 'field-label', for: 'clone-url', text: 'HTTPS-Adresse' }), urlIn,
+      all.length > 1 ? h('label', { class: 'field-label', for: 'clone-account', text: 'Konto' }) : null, all.length > 1 ? accIn : null, err);
+    const res = await modal({
+      title: 'Repository klonen', body,
+      actions: [{ label: 'Abbrechen', value: null }, { label: 'Klonen', kind: 'primary', value: () => {
+        const u = urlIn.value.trim();
+        if (!/^https:\/\/\S+$/.test(u)) { err.textContent = 'Bitte eine https://-Adresse eingeben.'; return undefined; }
+        return { url: u, acc: accIn.value };
+      } }],
+      onOpen: () => setTimeout(() => (url0 ? accIn : urlIn).focus(), 60),
     });
-    if (!url) return;
-    if (!gitSettings().proxy) {
+    if (!res) return;
+    if (!loadPref('git.proxy', '')) {
       toast('Zum Klonen ist ein Git-Proxy nötig (Einstellungen).', 'error', 5000);
       this.openSettings?.('git');
       return;
     }
-    const base = decodeURIComponent(url.trim().replace(/\.git$/, '').split('/').pop() || 'Klon');
+    const base = (name0 || decodeURIComponent(res.url.replace(/\.git$/, '').split('/').pop() || 'Klon')).replace(/[\/\\:*?"<>|]/g, '-').slice(0, 60) || 'Klon';
     let name = base;
     for (let i = 2; await exists(projectPath(name)); i++) name = `${base} ${i}`;
     const prog = toastProgress('Klone …');
     try {
-      await this.svc.clone(name, url.trim(), prog.update);
+      await this.svc.clone(name, res.url, prog.update, res.acc);
       toast(`Als Projekt „${name}“ geklont`, 'ok');
       this.onProjectsChanged?.(name);
     } catch (e) {
+      await rmrf(projectPath(name)).catch(() => {});
       toast(explainGitError(e), 'error', 6000);
     } finally { prog.done(); }
   }
