@@ -1,6 +1,7 @@
 // Running a snippet on this device (app/services/python.js). "Try it" opens the panel with the snippet's code,
 // "Run check" opens it on the check and runs it. Both can be edited; what you change stays on this device (until
 // "reset"), the node itself never changes. The output appears below the code it came from.
+import { matches } from '../services/keys.js';
 import { h } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { loadPref, removePref, savePref } from '../services/prefs.js';
@@ -41,7 +42,7 @@ export function enableCodeKeys(editor, { onRun } = {}) {
   let escaped = false;
   editor.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { escaped = true; return; }
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && onRun) { e.preventDefault(); onRun(); return; }
+    if (matches(e, 'run.code') && onRun) { e.preventDefault(); onRun(); return; }
     if (e.key === 'Tab' && !escaped && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
       if (!document.execCommand?.('insertText', false, '    ')) {

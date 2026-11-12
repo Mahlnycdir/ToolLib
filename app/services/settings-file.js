@@ -24,6 +24,10 @@ const KEYS = {
   'research.worker': 'string', 'research.token': 'secret', 'research.helper': 'string', 'research.helperToken': 'secret',
   'research.openalexKey': 'secret', 'research.s2Key': 'secret', 'research.off': 'list',
   'crawl.depth': 'number', 'crawl.max': 'number', 'crawl.gap': 'number', 'crawl.pdfs': 'boolean',
+  // 0.17.0: how you write (editor, own commands and macros), your keys, the learning sources and the start mode
+  'editor.fontSize': 'number', 'editor.shorthand': 'boolean', 'editor.lists': 'boolean', 'editor.brackets': 'boolean',
+  'editor.spellcheck': 'boolean', 'editor.mode': 'string', 'editor.commands': 'json', 'editor.macros': 'json',
+  keys: 'json', 'learn.off': 'list', 'research.mode': 'string',
 };
 const ACCENT = /^accent\.[a-z0-9-]{1,40}$/;
 const KOBRA = { proxy: 'string', token: 'secret', name: 'string', email: 'string' };   // kobra.git.*
@@ -49,6 +53,20 @@ function valid(kind, v) {
   if (kind === 'boolean') return typeof v === 'boolean';
   if (kind === 'number') return typeof v === 'number' && Number.isFinite(v);
   if (kind === 'list') return Array.isArray(v) && v.length <= 50 && v.every((x) => typeof x === 'string' && x.length <= 100);
+  if (kind === 'json') return plainJson(v, 0) && JSON.stringify(v).length <= 60000;
+  return false;
+}
+
+// Objects, lists, text, numbers, yes/no and nothing else, at most four levels deep (own commands, macros, keys).
+function plainJson(v, depth) {
+  if (v === null || typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v))) return true;
+  if (typeof v === 'string') return v.length <= 4000;
+  if (depth >= 4) return false;
+  if (Array.isArray(v)) return v.length <= 500 && v.every((x) => plainJson(x, depth + 1));
+  if (typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype) {
+    const keys = Object.keys(v);
+    return keys.length <= 500 && keys.every((k) => k.length <= 100 && !['__proto__', 'constructor', 'prototype'].includes(k) && plainJson(v[k], depth + 1));
+  }
   return false;
 }
 

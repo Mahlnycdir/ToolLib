@@ -3,12 +3,15 @@
 // Covers what nodes use: headings, paragraphs, lists, quotes, tables, code blocks with copy buttons,
 // formulas ($$ … $$ and $ … $, set with KaTeX since 0.12.0; the copy button gives the LaTeX), inline code, bold,
 // italic, links and [[node]] links. Spots of an open convention (0.13.0) come marked from services/choices.js
-// and show highlighted.
+// and show highlighted. Since 0.17.0: images (![text](assets/… or https://…)), sources [@fund] and [@a, p. 3; @b]
+// numbered in order with a list "Sources" at the end, ```plot blocks drawn as a picture (plot.js) and ```python plot
+// blocks whose matplotlib figure is stored under assets/plots/ (drawn once with Python, then shown everywhere).
 import { h } from '../services/ui.js';
 import { stripMarks, unmarkTex } from '../services/choices.js';
 import { icon } from '../services/icons.js';
 import { t } from '../i18n/i18n.js';
 import { typeset } from './math.js';
+import { renderPlot } from './plot.js';
 
 const SECTION_KEYS = {
   example: 'section.example', examples: 'section.example', pitfalls: 'section.pitfalls', check: 'section.check', steps: 'section.steps', derivation: 'section.derivation',
@@ -16,8 +19,11 @@ const SECTION_KEYS = {
 };
 const iconEl = (name) => h('span', { class: 'icon', html: icon(name) });
 
-// options: onCopy(text, label), onNodeLink(slug) → { label, open } or null
+// options: onCopy(text, label), onNodeLink(slug) → { label, href } or null, onCite(slug) → { label, href, url } or null
+// (sources), onAsset(path) → Promise of an address (images, plots), onPlot(code, figure) (draw a Python plot).
 export function renderMarkdown(md, options = {}) {
+  const top = !options.cites;
+  if (top) options = { ...options, cites: new Map() };
   const root = h('div', { class: 'md' });
   const lines = String(md).replace(/\r\n?/g, '\n').split('\n');
   let i = 0;
@@ -29,13 +35,16 @@ export function renderMarkdown(md, options = {}) {
     const line = lines[i];
     if (isBlank(line)) { i++; continue; }
 
-    const fence = line.trim().match(/^(```|~~~)\s*([\w+-]*)/);
+    const fence = line.trim().match(/^(```|~~~)\s*([\w+-]*)(.*)$/);
     if (fence) {
       const body = [];
       i++;
       while (i < lines.length && !lines[i].trim().startsWith(fence[1])) body.push(lines[i++]);
       i++;
-      root.append(codeBlock(body.join('\n'), fence[2], options));
+      const code = body.join('\n');
+      if (fence[2] === 'plot') root.append(renderPlot(code));
+      else if (/^(python|py)$/.test(fence[2]) && /\bplot\b/.test(fence[3])) root.append(pyPlot(code, options));
+      else root.append(codeBlock(code, fence[2], options));
       continue;
     }
 
@@ -100,7 +109,50 @@ export function renderMarkdown(md, options = {}) {
     while (i < lines.length && !isBlank(lines[i]) && (para.length === 0 || !startsBlock(lines[i]))) para.push(lines[i++].trim());
     root.append(h('p', {}, inline(para.join(' '), options)));
   }
+  if (top && options.cites.size) root.append(references(options));
   return root;
+}
+
+// The sources you cited, numbered in the order they first appear, with their address when they have one.
+function references(options) {
+  const list = h('ol', { class: 'md-refs' });
+  for (const [slug, c] of options.cites) {
+    const t0 = c.target;
+    list.append(h('li', { id: `ref-${c.n}` },
+      t0?.href ? h('a', { href: t0.href, class: 'node-link', text: t0.label }) : h('span', { class: 'node-link missing', text: slug }),
+      t0?.url ? ' · ' : null,
+      t0?.url && safeUrl(t0.url) ? h('a', { href: t0.url, target: '_blank', rel: 'noopener noreferrer', class: 'md-ref-url', text: t0.url.replace(/^https?:\/\//, '') }) : null));
+  }
+  return h('section', { class: 'md-sources' }, h('h3', { text: t('md.sources') }), list);
+}
+
+// A Python plot: the stored picture if there is one, a button to draw it (again), the code folded below.
+function pyPlot(code, options) {
+  const fig = h('figure', { class: 'py-plot' });
+  const img = h('img', { class: 'md-img', alt: t('md.plot'), hidden: true });
+  const status = h('span', { class: 'small muted' });
+  const draw = h('button', { type: 'button', class: 'btn small py-plot-draw' }, h('span', { text: t('md.plot.draw') }));
+  draw.addEventListener('click', async () => {
+    if (!options.onPlot) return;
+    draw.disabled = true;
+    status.textContent = t('md.plot.running');
+    try {
+      const url = await options.onPlot(code);
+      if (url) { img.src = url; img.hidden = false; status.textContent = ''; draw.querySelector('span').textContent = t('md.plot.again'); }
+      else status.textContent = t('md.plot.none');
+    } catch (e) {
+      status.textContent = t('md.plot.failed', { error: String(e?.message || e).split('\n')[0].slice(0, 120) });
+    } finally { draw.disabled = false; }
+  });
+  fig.append(img, h('div', { class: 'py-plot-bar' }, options.onPlot ? draw : null, status),
+    h('details', { class: 'py-plot-code' }, h('summary', { class: 'small muted', text: t('md.plot.code') }), codeBlock(code, 'python', options)));
+  (async () => {
+    const { plotPath } = await import('../services/assets.js');
+    const url = await options.onAsset?.(await plotPath(code));
+    if (url) { img.src = url; img.hidden = false; draw.querySelector('span').textContent = t('md.plot.again'); }
+    else if (!options.onPlot) status.textContent = t('md.plot.none');
+  })().catch(() => {});
+  return fig;
 }
 
 // ------------------------------------------------------------------ blocks
@@ -168,9 +220,41 @@ const INLINE = new RegExp([
   '\\$([^$\\n]+?)\\$', // 8 inline formula
   '(https?:\\/\\/[^\\s<>()]+[^\\s<>().,;:!?])', // 9 bare address
   '([\\uE000\\uE002])([^\\uE001]*)\\uE001', // 10, 11 spot of an open convention (0.13.0)
+  '!\\[([^\\]]*)\\]\\(([^()\\s]+)(?:\\s+"[^"]*")?\\)', // 12, 13 image (0.17.0) (starts at "!", before any link)
+  '\\[@([^\\]\\n]+)\\]', // 14 sources (0.17.0)
 ].join('|'), 'g');
 
 const safeUrl = (u) => (/^(https?:|mailto:)/i.test(u) ? u : null);
+
+// An image of your knowledge (assets/…) or from an https address; nothing else (no data:, no file:).
+function image(alt, src, options) {
+  const img = h('img', { class: 'md-img', alt: alt || '', loading: 'lazy', referrerpolicy: 'no-referrer' });
+  if (/^assets\//.test(src)) {
+    img.dataset.asset = src;
+    Promise.resolve(options.onAsset?.(src)).then((url) => { if (url) img.src = url; else img.replaceWith(h('span', { class: 'md-img-missing small', text: `🖼 ${alt || src}` })); }).catch(() => {});
+  } else if (/^https:\/\//i.test(src)) img.src = src;
+  else return h('span', { class: 'md-img-missing small', text: `🖼 ${alt || src}` });
+  return img;
+}
+
+// [@a] · [@a, p. 3] · [@a; @b] → [1] · [1, p. 3] · [1; 2], each number a link to the source, numbered in order.
+export function parseCite(body) {
+  return String(body).split(';').map((part) => part.trim().match(/^@?([\w.-]+)\s*(?:,\s*(.+))?$/)).filter(Boolean).map((m) => ({ slug: m[1], at: (m[2] || '').trim() }));
+}
+function citation(body, options) {
+  const parts = parseCite(body);
+  if (!parts.length || !options.cites) return document.createTextNode(`[@${body}]`);
+  const out = h('span', { class: 'md-cite' }, '[');
+  parts.forEach((p, k) => {
+    let c = options.cites.get(p.slug);
+    if (!c) { c = { n: options.cites.size + 1, target: options.onCite?.(p.slug) || null }; options.cites.set(p.slug, c); }
+    if (k) out.append('; ');
+    out.append(h('a', { href: c.target?.href || `#ref-${c.n}`, class: `md-cite-n${c.target ? '' : ' missing'}`, title: c.target?.label || p.slug, text: String(c.n) }));
+    if (p.at) out.append(`, ${p.at}`);
+  });
+  out.append(']');
+  return out;
+}
 
 export function inline(text, options = {}) {
   const frag = document.createDocumentFragment();
@@ -193,7 +277,28 @@ export function inline(text, options = {}) {
     else if (m[8] != null) frag.append(typeset(h('span', { class: 'math-inline', title: unmarkTex(m[8]), dataset: { tex: unmarkTex(m[8]) } }), m[8], false));
     else if (m[9] != null) frag.append(h('a', { href: m[9], target: '_blank', rel: 'noopener noreferrer', text: m[9] }));
     else if (m[10] != null) frag.append(spotEl(m[10] === '\uE002', inline(m[11], options)));
+    else if (m[13] != null) frag.append(image(m[12], m[13], options));
+    else if (m[14] != null) frag.append(citation(m[14], options));
   }
   frag.append(text.slice(last));
   return frag;
+}
+
+// A page as Markdown for outside (0.17.0): [@fund] becomes [n](address), and a numbered list of the sources follows.
+export function exportMarkdown(md, onCite, heading = 'Sources') {
+  const order = new Map();
+  const fenced = String(md).split(/(^```[\s\S]*?^```)/m);
+  const body = fenced.map((part, k) => (k % 2 ? part : part.replace(/\[@([^\]\n]+)\]/g, (all, inner) => {
+    const parts = parseCite(inner);
+    if (!parts.length) return all;
+    return `[${parts.map((p) => {
+      if (!order.has(p.slug)) order.set(p.slug, { n: order.size + 1, target: onCite?.(p.slug) || null });
+      const c = order.get(p.slug);
+      const url = c.target?.url;
+      return `${url ? `[${c.n}](${url})` : c.n}${p.at ? `, ${p.at}` : ''}`;
+    }).join('; ')}]`;
+  }))).join('');
+  if (!order.size) return body;
+  const list = [...order].map(([slug, c]) => `${c.n}. ${c.target?.label || slug}${c.target?.url ? ` — ${c.target.url}` : ''}`).join('\n');
+  return `${body.replace(/\s+$/, '')}\n\n## ${heading}\n\n${list}\n`;
 }

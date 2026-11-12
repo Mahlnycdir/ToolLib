@@ -3,19 +3,20 @@
 // the sources of the page. On the iPhone the three are tabs. The order lives in the library node, the text in the
 // page nodes (services/library-store.js); everything is saved by itself and synced like other nodes.
 import { mark } from '../services/trail.js';
-import { h, toast, debounce, loadPref, savePref, promptDialog, confirmDialog, actionSheet } from '../services/ui.js';
+import { h, toast, debounce, loadPref, savePref, promptDialog, confirmDialog, actionSheet, copyText } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { getLang, t } from '../i18n/i18n.js';
 import { allNodes, indexState, nodeByPath, nodeBySlug, onIndexChange } from '../services/search.js';
 import { getNode, localize } from '../services/nodes.js';
 import {
   addChapter, createPage, deleteChapter, deleteLibrary, deletePage, firstFormula, loadLibrary, loadPage, mergeLines, moveChapter,
-  movePage, placePage, quoteMarkdown, renameChapter, renameLibrary, savePage, withSource,
+  movePage, placePage, placeChapter, quoteMarkdown, renameChapter, renameLibrary, savePage, withSource,
 } from '../services/library-store.js';
 import { loadClipDoc } from '../services/research-store.js';
 import { knowledgeFor } from '../services/reader-cards.js';
 import { projectWorks } from '../services/projects.js';
-import { mountEditor } from './page-editor.js';
+import { mountEditor, sectionOf } from './page-editor.js';
+import { draggable, dropZone } from './drag.js';
 import { nodeHref, typeLabel } from './node-view.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
@@ -41,8 +42,18 @@ export function mountLibrary(host, opts) {
   const side = h('aside', { class: 'lb-side', 'aria-label': t('library.side') });
   root.append(bar, tabs, h('div', { class: 'lb-body' }, toc, mid, side));
   // while you type on the iPhone the bar and the page head step aside, so the keyboard leaves room for the text
-  mid.addEventListener('focusin', (e) => { if (e.target.classList?.contains('pe-text')) root.classList.add('writing'); });
-  mid.addEventListener('focusout', (e) => { if (e.target.classList?.contains('pe-text')) root.classList.remove('writing'); });
+  // On the phone head and bar step aside while you write, from the first key on, not when you tap (0.17.0): a
+  // layout that moves at the tap put the cursor somewhere else and needed a second tap.
+  const startWriting = () => {
+    if (!narrow() || root.classList.contains('writing')) return;
+    root.classList.add('writing');
+    state.editor?.editor.keepCaretInView();
+  };
+  // they come back a moment after you leave the text, so the tap that left it (a tab, a button) still lands
+  mid.addEventListener('focusout', (e) => {
+    if (!e.target.closest?.('.cm-editor')) return;
+    setTimeout(() => { if (!mid.querySelector('.cm-editor')?.contains(document.activeElement)) root.classList.remove('writing'); }, 350);
+  });
   host.append(root);
 
   const nodeTitle = (d) => (lang === 'de' && d.title_de ? d.title_de : d.title);
@@ -104,8 +115,8 @@ export function mountLibrary(host, opts) {
     const lib = state.lib;
     const items = [];
     lib.chapters.forEach((c, i) => {
-      const add = h('button', { type: 'button', class: 'icon-btn', title: t('library.page.new'), 'aria-label': t('library.page.new'), html: icon('plus'), onclick: () => newPage(i) });
-      const menu = h('button', { type: 'button', class: 'icon-btn', title: t('library.chapter.menu'), 'aria-label': t('library.chapter.menu'), html: icon('more'), onclick: () => chapterMenu(i) });
+      const add = h('button', { type: 'button', class: 'icon-btn no-drag', title: t('library.page.new'), 'aria-label': t('library.page.new'), html: icon('plus'), onclick: () => newPage(i) });
+      const menu = h('button', { type: 'button', class: 'icon-btn no-drag', title: t('library.chapter.menu'), 'aria-label': t('library.chapter.menu'), html: icon('more'), onclick: () => chapterMenu(i) });
       const list = h('ul', { class: 'lb-pages' }, ...c.pages.flatMap((s, k) => [pageRow(s, i, k)].flat()));
       const name = h('span', { class: 'lb-ch-title', text: c.title || t('library.chapter.untitled'), title: t('library.chapter.rename') });
       name.addEventListener('dblclick', async () => {
@@ -114,31 +125,42 @@ export function mountLibrary(host, opts) {
       });
       const head = h('div', { class: 'lb-ch-head' }, h('span', { class: 'lb-ch-num', text: `${i + 1}` }), name, add, menu);
       const chapter = h('li', { class: 'lb-ch' }, head, c.pages.length ? list : h('p', { class: 'muted small lb-ch-empty', text: t('library.chapter.empty') }));
-      dropZone(head, i, -1, 'drop-into');
-      if (!c.pages.length) dropZone(chapter, i, -1, 'drop-into');
+      // a chapter is picked up by its head; a page dropped on the head goes to its end (0.17.0: also with a finger)
+      draggable(head, { data: { kind: 'chapter', index: i }, label: c.title });
+      dropZone(head, {
+        accept: (d) => d.kind === 'page' || (d.kind === 'chapter' && d.index !== i),
+        place: (d, e, el) => (d.kind === 'page' ? 'into' : upper(e, el)),
+        drop: (d, place) => (d.kind === 'page' ? movePageTo(d.slug, i, -1) : moveChapterTo(d.index, place === 'before' ? i : i + 1)),
+      });
       items.push(chapter);
     });
     const loose = lib.loose.length ? h('li', { class: 'lb-ch' }, h('div', { class: 'lb-ch-head' }, h('span', { class: 'lb-ch-title muted', text: t('library.loose') })),
       h('ul', { class: 'lb-pages' }, ...lib.loose.map((s) => pageRow(s, -1)))) : null;
     const addCh = h('button', { type: 'button', class: 'btn small', onclick: newChapter }, iconEl('plus'), h('span', { text: t('library.chapter.new') }));
     toc.replaceChildren(h('div', { class: 'rs-head' }, h('h2', { text: t('library.toc') })), h('ol', { class: 'lb-chapters' }, ...[...items, loose].filter(Boolean)), h('div', { class: 'btn-row' }, addCh),
-      ...(narrow() ? [] : [h('p', { class: 'muted small lb-drag-hint', text: t('library.drag') })]));
+      h('p', { class: 'muted small lb-drag-hint', text: t(narrow() ? 'library.drag.touch' : 'library.drag') }));
   }
 
-  // Dragging pages (0.15.1): a page dropped on a page goes in front of it, dropped on a chapter to its end.
-  let dragged = '';
-  async function dropAt(chapter, index) {
-    const slug = dragged;
-    dragged = '';
-    toc.querySelectorAll('.drop-before, .drop-into').forEach((x) => x.classList.remove('drop-before', 'drop-into'));
-    if (!slug || chapter < 0) return;
+  // Dragging (0.15.1, with mouse and finger since 0.17.0): a page dropped on the upper part of a page goes in front of
+  // it, on the lower part behind it, on a chapter head to its end; chapters among chapters; sections of the open page
+  // among its headings (the text moves with them).
+  const upper = (e, el) => { const r = el.getBoundingClientRect(); return e.clientY < r.top + r.height * 0.6 ? 'before' : 'after'; };
+  async function movePageTo(slug, chapter, index) {
+    if (chapter < 0) return;
     await flush();
     if (await placePage(state.lib.path, slug, chapter, index)) await reloadLib();
   }
-  function dropZone(el, chapter, index, cls) {
-    el.addEventListener('dragover', (e) => { if (!dragged) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; el.classList.add(cls); });
-    el.addEventListener('dragleave', () => el.classList.remove(cls));
-    el.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); dropAt(chapter, index); });
+  async function moveChapterTo(from, before) {
+    await flush();
+    if (await placeChapter(state.lib.path, from, before)) await reloadLib();
+  }
+  function moveSectionTo(from, x, place) {
+    const ed = state.editor;
+    if (!ed) return;
+    const text = ed.get().body;
+    let before = x.line;
+    if (place === 'after') { const sec = sectionOf(text, x.line); before = !sec || sec.to >= text.split('\n').length ? -1 : sec.to; }
+    if (ed.moveSection(from, before)) { state.heads = ed.headings(); drawToc(); }
   }
 
   function pageRow(slug, chapter, index = -1) {
@@ -146,18 +168,31 @@ export function mountLibrary(host, opts) {
     const on = state.page?.slug === slug;
     const b = h('button', { type: 'button', class: `lb-pg${on ? ' on' : ''}${d ? '' : ' missing'}`, 'aria-current': on ? 'page' : null, disabled: d ? null : true, text: pageTitle(slug) });
     b.addEventListener('click', () => openPage(d.path));
-    const row = h('li', { class: 'lb-pg-row', draggable: d && !narrow() ? 'true' : null, dataset: { slug } }, b);
-    if (d && !narrow()) {
-      row.addEventListener('dragstart', (e) => { dragged = slug; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', slug); row.classList.add('dragging'); });
-      row.addEventListener('dragend', () => { row.classList.remove('dragging'); dragged = ''; });
-      dropZone(row, chapter, index, 'drop-before');
+    const row = h('li', { class: 'lb-pg-row', dataset: { slug } }, b);
+    if (d) {
+      draggable(row, { data: { kind: 'page', slug }, label: pageTitle(slug) });
+      if (chapter >= 0) {
+        dropZone(row, {
+          accept: (x) => x.kind === 'page' && x.slug !== slug,
+          place: (x, e, el) => upper(e, el),
+          drop: (x, place) => movePageTo(x.slug, chapter, place === 'before' ? index : index + 1),
+        });
+      }
     }
     if (on) row.append(h('button', { type: 'button', class: 'icon-btn', title: t('library.page.menu'), 'aria-label': t('library.page.menu'), html: icon('more'), onclick: () => pageMenu(slug, chapter) }));
     if (!on) return row;
-    // the outline of the page you write in: its headings, a tap goes there
+    // the outline of the page you write in: its headings, a tap goes there; drag one to move its section
     const heads = state.heads || [];
-    return heads.length ? [row, h('li', { class: 'lb-outline' }, h('ul', {}, heads.map((x) => h('li', {},
-      h('button', { type: 'button', class: `lb-head lv-${x.level}`, text: x.title.replace(/[*`]/g, ''), onclick: () => { state.editor?.jumpTo(x.line, x.title); if (narrow()) setPane('page'); } })))))] : row;
+    return heads.length ? [row, h('li', { class: 'lb-outline' }, h('ul', {}, heads.map((x) => {
+      const li = h('li', {}, h('button', { type: 'button', class: `lb-head lv-${x.level}`, text: x.title.replace(/[*`]/g, ''), onclick: () => { state.editor?.jumpTo(x.line, x.title); if (narrow()) setPane('page'); } }));
+      draggable(li, { data: { kind: 'section', page: slug, line: x.line }, label: x.title });
+      dropZone(li, {
+        accept: (y) => y.kind === 'section' && y.page === slug && y.line !== x.line,
+        place: (y, e, el) => upper(e, el),
+        drop: (y, place) => moveSectionTo(y.line, x, place),
+      });
+      return li;
+    })))] : row;
   }
 
   async function newChapter() {
@@ -198,9 +233,16 @@ export function mountLibrary(host, opts) {
       { label: t('library.up'), icon: 'arrowUp', value: 'up', disabled: chapter < 0 || k <= 0 },
       { label: t('library.down'), icon: 'arrowDown', value: 'down', disabled: chapter < 0 || k === list.length - 1 },
       { label: t('library.page.move'), icon: 'folder', value: 'move', disabled: lib.chapters.length < (chapter < 0 ? 1 : 2) },
+      { label: t('library.page.export'), icon: 'copy', value: 'export', disabled: state.page?.slug !== slug || !state.editor },
       '-',
       { label: t('library.page.delete'), icon: 'trash', value: 'delete', danger: true },
     ]);
+    if (v === 'export') {
+      // the page as Markdown for outside: [@sources] as numbered links, the list of sources at the end
+      const ok = await copyText(state.editor.exportText());
+      toast(t(ok ? 'library.page.exported' : 'node.copyFailed'), ok ? 'ok' : 'error');
+      return;
+    }
     if (v === 'up' || v === 'down') await movePage(lib.path, slug, { dir: v === 'up' ? -1 : 1 });
     else if (v === 'move') {
       const to = await actionSheet(t('library.page.moveTo'), lib.chapters.map((c, i) => ({ label: `${i + 1}. ${c.title}`, value: String(i), disabled: i === chapter })));
@@ -264,11 +306,13 @@ export function mountLibrary(host, opts) {
     }
     const ed = mountEditor({
       page: state.page,
-      onInput: () => { state.dirty = true; state.editor?.setStatus('unsaved'); saveSoon(); },
+      onInput: () => { state.dirty = true; state.editor?.setStatus('unsaved'); saveSoon(); startWriting(); },
       onCursor: (at) => { if (state.page) savePref('library.target', { path: state.page.path, at }); },
       onLeave: () => flush(),
       onSaveNow: () => flush(),
       onHeadings: (heads) => { if (JSON.stringify(heads) !== JSON.stringify(state.heads)) { state.heads = heads; drawToc(); } },
+      // [@ offers the works of the project first (0.17.0)
+      works: () => { const p = opts.projectOf?.(); return p ? projectWorks(p).clips : []; },
     });
     state.editor = ed;
     state.heads = ed.headings();
@@ -391,7 +435,9 @@ export function mountLibrary(host, opts) {
       const own = proj ? projectWorks(proj).clips : [];
       const ownSet = new Set(own.map((d) => d.slug));
       const blocks = [];
-      const readBtn = (d) => h('button', { type: 'button', class: 'btn small lb-read', title: t('library.marks.read'), onclick: async () => { await flush(); opts.onRead?.(d.path); } }, iconEl('book'), h('span', { text: t('library.marks.read') }));
+      const readBtn = (d) => h('span', { class: 'lb-work-btns' },
+        h('button', { type: 'button', class: 'btn small lb-cite', title: t('library.cite.hint'), onclick: () => put(`[@${d.slug}]`, { inline: true }) }, h('span', { text: t('library.cite') })),
+        h('button', { type: 'button', class: 'btn small lb-read', title: t('library.marks.read'), onclick: async () => { await flush(); opts.onRead?.(d.path); } }, iconEl('book'), h('span', { text: t('library.marks.read') })));
       if (proj) {
         blocks.push(h('h4', { class: 'lb-side-h', text: t('library.side.projectWorks', { project: proj.title }) }));
         const shown = own.filter((d) => !f || d.title.toLowerCase().includes(f) || (groups.find((g) => g.d.slug === d.slug)?.highlights || []).some((x) => `${x.quote} ${x.note}`.toLowerCase().includes(f)));

@@ -3,6 +3,7 @@
 // thing: \htmlClass{choice-spot}{…}, the highlight of an open convention (0.13.0); \href, \url and the other
 // \html… commands do nothing. A formula KaTeX cannot read keeps its LaTeX in red.
 import { h } from '../services/ui.js';
+import { loadPref } from '../services/prefs.js';
 
 // The macros of ENTE's paper draft and master thesis (Preamble/commands.tex), plus the parts of the physics
 // package that nodes use. Copying a formula gives the LaTeX as written, so it works in the paper unchanged.
@@ -94,11 +95,21 @@ function load() {
 
 export const onlyChoiceSpots = (c) => c.command === '\\htmlClass' && /^choice-spot( open)?$/.test(String(c.class));
 
+// Your own macros (0.17.0, Settings › Writing): { "\\name": "expansion with #1" }; they come after the ones above and
+// may replace one of them. Only names of letters and expansions as text: KaTeX reads them like any formula.
+export function ownMacros() {
+  const own = loadPref('editor.macros', {}) || {};
+  const out = {};
+  for (const [k, v] of Object.entries(own)) if (/^\\[a-zA-Z]{1,40}$/.test(k) && typeof v === 'string' && v.length <= 500) out[k] = v;
+  return out;
+}
+export const allMacros = () => ({ ...MACROS, ...ownMacros() });
+
 function draw(el, tex, display) {
   try {
     katex.render(tex, el, {
       displayMode: display, throwOnError: false, trust: onlyChoiceSpots, strict: 'ignore', maxExpand: 1000,
-      macros: { ...MACROS }, output: 'htmlAndMathml',
+      macros: allMacros(), output: 'htmlAndMathml',
     });
     el.classList.add('typeset');
   } catch (e) {
@@ -118,3 +129,14 @@ export function typeset(el, tex, display = false) {
 }
 
 export const mathReady = () => (katex ? Promise.resolve(katex) : load());
+
+// Why KaTeX cannot set a formula, or '' (the editor underlines it, 0.17.0). Needs KaTeX loaded (mathReady).
+export function texError(tex, display = false) {
+  if (!katex) return '';
+  try {
+    katex.renderToString(String(tex).replace(/[\uE000-\uE002]/g, ''), { displayMode: display, throwOnError: true, trust: onlyChoiceSpots, strict: 'ignore', maxExpand: 1000, macros: allMacros() });
+    return '';
+  } catch (e) {
+    return String(e?.message || e).replace(/^KaTeX parse error:\s*/, '');
+  }
+}

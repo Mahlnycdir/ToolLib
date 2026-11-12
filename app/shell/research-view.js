@@ -3,6 +3,7 @@
 // the left and on the right what you picked, ready to read. Folders are gone (0.16.0): a project holds what you
 // collect; a run through a website and the PDF inbox of the Mac are one entry each. On the iPhone the list and what
 // you picked take turns. "Read" turns the whole window into the reader; "Own window" opens it alone (?solo=1).
+import { matches, keyTitle } from '../services/keys.js';
 import { h, toast, copyText, loadPref, savePref, promptDialog, confirmDialog, modal, actionSheet } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
@@ -191,7 +192,7 @@ export function renderResearch(main) {
 
   // Going through the hits with the keyboard (0.15.1): ↑↓ or j/k move, Enter shows it, L reads, M keeps.
   root.addEventListener('keydown', (e) => {
-    if (e.metaKey || e.ctrlKey || e.altKey || document.querySelector('.modal-backdrop, .sheet-backdrop')) return;
+    if (document.querySelector('.modal-backdrop, .sheet-backdrop')) return;
     const rows = [...list.querySelectorAll('.rs-hit')];
     if (!rows.length) return;
     const focusRow = (i) => {
@@ -199,16 +200,16 @@ export function renderResearch(main) {
       r.querySelector('button.rs-hit-main')?.focus();
       r.scrollIntoView({ block: 'nearest' });
     };
-    if (e.target === input) { if (e.key === 'ArrowDown') { e.preventDefault(); focusRow(0); } return; }
+    if (e.target === input) { if (matches(e, 'research.down') && e.key === 'ArrowDown') { e.preventDefault(); focusRow(0); } return; }
     if (e.target.matches('input, textarea, select, [contenteditable]')) return;
     const cur = rows.findIndex((r) => r.contains(document.activeElement));
-    const key = e.key.toLowerCase();
-    if (e.key === 'ArrowDown' || key === 'j') { e.preventDefault(); focusRow(cur + 1); return; }
-    if (e.key === 'ArrowUp' || key === 'k') { e.preventDefault(); if (cur <= 0) input.focus(); else focusRow(cur - 1); return; }
+    // the keys of Settings › Keys (0.17.0)
+    if (matches(e, 'research.down')) { e.preventDefault(); focusRow(cur + 1); return; }
+    if (matches(e, 'research.up')) { e.preventDefault(); if (cur <= 0) input.focus(); else focusRow(cur - 1); return; }
     if (cur < 0) return;
     const row = rows[cur];
-    if (key === 'l') { e.preventDefault(); row.querySelector('.rs-hit-read')?.click(); }
-    else if (key === 'm') { e.preventDefault(); row.querySelector('.rs-keep-quick')?.click(); }
+    if (matches(e, 'research.read')) { e.preventDefault(); row.querySelector('.rs-hit-read')?.click(); }
+    else if (matches(e, 'research.keep')) { e.preventDefault(); row.querySelector('.rs-keep-quick')?.click(); }
   });
 
   view = {
@@ -471,9 +472,9 @@ export function renderResearch(main) {
 
   // A row: what it is, and two quick actions (read, keep). A tap shows it on the right.
   function quick(kept, onKeep, onRead) {
-    const read = onRead ? h('button', { type: 'button', class: 'icon-btn rs-hit-read', title: t('research.read'), 'aria-label': t('research.read'), html: icon('book') }) : null;
+    const read = onRead ? keyTitle(h('button', { type: 'button', class: 'icon-btn rs-hit-read', 'aria-label': t('research.read'), html: icon('book') }), t('research.read'), 'research.read') : null;
     read?.addEventListener('click', (e) => { e.stopPropagation(); onRead(); });
-    const keep = h('button', { type: 'button', class: `icon-btn rs-keep-quick${kept ? ' kept' : ''}`, title: keepTitle(kept), 'aria-label': keepTitle(kept), html: icon(kept ? 'check' : 'bookmark') });
+    const keep = keyTitle(h('button', { type: 'button', class: `icon-btn rs-keep-quick${kept ? ' kept' : ''}`, 'aria-label': keepTitle(kept), html: icon(kept ? 'check' : 'bookmark') }), keepTitle(kept), 'research.keep');
     keep.addEventListener('click', (e) => { e.stopPropagation(); onKeep(); });
     return h('div', { class: 'rs-hit-actions' }, read, keep);
   }
@@ -526,11 +527,11 @@ export function renderResearch(main) {
         h('span', { class: 'rs-hit-title', text: d.title }),
         d.lead?.en ? h('span', { class: 'rs-hit-meta muted small', text: d.lead.en }) : null,
         d.marked ? h('span', { class: 'rs-hit-tags' }, h('span', { class: 'rs-tag', text: t('research.marked') })) : null),
-      h('div', { class: 'rs-hit-actions' }, h('button', { type: 'button', class: 'icon-btn rs-hit-read', title: t('research.read'), 'aria-label': t('research.read'), html: icon('book'), onclick: async (e) => {
+      h('div', { class: 'rs-hit-actions' }, keyTitle(h('button', { type: 'button', class: 'icon-btn rs-hit-read', 'aria-label': t('research.read'), html: icon('book'), onclick: async (e) => {
         e.stopPropagation();
         const w = await workFromClip(d.path).catch(() => null);
         if (w) { st.kept = w; st.selected = null; openReader(w); }
-      } })));
+      } }), t('research.read'), 'research.read')));
     row.firstChild.addEventListener('click', async () => {
       st.kept = await workFromClip(d.path);
       st.selected = null; st.web1 = null;

@@ -1,7 +1,7 @@
 // Service worker: keeps the whole app in a cache so Toollib starts without a network, keeps Python in a cache of
 // its own and carries input() from the Python worker to the page (the synchronous channel, from Kobra's sw.js).
 // Raise VERSION with every release; the shell then offers "Reload" for the update.
-const VERSION = '0.16.0';
+const VERSION = '0.17.0';
 const CACHE = `toollib-${VERSION}`;
 // Python (vendor/pyodide) is big and changes only with a new Pyodide version, so its cache survives app updates.
 // Keep PYODIDE equal to "pyodide" in vendor/pyodide/toollib-bundle.json.
@@ -59,12 +59,19 @@ const FILES = [
   './app/services/notes.js',
   './app/services/trail.js',
   './app/services/learn.js',
+  './app/services/keys.js',
+  './app/services/assets.js',
   './app/services/remove.js',
   './app/shell/start.js',
   './app/shell/projects-view.js',
   './app/shell/create.js',
   './app/shell/context.js',
   './app/shell/source-editor.js',
+  './app/shell/md-editor.js',
+  './app/shell/tex-catalog.js',
+  './app/shell/tex-palette.js',
+  './app/shell/plot.js',
+  './app/shell/drag.js',
   './app/shell/delete-node.js',
   './app/shell/library-home.js',
   './app/services/autosync.js',
@@ -89,6 +96,9 @@ const FILES = [
   './app/shell/styles.css',
   './vendor/git.js',
   './vendor/search.js',
+  './vendor/editor/editor.js',
+  './vendor/editor/editor-shared.js',
+  './vendor/editor/editor-langs.js',
   './vendor/py-bundle.json',
   // KaTeX (0.12.0): formulas, offline
   './vendor/katex/katex.js',

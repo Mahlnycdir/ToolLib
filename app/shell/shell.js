@@ -10,6 +10,7 @@ import { ACCENTS, READY, moduleById, paintAccent, setAccent } from './modules.js
 import { formatTime, renderModule, renderSettings } from './views.js';
 import { applyUpdate, checkForUpdate, onPwaChange, pwaState } from '../services/pwa.js';
 import { isConfigured, onSyncChange, phaseText, refreshPending, syncKnowledge, syncState } from '../services/sync.js';
+import { bind, matches, keyTitle, formatKeys, helpRows, onKeysChange, hasKeyboard } from '../services/keys.js';
 import { bestProblem, buildIndex, indexState, nodeByPath, onIndexChange, refreshNode, searchNodes } from '../services/search.js';
 import { renderFormulary } from './formulary.js';
 import { copyWithToast, nodeHref, nodeLead, nodeTitle, recentPaths, renderCheatsheet, renderNode, typeAccent, typeIcon, typeLabel } from './node-view.js';
@@ -191,6 +192,8 @@ export function startShell(root) {
     const short = t(`rail.${id}`) === `rail.${id}` ? label : t(`rail.${id}`);
     const b = h('button', { type: 'button', class: `rail-btn${active ? ' active' : ''}`, 'aria-label': label, title: label, 'aria-current': active ? 'page' : null, dataset: { id }, onclick },
       tile, h('span', { class: 'rail-label', text: label }), h('span', { class: 'rail-short', 'aria-hidden': 'true', text: short }));
+    const action = { home: 'go.home', projects: 'go.projects', scraper: 'go.research', settings: 'go.settings' }[id];
+    if (action) keyTitle(b, label, action);
     return b;
   }
 
@@ -236,7 +239,9 @@ export function startShell(root) {
   });
   const results = h('div', { class: 'cmd-results', id: 'cmd-results', role: 'listbox' });
   const menuBtn = h('button', { type: 'button', class: 'icon-btn menu-btn', onclick: () => setDrawer(!app.classList.contains('drawer-open')) });
-  const kbd = h('kbd', { class: 'cmd-kbd', text: isMac ? '⌘K' : 'Ctrl K' });
+  const kbd = h('kbd', { class: 'cmd-kbd', text: formatKeys('cmd.focus')[0] || '' });
+  onKeysChange(() => { kbd.textContent = formatKeys('cmd.focus')[0] || ''; });
+  if (!hasKeyboard()) kbd.hidden = true;
   // "+" creates anything from anywhere; the pill names the project in focus and leads to it
   const plusBtn = h('button', { type: 'button', class: 'icon-btn plus-btn', onclick: () => openCreate() });
   const pill = h('button', { type: 'button', class: 'focus-pill', hidden: true });
@@ -260,7 +265,7 @@ export function startShell(root) {
     input.placeholder = t('commandbar.placeholder');
     input.setAttribute('aria-label', t('commandbar.placeholder'));
     plusBtn.innerHTML = icon('plus');
-    plusBtn.title = `${t('create.title')} (N)`;
+    keyTitle(plusBtn, t('create.title'), 'create');
     plusBtn.setAttribute('aria-label', t('create.title'));
     if (!cmd.firstChild) {
       cmd.append(menuBtn, h('div', { class: 'cmd-field' }, iconEl('search', 'cmd-icon'), input, kbd), plusBtn, pill, results);
@@ -441,38 +446,44 @@ export function startShell(root) {
   input.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); selected = Math.min(selected + 1, shown.length - 1); showResults(); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); selected = Math.max(selected - 1, 0); showResults(); }
-    else if (e.key === 'Enter' && e.shiftKey && shown[selected]?.node?.code) { e.preventDefault(); copyWithToast(shown[selected].node.code); }
-    else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); const i = shown.findIndex((c) => c.capture); if (i >= 0) runAt(i); }
+    else if (matches(e, 'cmd.copy') && shown[selected]?.node?.code) { e.preventDefault(); copyWithToast(shown[selected].node.code); }
+    else if (matches(e, 'cmd.note')) { e.preventDefault(); const i = shown.findIndex((c) => c.capture); if (i >= 0) runAt(i); }
     else if (e.key === 'Enter') { e.preventDefault(); runAt(selected); }
     else if (e.key === 'Escape') { e.preventDefault(); input.value = ''; hideResults(); input.blur(); }
   });
 
+  // the keys of Settings › Keys (0.17.0); Alt+1 … 9 and Escape stay as they are
+  bind({
+    'cmd.focus': () => { input.focus(); },
+    create: () => { if (document.querySelector('.modal-backdrop, .sheet-backdrop')) return false; openCreate(); },
+    help: () => { if (document.querySelector('.modal-backdrop, .sheet-backdrop')) return false; showHelp(); },
+    'go.home': () => go('#/home'),
+    'go.projects': () => go('#/m/projects'),
+    'go.write': () => go('#/m/library'),
+    'go.research': () => go('#/m/scraper'),
+    'go.settings': () => go('#/settings'),
+    sync: () => { runSync(); },
+  });
   document.addEventListener('keydown', (e) => {
     const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); input.focus(); }
-    else if (e.key === '/' && !typing) { e.preventDefault(); input.focus(); }
-    else if (e.altKey && !e.metaKey && !e.ctrlKey && /^Digit[1-9]$/.test(e.code)) {
+    if (e.altKey && !e.metaKey && !e.ctrlKey && /^Digit[1-9]$/.test(e.code)) {
       const j = jumps()[Number(e.code.slice(5)) - 1];
       if (j) { e.preventDefault(); hideResults(); input.blur(); j.run(); }
     }
-    else if (e.key.toLowerCase() === 'n' && !typing && !e.metaKey && !e.ctrlKey && !e.altKey && !document.querySelector('.modal-backdrop, .sheet-backdrop')) { e.preventDefault(); openCreate(); }
     else if (e.key === 'Escape' && !typing) { if (!closeTopModal()) setDrawer(false); }
   });
 
   function showHelp() {
     const rows = [
-      [isMac ? '⌘K  /' : 'Ctrl K  /', t('help.focus')],
-      ['N', t('help.create')],
-      [isMac ? '⌥1 … ⌥7' : 'Alt 1 … Alt 7', t('help.jump')],
-      [isMac ? '⌘ Enter' : 'Ctrl Enter', t('help.note')],
+      ...helpRows().filter((r) => r.keys.length).map((r) => [r.keys.join('  '), t(`keys.${r.id}`)]),
       ['↑ ↓', t('help.choose')],
       ['Enter', t('help.run')],
-      ['⇧ Enter', t('help.copy')],
       ['Esc', t('help.close')],
     ];
+    const more = h('button', { type: 'button', class: 'btn small', onclick: () => { closeTopModal(); go('#/settings/keys'); } }, h('span', { text: t('help.change') }));
     modal({
       title: t('help.title'),
-      body: h('dl', { class: 'keys' }, rows.flatMap(([k, v]) => [h('dt', {}, h('kbd', { text: k })), h('dd', { text: v })])),
+      body: h('div', {}, h('dl', { class: 'keys' }, rows.flatMap(([k, v]) => [h('dt', {}, h('kbd', { text: k })), h('dd', { text: v })])), hasKeyboard() ? h('div', { class: 'btn-row' }, more) : null),
       actions: [{ label: t('action.close'), value: true, kind: 'primary' }],
     });
   }

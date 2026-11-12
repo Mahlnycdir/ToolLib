@@ -16,6 +16,11 @@ import { SOURCES } from '../services/research-sources.js';
 import { errorText } from './research-view.js';
 import { crawlDefaults } from '../services/crawl.js';
 import { MIN_PASSWORD, SettingsFileError, applySettings, collectSettings, diffSettings, exportSettings, fileName, readSettingsFile, undoImport, undoInfo } from '../services/settings-file.js';
+import { normalize } from '../services/search.js';
+import { LEARN_SOURCES, learnOn, setLearnOn } from '../services/learn.js';
+import { ACTIONS, AREAS, keysOf, formatCombo, setKeys, resetKeys, isDefault, conflictOf, comboOf, hasKeyboard, onKeysChange } from '../services/keys.js';
+import { SHORTHAND } from './tex-catalog.js';
+import { openTexPalette } from './tex-palette.js';
 
 // Progress of the current stage: the formulary (stage 3). The foundation and stage 2 are done.
 // Mark a point as done when it is delivered; ENTE decides the order of the open ones.
@@ -63,41 +68,128 @@ export function renderModule(main, mod) {
     h('p', { class: 'muted', text: mod.step ? t('module.arrives', { step: mod.step }) : t('module.later') })));
 }
 
-export function renderSettings(main, { onChange, onCheckUpdate, onSync, section }) {
-  main.append(h('h1', { class: 'view-title', text: t('settings.title') }));
+// Settings (0.17.0): sections in one column with a bar to jump (on the left on a wide screen, as chips on the phone)
+// and a search over every setting. Keys and addresses stand together under "Access". What needs a keyboard (Keys)
+// shows only where there is one. Everything here travels in the settings file (Backup), except what belongs to this
+// device (its name, the keyboard switch, the cache of Python).
+const SECTIONS = [
+  { id: 'general', icon: 'settings' },
+  { id: 'write', icon: 'pen' },
+  { id: 'keys', icon: 'keyboard', keyboard: true },
+  { id: 'access', icon: 'key' },
+  { id: 'knowledge', icon: 'git' },
+  { id: 'research', icon: 'search' },
+  { id: 'look', icon: 'palette' },
+  { id: 'python', icon: 'py' },
+  { id: 'device', icon: 'device' },
+  { id: 'backup', icon: 'shield' },
+  { id: 'plan', icon: 'list' },
+];
 
-  // Language
+export function renderSettings(main, { onChange, onCheckUpdate, onSync, section }) {
+  const wrap = h('div', { class: 'settings' });
+  const nav = h('nav', { class: 'set-nav', 'aria-label': t('settings.title') });
+  const body = h('div', { class: 'set-body' });
+  const search = h('input', { class: 'field set-search', type: 'search', id: 'settings-search', placeholder: t('settings.search'), 'aria-label': t('settings.search'), autocomplete: 'off' });
+  const none = h('p', { class: 'muted set-none', hidden: true, text: t('settings.search.none') });
+  wrap.append(nav, body);
+  main.append(h('h1', { class: 'view-title', text: t('settings.title') }), wrap);
+
+  const keyboard = hasKeyboard();
+  const content = {
+    general: () => [languageCard(), aboutCard(onCheckUpdate)],
+    write: () => [editorCard(), commandsCard(), macrosCard()],
+    keys: () => [keysCard()],
+    access: () => [syncCard({ onSync }), researchCard(), kobraCard()],
+    knowledge: () => [syncBehaviourCard({ onSync })],
+    research: () => [researchSourcesCard(), learnCard()],
+    look: () => [accentsCard(onChange)],
+    python: () => [pythonCard()],
+    device: () => [deviceCard({ onChange }), keyboardCard()],
+    backup: () => [backupCard()],
+    plan: () => [planCard()],
+  };
+  const links = [];
+  for (const sec of SECTIONS) {
+    if (sec.keyboard && !keyboard) continue;
+    const box = h('section', { class: 'set-sec', id: `set-${sec.id}`, dataset: { sec: sec.id } },
+      h('header', { class: 'set-sec-head' }, h('span', { class: 'icon set-sec-icon', html: icon(sec.icon) }),
+        h('div', {}, h('h2', { class: 'set-sec-title', text: t(`settings.sec.${sec.id}`) }), h('p', { class: 'muted small', text: t(`settings.sec.${sec.id}.hint`) }))),
+      ...content[sec.id]());
+    body.append(box);
+    const link = h('a', { href: `#/settings/${sec.id}`, class: 'set-link', dataset: { sec: sec.id } }, h('span', { class: 'icon', html: icon(sec.icon) }), h('span', { text: t(`settings.sec.${sec.id}`) }));
+    link.addEventListener('click', (e) => { e.preventDefault(); search.value = ''; filter(); jump(sec.id); history.replaceState(history.state, '', `#/settings/${sec.id}`); });
+    links.push(link);
+  }
+  body.append(none);
+  nav.append(search, h('div', { class: 'set-links' }, ...links));
+
+  // search: every card that holds all the words, its section above it
+  function filter() {
+    const words = normalize(search.value.trim()).split(/\s+/).filter(Boolean);
+    let any = false;
+    for (const sec of body.querySelectorAll('.set-sec')) {
+      let hits = 0;
+      for (const c of sec.querySelectorAll(':scope > .card')) {
+        const hay = normalize(`${c.textContent} ${[...c.querySelectorAll('input')].map((i) => `${i.placeholder || ''} ${i.getAttribute('aria-label') || ''}`).join(' ')}`);
+        const ok = !words.length || words.every((w) => hay.includes(w));
+        c.hidden = !ok;
+        if (ok) hits++;
+      }
+      sec.hidden = !hits;
+      if (hits) any = true;
+    }
+    none.hidden = any;
+    wrap.classList.toggle('searching', words.length > 0);
+  }
+  search.addEventListener('input', filter);
+
+  function jump(id) {
+    const el = main.querySelector(`#settings-${id}`) || main.querySelector(`#set-${id}`);
+    if (!el) return;
+    el.scrollIntoView({ block: 'start' });
+    mark(el.closest('.set-sec')?.dataset.sec);
+  }
+  // the section you are in is marked in the bar
+  function mark(id) { for (const l of links) l.classList.toggle('on', l.dataset.sec === id); }
+  const spy = () => {
+    const top = main.getBoundingClientRect().top + 90;
+    let cur = SECTIONS[0].id;
+    for (const sec of body.querySelectorAll('.set-sec:not([hidden])')) if (sec.getBoundingClientRect().top <= top) cur = sec.dataset.sec;
+    mark(cur);
+  };
+  main.addEventListener('scroll', spy, { passive: true });
+  mark(SECTIONS[0].id);
+  if (section) requestAnimationFrame(() => jump(section));
+}
+
+function languageCard() {
   const seg = h('div', { class: 'segmented', role: 'group', 'aria-label': t('settings.language') });
   for (const lang of ['en', 'de']) {
     seg.append(h('button', {
-      type: 'button',
-      class: getLang() === lang ? 'on' : '',
-      'aria-pressed': String(getLang() === lang),
-      text: t(`settings.language.${lang}`),
+      type: 'button', class: getLang() === lang ? 'on' : '', 'aria-pressed': String(getLang() === lang), text: t(`settings.language.${lang}`),
       onclick: () => { setLang(lang); },
     }));
   }
-  main.append(card(t('settings.language'), seg));
+  return card(t('settings.language'), seg);
+}
 
-  main.append(syncCard({ onSync }));
-  main.append(researchCard());
-  main.append(backupCard());
-  main.append(deviceCard({ onChange }));
-  main.append(pythonCard());
+function aboutCard(onCheckUpdate) {
+  const { version } = pwaState();
+  return card(t('settings.about'),
+    h('p', {}, h('span', { class: 'muted', text: `${t('settings.version')}: ` }), h('span', { text: version || '–' })),
+    h('button', { type: 'button', class: 'btn', onclick: onCheckUpdate }, iconEl('refresh'), h('span', { text: t('cmd.update') })));
+}
 
-  // Accents: one row per module
+function accentsCard(onChange) {
   const rows = h('div', { class: 'accent-rows' });
   for (const mod of [SHELL, ...READY]) {
     const current = accentOf(mod.id).id;
     const swatches = h('div', { class: 'swatches' });
     for (const a of ACCENTS) {
       swatches.append(h('button', {
-        type: 'button',
-        class: `swatch${a.id === current ? ' on' : ''}`,
-        style: { background: a.color },
-        title: t(`accent.${a.id}`),
-        'aria-label': `${t(`module.${mod.id}.name`)}: ${t(`accent.${a.id}`)}`,
-        'aria-pressed': String(a.id === current),
+        type: 'button', class: `swatch${a.id === current ? ' on' : ''}`, style: { background: a.color }, title: t(`accent.${a.id}`),
+        'aria-label': `${t(`module.${mod.id}.name`)}: ${t(`accent.${a.id}`)}`, 'aria-pressed': String(a.id === current),
         onclick: () => { setAccent(mod.id, a.id); onChange(); },
       }));
     }
@@ -105,15 +197,11 @@ export function renderSettings(main, { onChange, onCheckUpdate, onSync, section 
     paintAccent(tile, mod.id);
     rows.append(h('div', { class: 'accent-row' }, tile, h('span', { class: 'accent-name', text: t(`module.${mod.id}.name`) }), swatches));
   }
-  main.append(card(t('settings.accents'), h('p', { class: 'muted', text: t('settings.accents.hint') }), rows));
+  return card(t('settings.accents'), h('p', { class: 'muted', text: t('settings.accents.hint') }), rows);
+}
 
-  // About
-  const { version } = pwaState();
-  main.append(card(t('settings.about'),
-    h('p', {}, h('span', { class: 'muted', text: `${t('settings.version')}: ` }), h('span', { text: version || '–' })),
-    h('button', { type: 'button', class: 'btn', onclick: onCheckUpdate }, iconEl('refresh'), h('span', { text: t('cmd.update') }))));
-
-  // The build plan of the current stage (on Home until 0.14): what is done and what comes
+// The build plan of the current stage: what is done and what comes
+function planCard() {
   const steps = h('ol', { class: 'steps' });
   STAGE.forEach((p, i) => {
     steps.append(h('li', { class: p.done ? 'done' : '' },
@@ -122,9 +210,216 @@ export function renderSettings(main, { onChange, onCheckUpdate, onSync, section 
   });
   const plan = card(t('home.progress.title'), steps, h('p', { class: 'muted small', text: t('home.progress.foundation') }));
   plan.id = 'settings-plan';
-  main.append(plan);
+  return plan;
+}
 
-  if (section) requestAnimationFrame(() => main.querySelector(`#settings-${section}`)?.scrollIntoView({ block: 'start' }));
+// ------------------------------------------------------------------ writing (0.17.0)
+const check = (id, key, label, hint, fallback = true, onSet = null) => {
+  const box = h('input', { type: 'checkbox', id, checked: loadPref(key, fallback) !== false ? true : null });
+  box.addEventListener('change', () => { savePref(key, box.checked); onSet?.(box.checked); });
+  return h('label', { class: 'set-check', for: id }, box, h('span', {}, h('b', { text: label }), hint ? h('span', { class: 'field-hint', text: hint }) : null));
+};
+
+function editorCard() {
+  const size = Number(loadPref('editor.fontSize', 16)) || 16;
+  const sizes = h('div', { class: 'segmented', role: 'group', 'aria-label': t('settings.write.size') });
+  for (const n of [14, 15, 16, 18, 20]) {
+    sizes.append(h('button', { type: 'button', class: n === size ? 'on' : '', 'aria-pressed': String(n === size), text: String(n), onclick: (e) => { savePref('editor.fontSize', n); for (const b of sizes.children) b.classList.toggle('on', b === e.currentTarget); } }));
+  }
+  const mode = loadPref('editor.mode', 'split');
+  const modes = h('div', { class: 'segmented', role: 'group', 'aria-label': t('settings.write.mode') });
+  for (const m of ['split', 'write', 'preview']) {
+    modes.append(h('button', { type: 'button', class: m === mode ? 'on' : '', text: t(`editor.mode.${m}`), onclick: (e) => { savePref('editor.mode', m); for (const b of modes.children) b.classList.toggle('on', b === e.currentTarget); } }));
+  }
+  const palette = h('button', { type: 'button', class: 'btn small', onclick: () => openTexPalette(() => {}, { inMath: true }) }, h('span', { text: t('settings.write.palette') }));
+  const box = card(t('settings.write.editor'),
+    h('p', { class: 'muted small', text: t('settings.write.hint') }),
+    h('div', { class: 'set-field' }, h('span', { class: 'field-label', text: t('settings.write.size') }), sizes),
+    h('div', { class: 'set-field' }, h('span', { class: 'field-label', text: t('settings.write.mode') }), modes),
+    check('editor-shorthand', 'editor.shorthand', t('settings.write.shorthand'), t('settings.write.shorthand.hint')),
+    shorthandList(),
+    check('editor-lists', 'editor.lists', t('settings.write.lists'), t('settings.write.lists.hint')),
+    check('editor-brackets', 'editor.brackets', t('settings.write.brackets'), t('settings.write.brackets.hint')),
+    check('editor-spell', 'editor.spellcheck', t('settings.write.spell'), ''),
+    h('div', { class: 'btn-row' }, palette));
+  box.id = 'settings-editor';
+  return box;
+}
+
+function shorthandList() {
+  const rows = SHORTHAND.map((c) => h('tr', {}, h('td', {}, h('code', { text: c.trigger })), h('td', {}, h('code', { text: c.text.replace(/#0/g, '').replace(/#(\d)/g, '□').replace(/\n/g, '↵') })), h('td', { class: 'muted small', text: t(`settings.write.where.${c.where}`) })));
+  return h('details', { class: 'set-details' }, h('summary', { class: 'small', text: t('settings.write.shorthand.list', { n: SHORTHAND.length }) }),
+    h('div', { class: 'table-wrap' }, h('table', { class: 'set-table' }, h('tbody', {}, ...rows))));
+}
+
+// Your own commands: what you type, what it becomes (#1 … for the places to fill, #0 the cursor at the end), where it
+// works, and whether it expands by itself or is offered in the completion.
+function commandsCard() {
+  const box = card(t('settings.write.commands'));
+  box.id = 'settings-commands';
+  const list = h('div', { class: 'cmd-list' });
+  const read = () => (loadPref('editor.commands', []) || []).filter((c) => c && typeof c === 'object');
+  const save = (items) => savePref('editor.commands', items.filter((c) => c.trigger.trim() && c.text));
+  function draw() {
+    const items = read();
+    list.replaceChildren(...(items.length ? items.map((c, i) => row(c, i, items)) : [h('p', { class: 'muted small', text: t('settings.write.commands.empty') })]));
+  }
+  function row(c, i, items) {
+    const trig = h('input', { class: 'field cmd-trigger', value: c.trigger, placeholder: t('settings.write.commands.trigger'), 'aria-label': t('settings.write.commands.trigger'), autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false' });
+    const text = h('input', { class: 'field cmd-text', value: c.text, placeholder: '\\mathcal{L}_{#1}#0', 'aria-label': t('settings.write.commands.text'), autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false' });
+    const where = h('select', { class: 'field cmd-where', 'aria-label': t('settings.write.commands.where') }, ...['math', 'text', 'any'].map((w) => h('option', { value: w, selected: (c.where || 'any') === w ? true : null, text: t(`settings.write.where.${w}`) })));
+    const auto = h('label', { class: 'cmd-auto small' }, h('input', { type: 'checkbox', checked: c.auto ? true : null }), h('span', { text: t('settings.write.commands.auto') }));
+    const del = h('button', { type: 'button', class: 'icon-btn', title: t('action.remove'), 'aria-label': t('action.remove'), html: icon('trash') });
+    const commit = () => { items[i] = { trigger: trig.value.trim(), text: text.value.replace(/\\n/g, '\n'), where: where.value, auto: auto.firstChild.checked }; save(items); };
+    for (const el of [trig, text, where]) el.addEventListener('change', commit);
+    auto.firstChild.addEventListener('change', commit);
+    del.addEventListener('click', () => { items.splice(i, 1); save(items); draw(); });
+    return h('div', { class: 'cmd-row' }, trig, text, where, auto, del);
+  }
+  const add = h('button', { type: 'button', class: 'btn small', id: 'settings-command-add' }, iconEl('plus'), h('span', { text: t('settings.write.commands.add') }));
+  add.addEventListener('click', () => { const items = read(); items.push({ trigger: '', text: '', where: 'math', auto: false }); savePref('editor.commands', items); draw(); list.querySelector('.cmd-row:last-child .cmd-trigger')?.focus(); });
+  box.append(h('p', { class: 'muted small', text: t('settings.write.commands.hint') }), list, h('div', { class: 'btn-row' }, add));
+  draw();
+  return box;
+}
+
+// Your own LaTeX macros, used wherever a formula is set (pages, cards, the preview) and offered after "\\".
+function macrosCard() {
+  const box = card(t('settings.write.macros'));
+  box.id = 'settings-macros';
+  const area = h('textarea', { class: 'field code-edit', id: 'settings-macros-text', rows: '5', spellcheck: 'false', autocapitalize: 'off', autocorrect: 'off', placeholder: '\\newcommand{\\vev}[1]{\\langle #1 \\rangle}\n\\newcommand{\\Lag}{\\mathcal{L}}' });
+  const own = loadPref('editor.macros', {}) || {};
+  area.value = Object.entries(own).map(([k, v]) => { const n = Math.max(0, ...[...String(v).matchAll(/#(\d)/g)].map((m) => +m[1])); return `\\newcommand{${k}}${n ? `[${n}]` : ''}{${v}}`; }).join('\n');
+  const status = h('p', { class: 'small muted', role: 'status' });
+  area.addEventListener('change', () => {
+    const { macros, bad } = parseMacros(area.value);
+    savePref('editor.macros', macros);
+    status.textContent = bad.length ? t('settings.write.macros.bad', { lines: bad.join(', ') }) : t('settings.write.macros.saved', { n: Object.keys(macros).length });
+  });
+  box.append(h('p', { class: 'muted small', text: t('settings.write.macros.hint') }), area, status);
+  return box;
+}
+// \newcommand{\name}[n]{expansion} or \name = expansion, one per line → { "\\name": "expansion" }; bad: line numbers.
+export function parseMacros(text) {
+  const macros = {};
+  const bad = [];
+  String(text).split('\n').forEach((raw, i) => {
+    const line = raw.trim();
+    if (!line || line.startsWith('%')) return;
+    const m = line.match(/^\\(?:re)?newcommand\*?\s*\{?(\\[a-zA-Z]+)\}?\s*(?:\[(\d)\])?\s*\{([\s\S]*)\}\s*$/) || line.match(/^(\\[a-zA-Z]+)\s*()=\s*(.+)$/);
+    if (!m || m[1].length > 41 || m[3].length > 500) { bad.push(i + 1); return; }
+    macros[m[1]] = m[3].trim();
+  });
+  return { macros, bad };
+}
+
+// ------------------------------------------------------------------ keys (0.17.0)
+function keysCard() {
+  const box = card(t('settings.keys.title'));
+  box.id = 'settings-keys';
+  box.dataset.devices = 'keyboard';
+  const body = h('div', { class: 'keys-list' });
+  const reset = h('button', { type: 'button', class: 'btn small', id: 'keys-reset' }, iconEl('undo'), h('span', { text: t('settings.keys.resetAll') }));
+  reset.addEventListener('click', async () => { if (await confirmDialog(t('settings.keys.resetAll'), t('settings.keys.resetAll.confirm'), { okLabel: t('settings.keys.resetAll') })) resetKeys(); });
+  function draw() {
+    body.replaceChildren(...AREAS.map((area) => {
+      const acts = ACTIONS.filter((a) => a.area === area);
+      return h('div', { class: 'keys-area' }, h('h3', { class: 'set-sub', text: t(`keys.area.${area}`) }),
+        h('ul', { class: 'keys-rows' }, ...acts.map((a) => keyRow(a))));
+    }));
+  }
+  function keyRow(a) {
+    const combos = keysOf(a.id);
+    const chips = h('span', { class: 'keys-chips' }, ...(combos.length ? combos.map((c) => h('kbd', { text: formatCombo(c) })) : [h('span', { class: 'muted small', text: t('settings.keys.none') })]));
+    const li = h('li', { class: `keys-row${isDefault(a.id) ? '' : ' changed'}`, dataset: { action: a.id } }, h('span', { class: 'keys-label', text: t(`keys.${a.id}`) }), chips);
+    if (a.fixed) return li;
+    const change = h('button', { type: 'button', class: 'btn small keys-change', text: t('settings.keys.change') });
+    change.addEventListener('click', () => record(a, li, chips));
+    const back = isDefault(a.id) ? null : h('button', { type: 'button', class: 'icon-btn keys-default', title: t('settings.keys.default'), 'aria-label': t('settings.keys.default'), html: icon('undo'), onclick: () => resetKeys(a.id) });
+    li.append(h('span', { class: 'keys-btns' }, change, back));
+    return li;
+  }
+  // the next key combination you press becomes the key of the action; Escape stops, Backspace clears it
+  function record(a, li, chips) {
+    li.classList.add('recording');
+    chips.replaceChildren(h('span', { class: 'small keys-press', text: t('settings.keys.press') }));
+    const onKey = async (e) => {
+      if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      window.removeEventListener('keydown', onKey, true);
+      li.classList.remove('recording');
+      if (e.key === 'Escape') { draw(); return; }
+      if (e.key === 'Backspace' || e.key === 'Delete') { setKeys(a.id, []); return; }
+      const c = comboOf(e);
+      if (!c) { draw(); return; }
+      const other = conflictOf(a.id, c);
+      if (other) {
+        const ok = await confirmDialog(t('settings.keys.taken'), t('settings.keys.taken.text', { keys: formatCombo(c), action: t(`keys.${other}`) }), { okLabel: t('settings.keys.take') });
+        if (!ok) { draw(); return; }
+        setKeys(other, keysOf(other).filter((k) => formatCombo(k) !== formatCombo(c)));
+      }
+      setKeys(a.id, [c]);
+    };
+    window.addEventListener('keydown', onKey, true);
+  }
+  const off = onKeysChange(() => { if (box.isConnected) draw(); else off(); });
+  box.append(h('p', { class: 'muted small', text: t('settings.keys.hint') }), body, h('div', { class: 'btn-row' }, reset));
+  draw();
+  return box;
+}
+
+function keyboardCard() {
+  const box = card(t('settings.keyboard'));
+  box.id = 'settings-keyboard';
+  box.append(check('device-keyboard', 'device.keyboard', t('settings.keyboard.use'), t('settings.keyboard.hint'), false, () => location.reload()));
+  return box;
+}
+
+// ------------------------------------------------------------------ learning sources and the start mode of research
+function learnCard() {
+  const box = card(t('settings.learn'));
+  box.id = 'settings-learn';
+  const list = h('ul', { class: 'research-sources' });
+  for (const src of LEARN_SOURCES) {
+    const id = `learn-src-${src.id}`;
+    const cb = h('input', { type: 'checkbox', id, checked: learnOn(src.id) ? true : null });
+    cb.addEventListener('change', () => setLearnOn(src.id, cb.checked));
+    list.append(h('li', {}, h('label', { class: 'rs-check', for: id }, cb, h('span', {}, h('strong', { text: src.name }), h('span', { class: 'muted small', text: ` · ${src.groups.map((g) => t(`learn.group.${g}`)).join(', ')}${src.helper ? ` · ${t('settings.learn.helper')}` : ''}` })))));
+  }
+  const mode = loadPref('research.mode', 'learn');
+  const seg = h('div', { class: 'segmented', role: 'group', 'aria-label': t('settings.learn.mode') });
+  for (const m of ['learn', 'papers']) seg.append(h('button', { type: 'button', class: m === mode ? 'on' : '', text: t(`research.mode.${m}`), onclick: (e) => { savePref('research.mode', m); for (const b of seg.children) b.classList.toggle('on', b === e.currentTarget); } }));
+  box.append(h('p', { class: 'muted small', text: t('settings.learn.hint') }), h('div', { class: 'set-field' }, h('span', { class: 'field-label', text: t('settings.learn.mode') }), seg), list);
+  return box;
+}
+
+// ------------------------------------------------------------------ Kobra's access to GitHub (until Kobra gets accounts)
+function kobraCard() {
+  const box = card(t('settings.kobra'));
+  box.id = 'settings-kobra';
+  const read = (k) => { try { const v = localStorage.getItem(`kobra.git.${k}`); return v ? String(JSON.parse(v)) : ''; } catch { return ''; } };
+  const field = (k, label, attrs) => {
+    const input = h('input', { class: 'field', id: `kobra-${k}`, value: read(k), autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', ...attrs });
+    input.addEventListener('change', () => { try { localStorage.setItem(`kobra.git.${k}`, JSON.stringify(input.value.trim())); } catch { /* storage full */ } });
+    return h('label', { class: 'set-field', for: `kobra-${k}` }, h('span', { class: 'field-label', text: label }), input);
+  };
+  box.append(h('p', { class: 'muted small', text: t('settings.kobra.hint') }),
+    field('proxy', t('settings.sync.proxy'), { type: 'url', inputmode: 'url', placeholder: 'https://git-proxy.yourname.workers.dev' }),
+    secretField(field('token', t('settings.sync.token'), { type: 'password', autocomplete: 'off', placeholder: 'github_pat_…' })),
+    field('name', t('settings.sync.name'), { type: 'text', autocomplete: 'name' }),
+    field('email', t('settings.sync.email'), { type: 'email', autocomplete: 'email' }));
+  return box;
+}
+// A password field with a button to show it.
+function secretField(row) {
+  const input = row.querySelector('input');
+  const show = h('button', { type: 'button', class: 'btn small', text: t('settings.sync.show') });
+  show.addEventListener('click', () => { const hidden = input.type === 'password'; input.type = hidden ? 'text' : 'password'; show.textContent = t(hidden ? 'settings.sync.hide' : 'settings.sync.show'); });
+  const r = h('div', { class: 'row-input' });
+  input.before(r);
+  r.append(input, show);
+  return row;
 }
 
 // Repository, token, proxy and who writes the commits. Every field is saved when it loses the focus.
@@ -154,8 +449,6 @@ function syncCard({ onSync }) {
   const proxy = field('proxy', t('settings.sync.proxy'), { type: 'url', placeholder: 'https://git-proxy.yourname.workers.dev', inputmode: 'url' }, t('settings.sync.proxy.hint'));
   const name = field('name', t('settings.sync.name'), { type: 'text', autocomplete: 'name' });
   const email = field('email', t('settings.sync.email'), { type: 'email', autocomplete: 'email' });
-  const device = field('device', t('settings.sync.device'), { type: 'text', placeholder: s.device }, t('settings.sync.device.hint'));
-  device.input.value = loadPref('sync.device', ''); // the placeholder shows the automatic name
 
   const result = h('ul', { class: 'checks', role: 'status' });
   const test = h('button', { type: 'button', class: 'btn' }, iconEl('link'), h('span', { text: t('settings.sync.test') }));
@@ -180,7 +473,7 @@ function syncCard({ onSync }) {
   const box = h('section', { class: 'card', id: 'settings-sync' },
     h('h2', { text: t('settings.sync') }),
     h('p', { class: 'muted', text: t('settings.sync.hint') }),
-    repo.row, branch.row, token.row, proxy.row, name.row, email.row, device.row);
+    repo.row, branch.row, token.row, proxy.row, name.row, email.row);
 
   const kobra = kobraSettings();
   if ((kobra.proxy || kobra.name || kobra.email) && !(s.proxy && s.name && s.email)) {
@@ -195,10 +488,22 @@ function syncCard({ onSync }) {
     });
     box.insertBefore(h('div', { class: 'btn-row' }, take), repo.row);
   }
+  box.append(h('div', { class: 'btn-row' }, test, syncNow), result);
+  return box;
+}
+
+// How syncing behaves on this device (0.17.0 apart from the access): by itself or not, the name of the device.
+function syncBehaviourCard({ onSync }) {
+  const s = syncSettings();
+  const device = h('input', { class: 'field', id: 'sync-device', value: loadPref('sync.device', ''), placeholder: s.device, autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false' });
+  device.addEventListener('change', () => saveSyncSetting('device', device.value));
   const auto = h('label', { class: 'set-check' }, h('input', { type: 'checkbox', id: 'sync-auto', checked: loadPref('sync.auto', true) !== false ? true : null }),
     h('span', {}, h('b', { text: t('settings.sync.auto') }), h('span', { class: 'field-hint', text: t('settings.sync.auto.hint') })));
   auto.firstChild.addEventListener('change', (e) => savePref('sync.auto', e.target.checked));
-  box.append(auto, h('div', { class: 'btn-row' }, test, syncNow), result);
+  const box = card(t('settings.knowledge.title'), auto,
+    h('label', { class: 'set-field', for: 'sync-device' }, h('span', { class: 'field-label', text: t('settings.sync.device') }), device, h('span', { class: 'field-hint', text: t('settings.sync.device.hint') })),
+    h('div', { class: 'btn-row' }, syncButton(onSync)));
+  box.id = 'settings-knowledge';
   return box;
 }
 
@@ -238,15 +543,6 @@ function researchCard() {
   const oa = field('openalexKey', t('settings.research.openalex'), { type: 'password', autocomplete: 'off' }, t('settings.research.openalex.hint'), { href: 'https://openalex.org/settings/api', text: 'openalex.org/settings/api' });
   const s2 = field('s2Key', t('settings.research.s2'), { type: 'password', autocomplete: 'off' }, t('settings.research.s2.hint'), { href: 'https://www.semanticscholar.org/product/api', text: 'semanticscholar.org/product/api' });
 
-  const list = h('ul', { class: 'research-sources' });
-  const lang = getLang();
-  for (const src of SOURCES) {
-    const box = h('input', { type: 'checkbox', checked: sourceOn(src.id, s) ? true : null, id: `research-src-${src.id}` });
-    box.addEventListener('change', () => setSourceOn(src.id, box.checked));
-    list.append(h('li', {}, h('label', { class: 'rs-check', for: `research-src-${src.id}` }, box,
-      h('span', {}, h('strong', { text: src.name }), h('span', { class: 'muted small', text: ` · ${src.what[lang] || src.what.en}${src.cors === 'no' ? ` · ${t('settings.research.viaWorker')}` : ''}` })))));
-  }
-
   const result = h('ul', { class: 'checks', role: 'status' });
   const line = (l) => h('li', { class: `check ${l.status}` },
     iconEl({ ok: 'check', warn: 'warn', fail: 'close', info: 'info', busy: 'refresh' }[l.status] || 'info', l.status === 'busy' ? 'spin' : ''),
@@ -261,6 +557,29 @@ function researchCard() {
       test.disabled = false;
     }
   });
+  return h('section', { class: 'card', id: 'settings-research' },
+    h('h2', { text: t('settings.research') }),
+    h('p', { class: 'muted', text: t('settings.research.hint') }),
+    worker.row, token.row,
+    h('h3', { class: 'set-sub', text: t('settings.research.helperTitle') }),
+    h('p', { class: 'muted small', text: t('settings.research.helperIntro') }),
+    helper.row, helperToken.row,
+    h('h3', { class: 'set-sub', text: t('settings.research.keys') }),
+    oa.row, s2.row,
+    h('div', { class: 'btn-row' }, test), result);
+}
+
+// Which paper sources the search asks, and what a run through a website starts with.
+function researchSourcesCard() {
+  const s = researchSettings();
+  const list = h('ul', { class: 'research-sources' });
+  const lang = getLang();
+  for (const src of SOURCES) {
+    const box = h('input', { type: 'checkbox', checked: sourceOn(src.id, s) ? true : null, id: `research-src-${src.id}` });
+    box.addEventListener('change', () => setSourceOn(src.id, box.checked));
+    list.append(h('li', {}, h('label', { class: 'rs-check', for: `research-src-${src.id}` }, box,
+      h('span', {}, h('strong', { text: src.name }), h('span', { class: 'muted small', text: ` · ${src.what[lang] || src.what.en}${src.cors === 'no' ? ` · ${t('settings.research.viaWorker')}` : ''}` })))));
+  }
   // going through a website (0.14.3): what a new run starts with
   const cd = crawlDefaults();
   const crawlNum = (key, label, value, attrs, hint) => {
@@ -271,17 +590,8 @@ function researchCard() {
   const pdfs = h('label', { class: 'set-check' }, h('input', { type: 'checkbox', id: 'crawl-set-pdfs', checked: cd.pdfs ? true : null }),
     h('span', {}, h('b', { text: t('crawl.pdfs') }), h('span', { class: 'field-hint', text: t('crawl.pdfs.hint') })));
   pdfs.firstChild.addEventListener('change', (e) => savePref('crawl.pdfs', e.target.checked));
-  return h('section', { class: 'card', id: 'settings-research' },
-    h('h2', { text: t('settings.research') }),
-    h('p', { class: 'muted', text: t('settings.research.hint') }),
-    worker.row, token.row,
-    h('h3', { class: 'set-sub', text: t('settings.research.helperTitle') }),
-    h('p', { class: 'muted small', text: t('settings.research.helperIntro') }),
-    helper.row, helperToken.row,
-    h('h3', { class: 'set-sub', text: t('settings.research.keys') }),
-    oa.row, s2.row,
-    h('h3', { class: 'set-sub', text: t('settings.research.sources') }), list,
-    h('div', { class: 'btn-row' }, test), result,
+  return h('section', { class: 'card', id: 'settings-research-sources' },
+    h('h2', { text: t('settings.research.sources') }), list,
     h('h3', { class: 'set-sub', text: t('settings.crawl') }),
     h('p', { class: 'muted small', text: t('settings.crawl.hint') }),
     h('div', { class: 'cr-row' }, crawlNum('depth', t('crawl.depth'), cd.depth, { min: '0', max: '10', step: '1' }, t('crawl.depth.hint')),
@@ -431,6 +741,10 @@ const SETTING_LABEL = {
   'research.worker': ['settings.research', 'settings.research.worker'], 'research.token': ['settings.research', 'settings.research.token'], 'research.helper': ['settings.research', 'settings.research.helper'],
   'research.helperToken': ['settings.research', 'settings.research.helperToken'], 'research.openalexKey': ['settings.research', 'settings.research.openalex'], 'research.s2Key': ['settings.research', 'settings.research.s2'],
   'research.off': ['settings.research', 'backup.sourcesOff'], 'crawl.depth': ['settings.crawl', 'crawl.depth'], 'crawl.max': ['settings.crawl', 'crawl.max'], 'crawl.gap': ['settings.crawl', 'settings.crawl.gap'], 'crawl.pdfs': ['settings.crawl', 'crawl.pdfs'],
+  'editor.fontSize': ['settings.sec.write', 'settings.write.size'], 'editor.shorthand': ['settings.sec.write', 'settings.write.shorthand'], 'editor.lists': ['settings.sec.write', 'settings.write.lists'],
+  'editor.brackets': ['settings.sec.write', 'settings.write.brackets'], 'editor.spellcheck': ['settings.sec.write', 'settings.write.spell'], 'editor.mode': ['settings.sec.write', 'settings.write.mode'],
+  'editor.commands': ['settings.sec.write', 'settings.write.commands'], 'editor.macros': ['settings.sec.write', 'settings.write.macros'], keys: ['', 'settings.sec.keys'],
+  'learn.off': ['settings.research', 'backup.learnOff'], 'research.mode': ['settings.research', 'backup.researchMode'],
 };
 function settingLabel(key) {
   const k = key.replace(/^toollib\./, '');
@@ -444,7 +758,8 @@ function settingValue(r, v) {
   if (v === undefined || v === '') return t('backup.empty');
   if (r.secret) return '••••••';
   if (typeof v === 'boolean') return t(v ? 'backup.yes' : 'backup.no');
-  if (Array.isArray(v)) return v.length ? v.join(', ') : t('backup.empty');
+  if (Array.isArray(v) && v.every((x) => typeof x === 'string')) return v.length ? v.join(', ') : t('backup.empty');
+  if (v && typeof v === 'object') { const n = Array.isArray(v) ? v.length : Object.keys(v).length; return n ? t('backup.entries', { n }) : t('backup.empty'); }
   const s = String(v);
   return s.length > 60 ? `${s.slice(0, 59)}…` : s;
 }

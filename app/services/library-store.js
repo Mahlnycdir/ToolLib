@@ -78,6 +78,17 @@ export const moveChapter = (path, i, dir) => changeChapters(path, (cs) => {
   return cs;
 });
 
+// Puts a chapter in front of the chapter at `before` (0.17.0, dragging in the contents); -1 or past the end: last.
+export const placeChapter = (path, from, before) => changeChapters(path, (cs) => {
+  if (!cs[from]) return null;
+  let at = before < 0 || before > cs.length ? cs.length : before;
+  if (at === from || at === from + 1) return null;
+  const [c] = cs.splice(from, 1);
+  if (at > from) at -= 1;
+  cs.splice(at, 0, c);
+  return cs;
+});
+
 // Moves a page within its chapter (dir -1 / +1) or to the end of another chapter (toChapter).
 export const movePage = (path, slug, { dir = 0, toChapter = null } = {}) => changeChapters(path, (cs) => {
   const from = cs.findIndex((c) => c.pages.includes(slug));

@@ -1,17 +1,35 @@
 {
   "name": "toollib-build-vendor",
   "private": true,
-  "description": "Bundles the libraries behind Toollib's services into vendor/git.js, vendor/search.js, vendor/katex/katex.js, vendor/reader.js and vendor/pdfjs/.",
+  "description": "Bundles the libraries behind Toollib's services into vendor/git.js, vendor/search.js, vendor/katex/katex.js, vendor/reader.js, vendor/pdfjs/ and vendor/editor/.",
   "scripts": {
-    "build": "npm run build:git && npm run build:search && npm run build:katex && npm run build:reader && npm run build:pdfjs",
+    "build": "npm run build:git && npm run build:search && npm run build:katex && npm run build:reader && npm run build:pdfjs && npm run build:editor",
     "build:git": "esbuild entry.js --bundle --format=esm --minify --target=es2020,safari15 --inject:buffer-shim.js --legal-comments=none --outfile=out/git.js",
     "build:search": "esbuild entry-search.js --bundle --format=esm --minify --target=es2020,safari15 --legal-comments=none --outfile=out/search.js",
     "build:katex": "esbuild entry-katex.js --bundle --format=esm --minify --target=es2020,safari15 --legal-comments=none --outfile=out/katex/katex.js && cp node_modules/katex/dist/katex.min.css out/katex/ && mkdir -p out/katex/fonts && cp node_modules/katex/dist/fonts/*.woff2 out/katex/fonts/ && cp node_modules/katex/LICENSE out/katex/",
     "build:reader": "esbuild entry-reader.js --bundle --format=esm --minify --target=es2020,safari15 --legal-comments=none --outfile=out/reader.js",
-    "build:pdfjs": "mkdir -p out/pdfjs && cp node_modules/pdfjs-dist/legacy/build/pdf.min.mjs node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs out/pdfjs/ && cp node_modules/pdfjs-dist/LICENSE out/pdfjs/"
+    "build:pdfjs": "mkdir -p out/pdfjs && cp node_modules/pdfjs-dist/legacy/build/pdf.min.mjs node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs out/pdfjs/ && cp node_modules/pdfjs-dist/LICENSE out/pdfjs/",
+    "build:editor": "esbuild entry-editor.js entry-editor-langs.js --bundle --splitting --format=esm --minify --target=es2020,safari15 --legal-comments=none --outdir=out/editor --entry-names=[name] --chunk-names=editor-shared && mv out/editor/entry-editor.js out/editor/editor.js && mv out/editor/entry-editor-langs.js out/editor/editor-langs.js && cp node_modules/@codemirror/view/LICENSE out/editor/"
   },
   "devDependencies": {
+    "@codemirror/autocomplete": "6.20.4",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-cpp": "6.0.3",
+    "@codemirror/lang-javascript": "6.2.5",
+    "@codemirror/lang-markdown": "6.5.2",
+    "@codemirror/lang-python": "6.2.1",
+    "@codemirror/lang-rust": "6.0.2",
+    "@codemirror/lang-yaml": "6.1.3",
+    "@codemirror/language": "6.13.1",
+    "@codemirror/legacy-modes": "6.5.5",
+    "@codemirror/search": "6.7.2",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.15",
     "@isomorphic-git/lightning-fs": "4.10.3",
+    "@lezer/common": "1.5.4",
+    "@lezer/highlight": "1.2.5",
+    "@lezer/lr": "1.4.11",
+    "@lezer/markdown": "1.8.1",
     "@mozilla/readability": "0.6.0",
     "buffer": "6.0.3",
     "diff3": "0.0.3",
@@ -24,5 +42,9 @@
     "pdfjs-dist": "6.4.299",
     "turndown": "7.2.4",
     "turndown-plugin-gfm": "1.0.2"
+  },
+  "overrides": {
+    "@lezer/common": "1.5.4",
+    "@lezer/lr": "1.4.11"
   }
 }

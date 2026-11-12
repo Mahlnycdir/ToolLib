@@ -1,6 +1,7 @@
 // Edit any node as it is written (0.15.1): its Markdown with the header on the left, how it will look on the right
 // (on the phone: two tabs). This is how cards are changed, and everything else that has no form of its own.
 // Saving checks that the header still reads as YAML and still names a type and a title; the file changes only then.
+// Since 0.17.0 in the editor of the pages (md-editor.js): colours, LaTeX completion, shorthand, keys.
 import { h, toast, confirmDialog, debounce } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
@@ -10,7 +11,9 @@ import { noteChange } from '../services/sync.js';
 import { announce } from '../services/channel.js';
 import { renderMarkdown } from './markdown.js';
 import { nodeHref, nodeTitle, typeLabel, typeTile } from './node-view.js';
-import { enableCodeKeys } from './run-panel.js';
+import { createEditor } from './md-editor.js';
+import { assetUrl } from '../services/assets.js';
+import { searchNodes } from '../services/search.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 
@@ -23,17 +26,6 @@ export function sourceProblem(text, before) {
   if (before && String(node.meta.type) !== String(before.meta.type)) return 'source.bad.typeChanged';
   if (!String(node.meta.title || '').trim()) return 'source.bad.title';
   return '';
-}
-
-// Wraps the selection of a textarea, or inserts a template at the cursor; keeps undo where the browser can.
-function insertAround(area, open, close, sample) {
-  const { selectionStart: a, selectionEnd: b, value } = area;
-  const inner = value.slice(a, b) || sample;
-  area.focus();
-  const text = `${open}${inner}${close}`;
-  if (!document.execCommand?.('insertText', false, text)) area.setRangeText(text, a, b, 'end');
-  area.setSelectionRange(a + open.length, a + open.length + inner.length);
-  area.dispatchEvent(new Event('input'));
 }
 
 export async function renderSource(main, path, { go, isCurrent }) {
@@ -49,9 +41,15 @@ export async function renderSource(main, path, { go, isCurrent }) {
   const original = await readNodeText(path);
   if (!isCurrent()) return;
 
-  const area = h('textarea', { class: 'code-edit source-text', spellcheck: 'false', autocapitalize: 'off', autocorrect: 'off', autocomplete: 'off', 'aria-label': t('source.text') });
-  area.value = original;
-  enableCodeKeys(area);
+  const host = h('div', { class: 'source-text' });
+  const drawSoon = debounce(() => draw(), 250);
+  const editor = createEditor(host, {
+    value: original, kind: 'source', label: t('source.text'),
+    links: (q) => (q.trim() ? searchNodes(q, { limit: 10, filter: (d) => !d.conflict && d.path !== path }) : []).map((d) => ({ slug: d.slug, label: d.title, kind: typeLabel(d.type) })),
+    onChange: () => drawSoon(),
+    actions: { 'editor.save': () => save.click() },
+  });
+  const area = { get value() { return editor.value(); } };
   const preview = h('div', { class: 'source-preview node' });
   const problem = h('p', { class: 'form-error', role: 'alert', hidden: true });
   const save = h('button', { type: 'button', class: 'btn primary source-save', disabled: true }, iconEl('check'), h('span', { text: t('action.save') }));
@@ -59,13 +57,14 @@ export async function renderSource(main, path, { go, isCurrent }) {
   const changed = () => area.value !== original;
 
   const tools = h('div', { class: 'source-tools', role: 'toolbar', 'aria-label': t('source.tools') });
-  const tool = (label, title, fn) => tools.append(h('button', { type: 'button', class: 'btn small', title, 'aria-label': title, text: label, onclick: fn }));
-  tool('$…$', t('source.tool.inline'), () => insertAround(area, '$', '$', 'x'));
-  tool('$$', t('source.tool.display'), () => insertAround(area, '\n$$\n', '\n$$\n', 'E = mc^2'));
-  tool('[[ ]]', t('source.tool.link'), () => insertAround(area, '[[', ']]', 'name'));
-  tool('B', t('source.tool.bold'), () => insertAround(area, '**', '**', 'text'));
-  tool('##', t('source.tool.heading'), () => insertAround(area, '\n## ', '\n', 'Title'));
-  tool('```', t('source.tool.code'), () => insertAround(area, '\n```python\n', '\n```\n', 'code'));
+  const tool = (label, title, fn) => tools.append(h('button', { type: 'button', class: 'btn small', title, 'aria-label': title, text: label, onpointerdown: (e) => e.preventDefault(), onclick: fn }));
+  const around = (open, close, sample) => editor.apply((v, a, b) => { const inner = v.slice(a, b) || sample; return { value: v.slice(0, a) + open + inner + close + v.slice(b), start: a + open.length, end: a + open.length + inner.length }; });
+  tool('$…$', t('source.tool.inline'), () => around('$', '$', 'x'));
+  tool('$$', t('source.tool.display'), () => around('\n$$\n', '\n$$\n', 'E = mc^2'));
+  tool('[[ ]]', t('source.tool.link'), () => { around('[[', ']]', ''); editor.complete(); });
+  tool('B', t('source.tool.bold'), () => around('**', '**', 'text'));
+  tool('##', t('source.tool.heading'), () => around('\n## ', '\n', 'Title'));
+  tool('```', t('source.tool.code'), () => around('\n```python\n', '\n```\n', 'code'));
 
   function draw() {
     const key = sourceProblem(area.value, node);
@@ -76,9 +75,8 @@ export async function renderSource(main, path, { go, isCurrent }) {
     const title = key && key !== 'source.bad.title' ? titleOf(node, lang) : titleOf(now, lang);
     preview.replaceChildren(
       h('header', { class: 'node-head' }, typeTile(node.meta.type, 'big'), h('div', { class: 'node-titles' }, h('h1', { class: 'view-title', text: title }), h('div', { class: 'node-chips' }, h('span', { class: 'chip', text: typeLabel(node.meta.type) })))),
-      renderMarkdown(localize(now.body, lang), { onNodeLink: (slug) => { const d = nodeBySlug(slug); return d ? { href: nodeHref(d.path), label: nodeTitle(d, lang) } : null; } }));
+      renderMarkdown(localize(now.body, lang), { onNodeLink: (slug) => { const d = nodeBySlug(slug); return d ? { href: nodeHref(d.path), label: nodeTitle(d, lang) } : null; }, onAsset: assetUrl }));
   }
-  area.addEventListener('input', debounce(draw, 250));
 
   // two panes on a wide screen, two tabs on the phone
   const tabs = h('div', { class: 'segmented source-tabs', role: 'tablist' });
@@ -92,7 +90,7 @@ export async function renderSource(main, path, { go, isCurrent }) {
     });
     tabs.append(b);
   }
-  box.append(h('div', { class: 'source-left' }, tools, area), h('div', { class: 'source-right' }, preview));
+  box.append(h('div', { class: 'source-left' }, tools, host), h('div', { class: 'source-right' }, preview));
 
   save.addEventListener('click', async () => {
     if (sourceProblem(area.value, node) || !changed()) return;
@@ -118,7 +116,6 @@ export async function renderSource(main, path, { go, isCurrent }) {
     leaving = true;
     back();
   });
-  area.addEventListener('keydown', (e) => { if (e.key === 's' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save.click(); } });
 
   main.append(...[
     h('header', { class: 'source-head' }, h('div', {}, h('h1', { class: 'view-title', text: t('source.title') }), h('p', { class: 'muted small', text: path })), h('div', { class: 'btn-row' }, cancel, save)),
