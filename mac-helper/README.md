@@ -56,6 +56,7 @@ Alle mit `~/.toollib-helper/venv/bin/python ~/.toollib-helper/helper.py <befehl>
 | `token --new` | neuer Token (dann auf jedem Gerät neu eintragen; im Hintergrund nimmt er ihn von selbst) |
 | `background setup <Datei>` | im Hintergrund arbeiten, mit deiner verschlüsselten Einstellungs-Datei (fragt nach dem Passwort) |
 | `background off` / `status` | nicht mehr im Hintergrund (`--forget`: Profil löschen) / ob er an ist |
+| `ink-setup` | das Modell für die Handschrift holen (macht `install.sh --handschrift`) |
 
 Aktualisieren: `bash install.sh` erneut; Token, Zertifikat, Einstellungen und das Profil im Hintergrund bleiben. Ohne SearXNG: `bash install.sh --ohne-suche`. Entfernen: `helper.py autostart off`, dann den Ordner `~/.toollib-helper` löschen (mit SearXNG, Profil und Protokollen) und in der Schlüsselbundverwaltung „Toollib Helper CA“ löschen. Der PDF-Ordner bleibt.
 
@@ -90,7 +91,21 @@ Nach einer Änderung: `helper.py autostart on` (startet ihn neu).
 | `GET /search?q=<Wörter>` | die Suche im Netz über SearXNG: Titel, Adresse, Auszug, Suchmaschinen, Datum |
 | `GET /background` | ob Toollib ohne Fenster läuft, abgeglichen hat, was es gerade durchgeht |
 | `POST /background/wake` | gleich abgleichen und nach Aufträgen sehen (Toollib schickt das nach einem Auftrag) |
+| `GET /ink/state` | ob er Handschrift lesen kann und ob der Leser gerade läuft |
+| `POST /ink/latex` | `{ "images": [PNG als Base64, …] }` (höchstens 40 Zeilen): LaTeX pro Zeile |
 
 Regeln wie beim Worker: nur deine Seiten mit deinem Token, nur http und https, keine Adressen im Heimnetz (auch nicht über Weiterleitungen oder DNS), keine Cookies, höchstens 100 MB. Bilder, Videos und Schriften lädt Chromium nicht. Das Protokoll steht in `~/.toollib-helper/helper.log` (nur Website, Status, Dauer), das von SearXNG in `searxng.log`.
 
 Das Chromium im Hintergrund vertraut dem eigenen Zertifikat des Helfers nur über dessen öffentlichen Schlüssel (`--ignore-certificate-errors-spki-list`), allen anderen Websites wie jeder Browser. Es lädt nur Toollib; die Prüfung auf Zugriffe ins lokale Netz ist dort aus, damit Toollib den Helfer auf `localhost` erreicht.
+
+## Handschrift lesen (Kladde, 0.21.0)
+
+`bash install.sh --handschrift` richtet es einmal ein (etwa 120 MB): eine eigene Python-Umgebung `~/.toollib-helper/ink-venv` (numpy, onnxruntime, pillow, tokenizers aus `requirements-ink.txt`) und das Modell in `~/.toollib-helper/ink-model`.
+
+- **Modell:** Texo (`alephpi/FormulaNet` auf Hugging Face, 20 Millionen Parameter, etwa 80 MB, AGPL-3.0). Es liest Formeln aus Bildern, auch handgeschriebene.
+- **Fester Stand:** Der Helfer lädt einen festen Stand des Modells (`INK_REV` in `helper.py`) und prüft die Prüfsumme des Encoders.
+- **Kaum bemerkbar:** Der Leser ist ein eigener Prozess. Er startet erst, wenn du in der Kladde „Handschrift lesen“ tippst, rechnet mit zwei Kernen und niedriger Priorität und endet nach fünf Minuten Ruhe. Danach belegt er keinen Speicher mehr. Der Helfer selbst bleibt so klein wie vorher.
+- **Nur auf dem Mac:** Die Kladde schickt jede Zeile als kleines Schwarz-Weiß-Bild an den Helfer, sonst nirgendwohin.
+- **Unterwegs:** „Vom Mac lesen lassen“ markiert die Notiz (`ink_read: "mac"`). Toollib im Hintergrund des Helfers liest sie beim nächsten Sync und schreibt das Ergebnis unter „## LaTeX (Kladde)“ in die Notiz.
+- **Entfernen:** die Ordner `ink-venv` und `ink-model` löschen. Ohne sie antwortet `/ink/latex` mit `ink-not-installed`.
+

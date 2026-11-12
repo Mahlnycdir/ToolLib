@@ -1,7 +1,7 @@
 // Service worker: keeps the whole app in a cache so Toollib starts without a network, keeps Python in a cache of
 // its own and carries input() from the Python worker to the page (the synchronous channel, from Kobra's sw.js).
 // Raise VERSION with every release; the shell then offers "Reload" for the update.
-const VERSION = '0.20.0';
+const VERSION = '0.21.0';
 const CACHE = `toollib-${VERSION}`;
 // Python (vendor/pyodide) is big and changes only with a new Pyodide version, so its cache survives app updates.
 // Keep PYODIDE equal to "pyodide" in vendor/pyodide/toollib-bundle.json.
@@ -128,6 +128,12 @@ const FILES = [
   './vendor/katex/fonts/KaTeX_Size3-Regular.woff2',
   './vendor/katex/fonts/KaTeX_Size4-Regular.woff2',
   './vendor/katex/fonts/KaTeX_Typewriter-Regular.woff2',
+  // Kladde (0.21.0): handwritten notes
+  './app/services/ink.js',
+  './app/services/kladde-store.js',
+  './app/services/ink-read.js',
+  './app/services/pdf-lite.js',
+  './app/shell/kladde-view.js',
   // Kobra (0.11.0): fast unverändert in kobra/, läuft unter Toollibs Service Worker
   './kobra/index.html',
   './kobra/styles.css',

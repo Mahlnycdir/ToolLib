@@ -67,7 +67,8 @@ export async function saveNote(path, text) {
   const m = before.match(/^(﻿?---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$))/);
   if (!m) return false;
   const body = String(text).replace(/\r\n?/g, '\n').replace(/\s+$/, '');
-  const title = noteTitle(body);
+  // a handwritten note (0.21.0) keeps the title you gave it in Kladde
+  const title = /^ink:\s*\S/m.test(m[1]) ? '' : noteTitle(body);
   const head = title ? setField(m[1], 'title', q(title)) : m[1];
   const next = `${head}\n${body}\n`;
   if (next === before) return false;

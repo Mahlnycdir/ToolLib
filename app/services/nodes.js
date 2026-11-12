@@ -241,6 +241,9 @@ export function summary(node) {
     // page of a website belongs to and whether you marked something in it; a project names its goal and next step
     links: linksOf(node),
     at: String(m.at || m.created || ''),
+    // a note with handwriting (0.21.0): its strokes in a .ink file beside it, and whether the Mac should read them
+    ink: m.type === 'note' && typeof m.ink === 'string' && /^[a-z0-9][a-z0-9.-]{0,120}\.ink$/.test(m.ink) ? m.ink : '',
+    inkRead: m.type === 'note' ? String(m.ink_read || '') : '',
     run: m.type === 'clip' && m.crawl ? String(m.crawl) : '',
     marked: m.type === 'clip' && /^## Highlights\s*$/m.test(node.body),
     goal: m.type === 'project' && m.goal ? String(m.goal) : '',

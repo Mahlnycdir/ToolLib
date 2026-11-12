@@ -149,6 +149,8 @@ export const CREATORS = [
   { id: 'card', icon: 'vars', accent: 'formulary', key: 'k', run: newCard, keys: 'card karte formel formula definition begriff term satz' },
   { id: 'snippet', icon: 'code', accent: 'cheatsheet', key: 's', run: newSnippet, keys: 'snippet code baustein python' },
   { id: 'page', icon: 'file', accent: 'projects', key: 'b', run: newPage, keys: 'page seite schreiben bibliothek library text' },
+  // 0.21.0: a handwritten page in Kladde
+  { id: 'ink', icon: 'edit', accent: 'kladde', key: 'h', start: false, run: ({ go }) => { savePref('kladde.open', ''); savePref('kladde.last', ''); go('#/m/kladde'); }, keys: 'handschrift handwriting kladde skizze sketch daumen thumb zeichnen draw' },
 ];
 
 // The menu behind "+": every creator with its letter. Resolves once something was started.

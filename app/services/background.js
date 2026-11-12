@@ -9,6 +9,7 @@ import { pwaState } from './pwa.js';
 import { allNodes, indexState, onIndexChange } from './search.js';
 import { isConfigured, isSyncing, syncKnowledge, syncState } from './sync.js';
 import { setHeldEvery } from './autosync.js';
+import { readWaitingNotes } from './ink-read.js';
 import { commandDone, crawlDefaults, crawlRunning, loadCrawl, pauseCrawl, recrawl, resumeCrawl, runningCrawl, stopCrawl } from './crawl.js';
 
 const EVERY = 60000;
@@ -52,6 +53,12 @@ async function obey(f, cmd) {
 // Commands first, then the oldest waiting run. True when something changed that other devices should see soon.
 async function work() {
   let changed = false;
+  // handwriting that asked to be read on the Mac (0.21.0)
+  try {
+    const read = await readWaitingNotes();
+    for (const p of read) last.did.push(`read ${p}`);
+    if (read.length) changed = true;
+  } catch (e) { console.warn('Kladde:', e); }
   const folders = macFolders();
   for (const f of folders) {
     const { cmd, cmdAt, cmdDone } = f.crawl;

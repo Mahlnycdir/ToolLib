@@ -7,6 +7,7 @@ import { h, toast, modal, closeTopModal } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, getLang, setLang, onLangChange } from '../i18n/i18n.js';
 import { ACCENTS, READY, moduleById, paintAccent, setAccent } from './modules.js';
+import { renderKladde } from './kladde-view.js';
 import { formatTime, renderModule, renderSettings } from './views.js';
 import { applyUpdate, checkForUpdate, onPwaChange, pwaState } from '../services/pwa.js';
 import { isConfigured, onSyncChange, phaseText, refreshPending, syncKnowledge, syncState } from '../services/sync.js';
@@ -42,6 +43,7 @@ const VIEWS = {
   cheatsheet: (main, mod, ctx) => renderCheatsheet(main, mod, ctx),
   formulary: (main, mod) => renderFormulary(main, mod),
   scraper: (main, mod) => renderResearch(main, mod),
+  kladde: (main, mod, ctx) => renderKladde(main, mod, ctx),
 };
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 

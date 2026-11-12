@@ -1,6 +1,8 @@
 // Projects (0.15.0): the list of your projects, the view of one project and the view of a note.
 // Since 0.18.0 a project is a board with your own sections and widgets (project-board.js); the card of a project (list,
 // Start) still shows the way its knowledge takes: collect, keep, apply.
+import { loadInkNote } from '../services/kladde-store.js';
+import { thumbnail } from '../services/ink.js';
 import { h, toast, confirmDialog, promptDialog, actionSheet, debounce, loadPref, savePref } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
@@ -200,6 +202,13 @@ export async function renderNote(main, path, ctx) {
     h('p', { class: 'muted small', text: [when && !Number.isNaN(when.getTime()) ? when.toLocaleString(getLang() === 'de' ? 'de-DE' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '', inProjects.length ? '' : t('note.inInbox')].filter(Boolean).join(' · ') }),
     inProjects.length ? h('div', { class: 'node-chips' }, inProjects.map((p) => { const c = h('a', { class: 'chip chip-project', href: nodeHref(p.path) }, iconEl('target'), h('span', { text: p.title })); paintProject(c, p.slug); return c; })) : null)));
 
+  // a handwritten note (0.21.0): its page as a picture, opens in Kladde
+  if (d?.ink) {
+    const pic = h('button', { type: 'button', class: 'note-ink', 'aria-label': t('kladde.openInKladde'), onclick: () => { savePref('kladde.open', path); go('#/m/kladde'); } },
+      h('span', { class: 'note-ink-pic' }), h('span', { class: 'btn small' }, iconEl('edit'), h('span', { text: t('kladde.openInKladde') })));
+    box.append(pic);
+    loadInkNote(path).then((x) => { const url = thumbnail(x.strokes, { w: 640, h: 300, color: '#15171b' }); if (url) pic.firstChild.append(h('img', { src: url, alt: '' })); }).catch(() => {});
+  }
   const area = h('textarea', { class: 'field note-text big', rows: '8', 'aria-label': t('type.note') });
   area.value = n.text;
   const view = h('div', { class: 'note-read' });

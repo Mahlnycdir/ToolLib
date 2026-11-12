@@ -1,0 +1,6 @@
+# Handwriting → LaTeX for the Toollib Mac helper (0.21.0), only with: bash install.sh --handschrift
+# Its own environment (~/.toollib-helper/ink-venv); versions at least two weeks old
+numpy==2.5.4
+onnxruntime==1.31.1
+pillow==13.0.0
+tokenizers==0.23.3

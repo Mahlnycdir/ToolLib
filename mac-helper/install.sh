@@ -3,9 +3,17 @@
 # JavaScript, SearXNG for the search on the web (from source, only on this Mac), a certificate of its own (trusted in
 # your keychain), and a start at every login (launchd).
 #   cd ~/ToolLib/mac-helper && bash install.sh              (bash install.sh --ohne-suche: without SearXNG)
+#   bash install.sh --handschrift                            also reads handwriting as LaTeX (Kladde; once ~120 MB)
 # Running it again updates the helper and keeps token, certificate and settings.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
+NO_SEARCH=""; INK=""
+for a in "$@"; do
+  case "$a" in
+    --ohne-suche) NO_SEARCH=1 ;;
+    --handschrift) INK=1 ;;
+  esac
+done
 DEST="${TOOLLIB_HELPER_HOME:-$HOME/.toollib-helper}"
 
 PY=""
@@ -47,7 +55,7 @@ searxng() {
       && "$DEST/searxng-venv/bin/python" -m pip install -q --use-pep517 --no-build-isolation -e "$DEST/searxng" || return 1
   fi
 }
-if [ "${1:-}" = "--ohne-suche" ]; then
+if [ -n "$NO_SEARCH" ]; then
   echo "› Ohne SearXNG (keine Suche im Netz)"
 else
   echo "› SearXNG für die Suche im Netz (nur auf diesem Mac; einmal ein paar Minuten)"
@@ -58,6 +66,18 @@ fi
 
 cp "$HERE/helper.py" "$DEST/helper.py"
 export TOOLLIB_HELPER_HOME="$DEST"
+
+# Handwriting → LaTeX (Kladde): its own environment and a small model (Texo, 20 M parameters), only on request
+if [ -n "$INK" ] || [ -x "$DEST/ink-venv/bin/python" ]; then
+  echo "› Handschrift lesen: eigene Umgebung und Modell (einmal etwa 120 MB)"
+  if [ ! -x "$DEST/ink-venv/bin/python" ]; then "$PY" -m venv "$DEST/ink-venv"; fi
+  "$DEST/ink-venv/bin/python" -m pip install -q --upgrade pip
+  if "$DEST/ink-venv/bin/python" -m pip install -q -r "$HERE/requirements-ink.txt" && "$DEST/venv/bin/python" "$DEST/helper.py" ink-setup; then
+    echo "  Bereit: Kladde › ⋯ › Handschrift lesen. Der Leser startet erst bei Bedarf und endet nach fünf Minuten Ruhe."
+  else
+    echo "  Handschrift lesen ließ sich nicht einrichten; der Helfer läuft ohne. Später: bash install.sh --handschrift"
+  fi
+fi
 "$DEST/venv/bin/python" "$DEST/helper.py" setup
 if ! security verify-cert -q -p ssl -s localhost -c "$DEST/certs/server.pem" >/dev/null 2>&1; then
   "$DEST/venv/bin/python" "$DEST/helper.py" trust

@@ -27,7 +27,7 @@ export const MODULES = [
   { id: 'kobra', icon: 'code', accent: 'yellow', href: 'kobra/', types: [] },   // Kobra as its own page (0.11.0)
   { id: 'parts', icon: 'chip', accent: 'green', planned: true, types: ['part', 'device'] },
   { id: 'pins', icon: 'board', accent: 'sky', planned: true, types: ['rule', 'pin_map'] },
-  { id: 'kladde', icon: 'edit', accent: 'orange', planned: true, types: [] },
+  { id: 'kladde', icon: 'edit', accent: 'orange', types: [] },   // handwritten notes (0.21.0); they are notes, so projects show them too
   { id: 'workmode', icon: 'chalkboard', accent: 'violet', planned: true, types: ['card'] },
 ];
 export const READY = MODULES.filter((m) => !m.planned);

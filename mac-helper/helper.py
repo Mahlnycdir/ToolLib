@@ -46,7 +46,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote, unquote, urljoin, urlsplit
 
-VERSION = '0.14.4.2'
+VERSION = '0.21.0'
 HOME = Path(os.environ.get('TOOLLIB_HELPER_HOME') or '~/.toollib-helper').expanduser()
 CONFIG = HOME / 'config.json'
 STATE = HOME / 'files.json'
@@ -57,6 +57,13 @@ PLIST = Path('~/Library/LaunchAgents').expanduser() / f'{LABEL}.plist'
 BROWSER = HOME / 'browser'                  # the Chromium profile of Toollib without a window
 SEARXNG_DIR = HOME / 'searxng'              # SearXNG from source (install.sh), its venv and settings next to it
 SEARXNG_VENV = HOME / 'searxng-venv'
+# Handwriting → LaTeX (0.21.0): its own Python environment and the model, only with install.sh --handschrift
+INK_VENV = HOME / 'ink-venv'
+INK_DIR = HOME / 'ink-model'
+INK_REPO = 'alephpi/FormulaNet'                          # Texo, 20 M parameters, AGPL-3.0 (github.com/alephpi/Texo)
+INK_REV = '63e04c86fc96c2324811114351eeea8118bf6b28'     # a fixed state of the model: the files cannot change under us
+INK_SHA = {'onnx/encoder_model.onnx': '95cccef463e5ed3623282f1541c0011a00b8a5d0828ea2cd57d6953ad4310b5b'}
+INK_IDLE = 300                                           # seconds without work: the reader ends and frees its memory
 SEARXNG_SETTINGS = HOME / 'searxng-settings.yml'
 SEARXNG_LOG = HOME / 'searxng.log'
 DEFAULTS = {
@@ -802,6 +809,254 @@ class Background:
 
 
 # ------------------------------------------------------------------ the server
+class InkReader:
+    """Reads handwriting in a process of its own (ink-venv, helper.py ink-worker), started at the first request and
+    ended after INK_IDLE seconds without work. So the helper stays small, and the model (about 80 MB on disk, a few
+    hundred MB in memory while it reads) only costs anything while you use it."""
+
+    def __init__(self):
+        self.proc = None
+        self.lock = asyncio.Lock()
+        self.used = 0.0
+        self.n = 0
+
+    @property
+    def installed(self):
+        return (INK_VENV / 'bin' / 'python').exists() and (INK_DIR / 'onnx' / 'encoder_model.onnx').exists() and (INK_DIR / 'tokenizer.json').exists()
+
+    @property
+    def loaded(self):
+        return bool(self.proc and self.proc.returncode is None)
+
+    async def start(self):
+        if self.loaded:
+            return
+        log = open(LOG, 'a')   # noqa: SIM115 – the worker writes its complaints into the helper's log
+        self.proc = await asyncio.create_subprocess_exec(
+            str(INK_VENV / 'bin' / 'python'), str(Path(__file__).resolve()), 'ink-worker',
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=log, limit=1 << 20)
+        log.close()
+
+    async def read(self, images):
+        async with self.lock:
+            await self.start()
+            self.n += 1
+            self.used = time.time()
+            self.proc.stdin.write((json.dumps({'id': self.n, 'images': images}) + '\n').encode())
+            await self.proc.stdin.drain()
+            try:
+                line = await asyncio.wait_for(self.proc.stdout.readline(), timeout=60 + 20 * len(images))
+            except asyncio.TimeoutError:
+                await self.stop()
+                raise RuntimeError('ink-timeout')
+            self.used = time.time()
+            if not line:
+                await self.stop()
+                raise RuntimeError('ink-worker-ended')
+            answer = json.loads(line)
+            if answer.get('error'):
+                raise RuntimeError(answer['error'])
+            return answer.get('results', [])
+
+    async def stop(self):
+        if self.loaded:
+            self.proc.terminate()
+            try:
+                await asyncio.wait_for(self.proc.wait(), 5)
+            except asyncio.TimeoutError:
+                self.proc.kill()
+        self.proc = None
+
+    async def close_idle(self):
+        while True:
+            await asyncio.sleep(30)
+            if self.loaded and not self.lock.locked() and time.time() - self.used > INK_IDLE:
+                await self.stop()
+
+
+class InkModel:
+    """The model itself, in the ink worker: ONNX Runtime on the CPU (two threads), greedy decoding with the cache of
+    the merged decoder. Reads its settings from the files of the model (preprocessor, generation, tokenizer)."""
+
+    def __init__(self, root=INK_DIR):
+        import numpy as np
+        import onnxruntime as ort
+        from tokenizers import Tokenizer
+        self.np = np
+
+        def js(name):
+            f = root / name
+            return json.loads(f.read_text('utf-8')) if f.exists() else {}
+
+        self.config, self.gen, self.pre = js('config.json'), js('generation_config.json'), js('preprocessor_config.json')
+        opts = ort.SessionOptions()
+        opts.intra_op_num_threads = 2
+        opts.inter_op_num_threads = 1
+        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        cpu = ['CPUExecutionProvider']
+        self.enc = ort.InferenceSession(str(root / 'onnx' / 'encoder_model.onnx'), opts, providers=cpu)
+        merged = root / 'onnx' / 'decoder_model_merged.onnx'
+        self.merged = merged.exists()
+        self.dec = ort.InferenceSession(str(merged if self.merged else root / 'onnx' / 'decoder_model.onnx'), opts, providers=cpu)
+        self.tok = Tokenizer.from_file(str(root / 'tokenizer.json'))
+        dcfg = self.config.get('decoder') or {}
+
+        def first(*vals):
+            for v in vals:
+                if isinstance(v, list) and v:
+                    v = v[0]
+                if isinstance(v, int):
+                    return v
+            return None
+
+        self.start = first(self.gen.get('decoder_start_token_id'), self.config.get('decoder_start_token_id'), dcfg.get('decoder_start_token_id'), dcfg.get('bos_token_id'), 0)
+        eos = self.gen.get('eos_token_id', self.config.get('eos_token_id', dcfg.get('eos_token_id', 2)))
+        self.eos = set(eos if isinstance(eos, list) else [eos])
+        self.max = max(16, min(int(self.gen.get('max_length') or self.gen.get('max_new_tokens') or dcfg.get('max_position_embeddings') or 512), 1024))
+        self.ins = {i.name: i for i in self.dec.get_inputs()}
+        self.outs = [o.name for o in self.dec.get_outputs()]
+        heads = dcfg.get('decoder_attention_heads') or dcfg.get('num_attention_heads') or 8
+        dim = (dcfg.get('d_model') or dcfg.get('hidden_size') or 512) // heads
+        self.past_shape = {}
+        for name, i in self.ins.items():
+            if name.startswith('past_key_values'):
+                shape = list(i.shape)
+                self.past_shape[name] = [1, shape[1] if isinstance(shape[1], int) else heads, 0, shape[3] if len(shape) > 3 and isinstance(shape[3], int) else dim]
+        size = self.pre.get('size') or {}
+        if isinstance(size, int):
+            self.size = (size, size)
+        elif isinstance(size, (list, tuple)) and len(size) == 2:
+            self.size = (int(size[0]), int(size[1]))
+        else:
+            self.size = (int(size.get('height', 384)), int(size.get('width', 384)))
+
+    def pixels(self, png):
+        import io
+        from PIL import Image, ImageOps
+        Image.MAX_IMAGE_PIXELS = 16_000_000
+        im = Image.open(io.BytesIO(png))
+        if im.width * im.height > 16_000_000:
+            raise ValueError('image too large')
+        im = im.convert('L')
+        box = ImageOps.invert(im).point(lambda v: 255 if v > 40 else 0).getbbox()   # only the ink, then a margin
+        if not box:
+            raise ValueError('empty')
+        im = im.crop(box)
+        H, W = self.size
+        m = 8
+        k = min((W - 2 * m) / im.width, (H - 2 * m) / im.height)
+        nw, nh = max(1, round(im.width * k)), max(1, round(im.height * k))
+        im = im.resize((nw, nh), Image.Resampling.LANCZOS)
+        page = Image.new('L', (W, H), 255)
+        page.paste(im, ((W - nw) // 2, (H - nh) // 2))
+        np = self.np
+        x = np.asarray(page.convert('RGB'), dtype=np.float32) * float(self.pre.get('rescale_factor', 1 / 255))
+        if self.pre.get('do_normalize', True):
+            x = (x - np.array(self.pre.get('image_mean', [0.5, 0.5, 0.5]), dtype=np.float32)) / np.array(self.pre.get('image_std', [0.5, 0.5, 0.5]), dtype=np.float32)
+        return x.transpose(2, 0, 1)[None].astype(np.float32)
+
+    def read(self, png):
+        np = self.np
+        enc_name = self.enc.get_inputs()[0].name
+        hidden = self.enc.run(None, {enc_name: self.pixels(png)})[0]
+        ids = [self.start]
+        past = {n: np.zeros(s, dtype=np.float32) for n, s in self.past_shape.items()}
+        for step in range(self.max):
+            feed = {}
+            if self.merged and past:
+                feed['input_ids'] = np.array([[ids[-1]]] if step else [ids], dtype=np.int64)
+                feed.update(past)
+                if 'use_cache_branch' in self.ins:
+                    feed['use_cache_branch'] = np.array([step > 0])
+            else:
+                feed['input_ids'] = np.array([ids], dtype=np.int64)
+            if 'encoder_hidden_states' in self.ins:
+                feed['encoder_hidden_states'] = hidden
+            if 'encoder_attention_mask' in self.ins:
+                feed['encoder_attention_mask'] = np.ones(hidden.shape[:2], dtype=np.int64)
+            if 'attention_mask' in self.ins:
+                feed['attention_mask'] = np.ones((1, len(ids)), dtype=np.int64)
+            out = dict(zip(self.outs, self.dec.run(None, feed)))
+            nxt = int(out['logits'][0, -1].argmax())
+            if nxt in self.eos:
+                break
+            ids.append(nxt)
+            if self.merged and past:
+                for name, value in out.items():
+                    if not name.startswith('present'):
+                        continue
+                    key = 'past_key_values' + name[len('present'):]
+                    if key in past and (step == 0 or '.encoder.' not in key):   # the encoder part stays from the first step
+                        past[key] = value
+        text = self.tok.decode(ids[1:], skip_special_tokens=True)
+        return re.sub(r'\s+', ' ', text).strip()
+
+
+def cmd_ink_worker(cfg, args):
+    """In ink-venv: one JSON line per request on stdin, one per answer on stdout."""
+    try:
+        os.nice(10)   # the reader gives way to everything else on the Mac
+    except OSError:
+        pass
+    model = InkModel()
+    for line in sys.stdin:
+        try:
+            req = json.loads(line)
+            results = []
+            for b64 in (req.get('images') or [])[:40]:
+                try:
+                    results.append({'latex': model.read(base64.b64decode(b64, validate=True))})
+                except Exception as e:   # noqa: BLE001 – one line that cannot be read does not stop the others
+                    results.append({'latex': '', 'error': str(e)[:200]})
+            answer = {'id': req.get('id'), 'results': results}
+        except Exception as e:   # noqa: BLE001
+            answer = {'id': None, 'error': str(e)[:200]}
+        sys.stdout.write(json.dumps(answer) + '\n')
+        sys.stdout.flush()
+
+
+def cmd_ink_setup(cfg, args):
+    """Fetches the model at its fixed state into INK_DIR (once, about 80 MB), checks what can be checked."""
+    from urllib.request import Request, urlopen
+    INK_DIR.mkdir(parents=True, exist_ok=True)
+    (INK_DIR / 'onnx').mkdir(exist_ok=True)
+
+    def fetch(name, required=True):
+        dest = INK_DIR / name
+        if dest.exists() and (name not in INK_SHA or hashlib.sha256(dest.read_bytes()).hexdigest() == INK_SHA[name]):
+            return True
+        url = f'https://huggingface.co/{INK_REPO}/resolve/{INK_REV}/{name}'
+        try:
+            with urlopen(Request(url, headers={'User-Agent': f'Toollib-Mac-helper/{VERSION}'}), timeout=60) as r:
+                part = dest.with_suffix(dest.suffix + '.part')
+                n = 0
+                with open(part, 'wb') as f:
+                    while chunk := r.read(1 << 20):
+                        n += len(chunk)
+                        if n > 400 * 1024 * 1024:
+                            raise ValueError('too large')
+                        f.write(chunk)
+        except Exception as e:   # noqa: BLE001
+            if required:
+                say(f'  {name}: {e}')
+            return False
+        if name in INK_SHA and hashlib.sha256(part.read_bytes()).hexdigest() != INK_SHA[name]:
+            part.unlink()
+            say(f'  {name}: Prüfsumme stimmt nicht, nicht übernommen')
+            return False
+        part.replace(dest)
+        say(f'  {name}: {n / 1e6:.1f} MB')
+        return True
+
+    ok = all(fetch(n) for n in ['config.json', 'preprocessor_config.json', 'tokenizer.json', 'onnx/encoder_model.onnx'])
+    fetch('generation_config.json', required=False)
+    fetch('tokenizer_config.json', required=False)
+    ok = (fetch('onnx/decoder_model_merged.onnx', required=False) or fetch('onnx/decoder_model.onnx')) and ok
+    if not ok:
+        sys.exit('Das Modell ließ sich nicht vollständig laden. Später: bash install.sh --handschrift erneut.')
+    say(f'Modell bereit in {shown(INK_DIR)}')
+
+
 def make_app(cfg):
     import aiohttp
     from aiohttp import web
@@ -837,6 +1092,7 @@ def make_app(cfg):
 
     renderer = Renderer(cfg, upstream)
     search = Search(cfg)
+    ink = InkReader()
     background = Background(cfg) if cfg['background'] else None
 
     def cors_for(origin):
@@ -880,7 +1136,26 @@ def make_app(cfg):
         return web.json_response({'ok': True, 'name': 'toollib-mac-helper', 'version': VERSION, 'maxBytes': cfg['max_bytes'],
                                   'render': renderer.available, 'pdfDir': shown(files.root), 'inboxDir': shown(files.inbox), 'ownDir': shown(files.own), 'inbox': len(await asyncio.to_thread(files.inbox_files)),
                                   'names': host_names(cfg), 'port': cfg['port'], 'search': search.installed,
-                                  'background': bool(background)}, headers={'Cache-Control': 'no-store'})
+                                  'background': bool(background), 'ink': ink.installed}, headers={'Cache-Control': 'no-store'})
+
+    async def ink_state(request):
+        return web.json_response({'ok': True, 'installed': ink.installed, 'loaded': ink.loaded}, headers={'Cache-Control': 'no-store'})
+
+    async def ink_latex(request):
+        if not ink.installed:
+            return jerr('ink-not-installed', 404)
+        try:
+            body = await request.json()
+        except Exception:   # noqa: BLE001
+            return jerr('bad-request', 400)
+        images = body.get('images') if isinstance(body, dict) else None
+        if not isinstance(images, list) or not images or len(images) > 40 or not all(isinstance(x, str) and 0 < len(x) <= 400_000 for x in images):
+            return jerr('bad-request', 400)
+        try:
+            results = await ink.read(images)
+        except RuntimeError as e:
+            return jerr('ink-failed', 502, detail=str(e)[:200])
+        return web.json_response({'ok': True, 'results': results}, headers={'Cache-Control': 'no-store'})
 
     async def fetch(request):
         url = request.query.get('url', '')
@@ -1010,6 +1285,7 @@ def make_app(cfg):
         if background:
             await background.stop()
         await search.stop()
+        await ink.stop()
         if state['session']:
             await state['session'].close()
         if renderer.browser:
@@ -1019,6 +1295,7 @@ def make_app(cfg):
 
     async def starting(app):
         app['idle'] = asyncio.create_task(renderer.close_idle())
+        app['ink-idle'] = asyncio.create_task(ink.close_idle())
         if search.installed:
             asyncio.create_task(search.start())
         if background:
@@ -1034,6 +1311,8 @@ def make_app(cfg):
     app.router.add_get('/search', web_search)
     app.router.add_get('/background', background_state)
     app.router.add_post('/background/wake', background_wake)
+    app.router.add_get('/ink/state', ink_state)
+    app.router.add_post('/ink/latex', ink_latex)
     app.on_startup.append(starting)
     app.on_cleanup.append(closing)
     return app
@@ -1322,6 +1601,8 @@ def main():
     b.add_argument('file', nargs='?')
     b.add_argument('--password-stdin', action='store_true', help='read the password from the first line of stdin')
     b.add_argument('--forget', action='store_true', help='with off: delete the profile with your settings too')
+    sub.add_parser('ink-setup')
+    sub.add_parser('ink-worker')
     args = ap.parse_args()
     cfg = load_config()
     if args.cmd == 'run':
@@ -1335,7 +1616,7 @@ def main():
             pass
         return
     {'setup': cmd_setup, 'info': cmd_info, 'trust': cmd_trust, 'autostart': cmd_autostart, 'renew': cmd_renew, 'token': cmd_token,
-     'background': cmd_background}[args.cmd](cfg, args)
+     'background': cmd_background, 'ink-setup': cmd_ink_setup, 'ink-worker': cmd_ink_worker}[args.cmd](cfg, args)
 
 
 if __name__ == '__main__':
