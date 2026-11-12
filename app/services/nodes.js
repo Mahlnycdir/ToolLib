@@ -91,6 +91,15 @@ export function sourcesOf(meta) {
   return out;
 }
 
+// Snippets in any language (0.15.1): the language of a snippet (python when the field is missing) and whether a
+// fence belongs to it. A shell snippet may be fenced as bash, sh, zsh or console.
+export const snippetLanguage = (meta) => String(meta?.language || 'python').trim().toLowerCase() || 'python';
+const SHELLS = /^(shell|bash|sh|zsh|console)$/;
+export const fenceFits = (fence, language) => fence === language || (language === 'shell' && SHELLS.test(fence)) || (language === 'text' && fence === '');
+export const LANGUAGES = ['python', 'rust', 'javascript', 'typescript', 'c', 'cpp', 'shell', 'latex', 'sql', 'text'];
+const LANGUAGE_NAME = { python: 'Python', rust: 'Rust', javascript: 'JavaScript', typescript: 'TypeScript', c: 'C', cpp: 'C++', shell: 'Shell', latex: 'LaTeX', sql: 'SQL', text: 'Text' };
+export const languageName = (l) => LANGUAGE_NAME[l] || (l ? l[0].toUpperCase() + l.slice(1) : '');
+
 // Fenced code blocks: [{ lang, code }]
 export function codeBlocks(markdown) {
   const out = [];
@@ -195,6 +204,7 @@ export function summary(node) {
     problems_de: asList(m.problems_de),
     tags: asList(m.tags),
     group: m.group ? String(m.group) : '',
+    language: m.type === 'snippet' ? snippetLanguage(m) : '',   // snippets in any language (0.15.1)
     area: asList(m.area),
     // formulary (0.12.0): topic (second level), derived_from ("follows from"), conventions, order of a topic in its area
     topics: asList(m.topic),
@@ -363,7 +373,7 @@ export function buildSnippet(f) {
     `title: ${yamlValue(t.title)}`,
     t.title_de ? `title_de: ${yamlValue(t.title_de)}` : null,
     `group: ${yamlValue(f.group)}`,
-    'language: python',
+    `language: ${f.language || 'python'}`,
     f.problems?.length ? `${f.lang === 'de' ? 'problems_de' : 'problems'}: ${yamlValue(f.problems)}` : null,
     f.tags?.length ? `tags: ${yamlValue(f.tags)}` : null,
     f.links?.length ? `links: ${yamlValue(f.links)}` : null,
@@ -372,8 +382,8 @@ export function buildSnippet(f) {
   ].filter(Boolean);
   const parts = [`---\n${head.join('\n')}\n---\n`];
   if (f.description) parts.push(`::: ${f.lang}\n${f.description.trim()}\n:::\n`);
-  parts.push(`\`\`\`python\n${f.code.replace(/\s+$/, '')}\n\`\`\`\n`);
-  if (f.check?.trim()) parts.push(`## Check\n\n\`\`\`python\n${f.check.replace(/\s+$/, '')}\n\`\`\`\n`);
+  parts.push(`\`\`\`${f.language && f.language !== 'text' ? f.language : f.language === 'text' ? '' : 'python'}\n${f.code.replace(/\s+$/, '')}\n\`\`\`\n`);
+  if (f.check?.trim() && (f.language || 'python') === 'python') parts.push(`## Check\n\n\`\`\`python\n${f.check.replace(/\s+$/, '')}\n\`\`\`\n`);
   return parts.join('\n');
 }
 
@@ -385,15 +395,17 @@ function blockSpans(text) {
   const body = text.slice(base);
   const heads = [...body.matchAll(/^## (.*)$/gm)].map((m) => ({ at: m.index, title: m[1] }));
   const out = { code: null, check: null, checkSection: null, firstFence: null };
+  const language = fm ? snippetLanguage(parseNode(text, 'x/x.md').meta) : 'python';
   const re = /^(```|~~~)\s*([\w+-]*)[^\n]*\n([\s\S]*?)\n\1[ \t]*$/gm;
   let m;
   while ((m = re.exec(body))) {
-    if (m[2] !== 'python') continue;
     const inner = m.index + m[0].indexOf('\n') + 1;
     const span = [base + inner, base + inner + m[3].length];
     const section = heads.filter((h) => h.at < m.index).pop();
     if (!section) {
-      if (!out.code) { out.code = span; out.firstFence = base + m.index; }
+      if (!out.code && fenceFits(m[2], language)) { out.code = span; out.firstFence = base + m.index; }
+    } else if (m[2] !== 'python') {
+      continue;
     } else if (/^Check\b/.test(section.title) && !out.check) {
       out.check = span;
       const next = heads.find((h) => h.at > section.at);
@@ -473,14 +485,17 @@ export function snippetFields(node, lang) {
   const list = (v) => (Array.isArray(v) ? v.map(String) : v ? [String(v)] : []);
   const parts = runParts(node);
   const de = lang === 'de';
+  const language = snippetLanguage(m);
+  const own = language === 'python' ? parts.code : (codeBlocks(node.body.split(/^## /m)[0]).find((b) => fenceFits(b.lang, language))?.code || '');
   return {
+    language,
     title: String((de ? m.title_de || m.title : m.title) || ''),
     titleOther: String((de ? (m.title_de ? m.title : '') : m.title_de) || ''),
     group: m.group ? String(m.group) : '',
     problems: list(de ? m.problems_de : m.problems),
     description: introText(node.body, lang),
     tags: list(m.tags),
-    code: parts.code,
+    code: own,
     check: parts.check,
   };
 }

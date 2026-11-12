@@ -128,7 +128,7 @@ export async function newPage({ go, title = '' } = {}) {
     const lib = await loadLibrary(libPath);
     const path = await createPage(libPath, Math.max(0, lib.chapters.length - 1), name, lib.lang || getLang());
     savePref('library.open', { path: libPath, page: path, at: Date.now() });
-    go?.('#/m/scraper');
+    go?.('#/m/library');
     return path;
   } catch (e) { return failed(e); }
 }
@@ -163,7 +163,7 @@ export const CREATORS = [
   { id: 'crawl', icon: 'globe', accent: 'scraper', key: 'w', start: false, run: newCrawl, keys: 'website durchgehen crawl seite scrape' },
   { id: 'card', icon: 'vars', accent: 'formulary', key: 'k', run: newCard, keys: 'card karte formel formula definition begriff term satz' },
   { id: 'snippet', icon: 'code', accent: 'cheatsheet', key: 's', run: newSnippet, keys: 'snippet code baustein python' },
-  { id: 'page', icon: 'file', accent: 'scraper', key: 'b', run: newPage, keys: 'page seite schreiben bibliothek library text' },
+  { id: 'page', icon: 'file', accent: 'library', key: 'b', run: newPage, keys: 'page seite schreiben bibliothek library text' },
 ];
 
 // The menu behind "+": every creator with its letter. Resolves once something was started.

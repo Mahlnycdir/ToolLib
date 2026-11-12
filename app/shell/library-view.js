@@ -10,7 +10,7 @@ import { allNodes, indexState, nodeByPath, nodeBySlug, onIndexChange } from '../
 import { getNode, localize } from '../services/nodes.js';
 import {
   addChapter, createPage, deleteChapter, deleteLibrary, deletePage, firstFormula, loadLibrary, loadPage, mergeLines, moveChapter,
-  movePage, quoteMarkdown, renameChapter, renameLibrary, savePage, withSource,
+  movePage, placePage, quoteMarkdown, renameChapter, renameLibrary, savePage, withSource,
 } from '../services/library-store.js';
 import { loadClipDoc } from '../services/research-store.js';
 import { knowledgeFor } from '../services/reader-cards.js';
@@ -29,6 +29,10 @@ export function mountLibrary(host, opts) {
   let destroyed = false;
 
   const root = h('div', { class: 'lb', dataset: { pane: state.pane } });
+  // 0.15.1: the page gets the room. "Take over" (highlights, knowledge, sources) opens beside it on demand, and
+  // "Only the page" hides the contents as well. Both are remembered.
+  root.classList.toggle('side-open', loadPref('library.sideOpen', false));
+  root.classList.toggle('focus', loadPref('library.focus', false));
   const bar = h('header', { class: 'lb-bar rd-bar' });
   const tabs = h('div', { class: 'lb-tabs segmented', role: 'tablist' });
   const toc = h('nav', { class: 'lb-toc', 'aria-label': t('library.toc') });
@@ -49,7 +53,13 @@ export function mountLibrary(host, opts) {
     const title = h('div', { class: 'rd-title' }, h('span', { text: state.lib?.title || '' }));
     const view = state.lib ? h('a', { class: 'btn small', href: nodeHref(state.page?.path || state.lib.path), onclick: () => flush() }, iconEl('book'), h('span', { text: t('library.view') })) : null;
     const more = h('button', { type: 'button', class: 'btn small', 'aria-label': t('library.more'), title: t('library.more'), onclick: libMenu }, iconEl('more'));
-    bar.replaceChildren(back, title, view, more);
+    const focusOn = root.classList.contains('focus');
+    const focus = h('button', { type: 'button', class: `btn small lb-focus${focusOn ? ' on' : ''}`, 'aria-pressed': String(focusOn), title: t(focusOn ? 'library.focus.off' : 'library.focus') }, iconEl(focusOn ? 'minimize' : 'maximize'), h('span', { text: t(focusOn ? 'library.focus.off' : 'library.focus') }));
+    focus.addEventListener('click', () => { const on = root.classList.toggle('focus'); savePref('library.focus', on); drawBar(); });
+    const sideOn = root.classList.contains('side-open');
+    const side = h('button', { type: 'button', class: `btn small lb-side-btn${sideOn ? ' on' : ''}`, 'aria-pressed': String(sideOn) }, iconEl('bookmark'), h('span', { text: t('library.side.toggle') }));
+    side.addEventListener('click', () => { const on = root.classList.toggle('side-open'); savePref('library.sideOpen', on); drawBar(); if (on) drawSide(); });
+    bar.replaceChildren(...[back, title, focus, side, view, more].filter(Boolean));
   }
   function drawTabs() {
     tabs.replaceChildren(...[['toc', 'library.tab.toc'], ['page', 'library.tab.page'], ['side', 'library.tab.side']].map(([id, key]) => h('button', {
@@ -93,25 +103,58 @@ export function mountLibrary(host, opts) {
     lib.chapters.forEach((c, i) => {
       const add = h('button', { type: 'button', class: 'icon-btn', title: t('library.page.new'), 'aria-label': t('library.page.new'), html: icon('plus'), onclick: () => newPage(i) });
       const menu = h('button', { type: 'button', class: 'icon-btn', title: t('library.chapter.menu'), 'aria-label': t('library.chapter.menu'), html: icon('more'), onclick: () => chapterMenu(i) });
-      const list = h('ul', { class: 'lb-pages' }, ...c.pages.map((s) => pageRow(s, i)));
-      items.push(h('li', { class: 'lb-ch' },
-        h('div', { class: 'lb-ch-head' }, h('span', { class: 'lb-ch-num', text: `${i + 1}` }), h('span', { class: 'lb-ch-title', text: c.title || t('library.chapter.untitled') }), add, menu),
-        c.pages.length ? list : h('p', { class: 'muted small lb-ch-empty', text: t('library.chapter.empty') })));
+      const list = h('ul', { class: 'lb-pages' }, ...c.pages.flatMap((s, k) => [pageRow(s, i, k)].flat()));
+      const name = h('span', { class: 'lb-ch-title', text: c.title || t('library.chapter.untitled'), title: t('library.chapter.rename') });
+      name.addEventListener('dblclick', async () => {
+        const v = await promptDialog(t('library.chapter.rename'), { value: c.title, validate: (x) => (x.trim() ? '' : t('library.needTitle')) });
+        if (v && v.trim() !== c.title) { await renameChapter(state.lib.path, i, v); await reloadLib(); }
+      });
+      const head = h('div', { class: 'lb-ch-head' }, h('span', { class: 'lb-ch-num', text: `${i + 1}` }), name, add, menu);
+      const chapter = h('li', { class: 'lb-ch' }, head, c.pages.length ? list : h('p', { class: 'muted small lb-ch-empty', text: t('library.chapter.empty') }));
+      dropZone(head, i, -1, 'drop-into');
+      if (!c.pages.length) dropZone(chapter, i, -1, 'drop-into');
+      items.push(chapter);
     });
     const loose = lib.loose.length ? h('li', { class: 'lb-ch' }, h('div', { class: 'lb-ch-head' }, h('span', { class: 'lb-ch-title muted', text: t('library.loose') })),
       h('ul', { class: 'lb-pages' }, ...lib.loose.map((s) => pageRow(s, -1)))) : null;
     const addCh = h('button', { type: 'button', class: 'btn small', onclick: newChapter }, iconEl('plus'), h('span', { text: t('library.chapter.new') }));
-    toc.replaceChildren(h('div', { class: 'rs-head' }, h('h2', { text: t('library.toc') })), h('ol', { class: 'lb-chapters' }, ...items, loose), h('div', { class: 'btn-row' }, addCh));
+    toc.replaceChildren(h('div', { class: 'rs-head' }, h('h2', { text: t('library.toc') })), h('ol', { class: 'lb-chapters' }, ...[...items, loose].filter(Boolean)), h('div', { class: 'btn-row' }, addCh),
+      ...(narrow() ? [] : [h('p', { class: 'muted small lb-drag-hint', text: t('library.drag') })]));
   }
 
-  function pageRow(slug, chapter) {
+  // Dragging pages (0.15.1): a page dropped on a page goes in front of it, dropped on a chapter to its end.
+  let dragged = '';
+  async function dropAt(chapter, index) {
+    const slug = dragged;
+    dragged = '';
+    toc.querySelectorAll('.drop-before, .drop-into').forEach((x) => x.classList.remove('drop-before', 'drop-into'));
+    if (!slug || chapter < 0) return;
+    await flush();
+    if (await placePage(state.lib.path, slug, chapter, index)) await reloadLib();
+  }
+  function dropZone(el, chapter, index, cls) {
+    el.addEventListener('dragover', (e) => { if (!dragged) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; el.classList.add(cls); });
+    el.addEventListener('dragleave', () => el.classList.remove(cls));
+    el.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); dropAt(chapter, index); });
+  }
+
+  function pageRow(slug, chapter, index = -1) {
     const d = nodeBySlug(slug);
     const on = state.page?.slug === slug;
     const b = h('button', { type: 'button', class: `lb-pg${on ? ' on' : ''}${d ? '' : ' missing'}`, 'aria-current': on ? 'page' : null, disabled: d ? null : true, text: pageTitle(slug) });
     b.addEventListener('click', () => openPage(d.path));
-    const row = h('li', { class: 'lb-pg-row' }, b);
+    const row = h('li', { class: 'lb-pg-row', draggable: d && !narrow() ? 'true' : null, dataset: { slug } }, b);
+    if (d && !narrow()) {
+      row.addEventListener('dragstart', (e) => { dragged = slug; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', slug); row.classList.add('dragging'); });
+      row.addEventListener('dragend', () => { row.classList.remove('dragging'); dragged = ''; });
+      dropZone(row, chapter, index, 'drop-before');
+    }
     if (on) row.append(h('button', { type: 'button', class: 'icon-btn', title: t('library.page.menu'), 'aria-label': t('library.page.menu'), html: icon('more'), onclick: () => pageMenu(slug, chapter) }));
-    return row;
+    if (!on) return row;
+    // the outline of the page you write in: its headings, a tap goes there
+    const heads = state.heads || [];
+    return heads.length ? [row, h('li', { class: 'lb-outline' }, h('ul', {}, heads.map((x) => h('li', {},
+      h('button', { type: 'button', class: `lb-head lv-${x.level}`, text: x.title.replace(/[*`]/g, ''), onclick: () => { state.editor?.jumpTo(x.line, x.title); if (narrow()) setPane('page'); } })))))] : row;
   }
 
   async function newChapter() {
@@ -185,6 +228,7 @@ export function mountLibrary(host, opts) {
     state.editor?.destroy();
     state.editor = null;
     state.page = null;
+    state.heads = [];
     savePref('library.open', { path: opts.path, page: '' });
     drawMid();
   }
@@ -221,8 +265,10 @@ export function mountLibrary(host, opts) {
       onCursor: (at) => { if (state.page) savePref('library.target', { path: state.page.path, at }); },
       onLeave: () => flush(),
       onSaveNow: () => flush(),
+      onHeadings: (heads) => { if (JSON.stringify(heads) !== JSON.stringify(state.heads)) { state.heads = heads; drawToc(); } },
     });
     state.editor = ed;
+    state.heads = ed.headings();
     mid.replaceChildren(ed.el);
     ed.setStatus(state.page.body || state.page.text ? 'saved' : '');
   }

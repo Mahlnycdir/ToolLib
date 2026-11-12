@@ -1,6 +1,6 @@
 // The shell: command bar, module bar, workspace and status bar.
 // Routes live in the URL hash: #/home (Start), #/settings (or #/settings/<section>), #/m/<module id>, #/n/<path of a node>,
-// #/new (a new snippet of yours) and #/edit/<path> (change one of yours).
+// #/new (a new snippet of yours), #/edit/<path> (change one of yours) and #/src/<path> (any node as it is written).
 // Since 0.15.0 the shell is built around one way of working: Start says where to begin, a project in focus takes in
 // whatever you create, "+" creates anything from anywhere, and every node shows what it belongs to.
 import { h, toast, modal, closeTopModal } from '../services/ui.js';
@@ -24,9 +24,11 @@ import { startBackground } from '../services/background.js';
 import { savePref } from '../services/prefs.js';
 import { getNode } from '../services/nodes.js';
 import { renderStart } from './start.js';
+import { renderSource } from './source-editor.js';
+import { renderLibraryHome } from './library-home.js';
 import { paintProject, renderNote, renderProject, renderProjects } from './projects-view.js';
 import { CREATORS, createMenu } from './create.js';
-import { focusProject, onFocusChange, startAutoLink } from '../services/projects.js';
+import { focusProject, onFocusChange, projects, startAutoLink } from '../services/projects.js';
 import { capture } from '../services/notes.js';
 import { mark } from '../services/trail.js';
 
@@ -37,6 +39,7 @@ const VIEWS = {
   cheatsheet: (main, mod, ctx) => renderCheatsheet(main, mod, ctx),
   formulary: (main, mod) => renderFormulary(main, mod),
   scraper: (main, mod) => renderResearch(main, mod),
+  library: (main, mod, ctx) => renderLibraryHome(main, mod, ctx),
 };
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -64,6 +67,9 @@ export function startShell(root) {
     }
     if (location.hash.startsWith('#/edit/')) {
       try { return { kind: 'form', mode: 'edit', path: location.hash.slice(7).split('/').map(decodeURIComponent).join('/') }; } catch { /* broken address */ }
+    }
+    if (location.hash.startsWith('#/src/')) {
+      try { return { kind: 'source', path: location.hash.slice(6).split('/').map(decodeURIComponent).join('/') }; } catch { /* broken address */ }
     }
     if (location.hash === '#/new') return { kind: 'form', mode: 'new' };
     const [, kind, id] = location.hash.split('/');
@@ -136,6 +142,8 @@ export function startShell(root) {
     savePosition();
     const entry = entryId();
     shownEntry = entry;
+    // a view that holds unsaved work (the library) hands it over before it goes (0.15.1)
+    if (main.cleanup) { const done = main.cleanup; main.cleanup = null; try { done(); } catch (e) { console.warn(e); } }
     main.replaceChildren();
     delete main.dataset.view;
     const nodeType = route.kind === 'node' ? nodeByPath(route.path)?.type : null;
@@ -143,6 +151,7 @@ export function startShell(root) {
     if (route.kind === 'settings') renderSettings(main, { onChange: refresh, onCheckUpdate: runUpdateCheck, onSync: runSync, section: route.section });
     else if (route.kind === 'module' && VIEWS[route.mod.id]) VIEWS[route.mod.id](main, route.mod, { go });
     else if (route.kind === 'module') renderModule(main, route.mod);
+    else if (route.kind === 'source') renderSource(main, route.path, { go, isCurrent: () => token === renderToken });
     else if (route.kind === 'form') renderSnippetForm(main, { mode: route.mode, path: route.path, go, isCurrent: () => token === renderToken });
     else if (route.kind === 'node') {
       renderAnyNode(route.path, { isCurrent: () => token === renderToken, go, onSync: runSync }).then(() => restoreScroll(entry, token));
@@ -304,10 +313,24 @@ export function startShell(root) {
   }
 
   // Hits from the knowledge come first; a command with a word that starts with the query moves to the top.
+  // Where a jump leads (0.15.1): Start and every tool, in the order of the module bar. Alt+1 … Alt+9 go there too.
+  const jumps = () => [{ id: 'home', icon: 'home', accent: 'shell', label: t('nav.home'), run: () => go('#/home') },
+    ...READY.map((m) => ({ id: m.id, icon: m.icon, accent: m.id, label: t(`rail.${m.id}`) === `rail.${m.id}` ? t(`module.${m.id}.name`) : t(`rail.${m.id}`), run: () => { if (m.href) location.href = m.href; else go(`#/m/${m.id}`); } }))];
+
   function entries(query) {
     const q = query.trim();
     const cmds = match(query);
     const lang = getLang();
+    // Nothing typed: the bar is a springboard. Tools as tiles, your projects, what you opened last.
+    if (!q) {
+      const focus = focusProject();
+      const mine = projects().filter((p) => p.state === 'active').sort((a, b) => (b.path === focus?.path) - (a.path === focus?.path)).slice(0, 4);
+      return [
+        ...jumps().map((j, i) => ({ ...j, jump: true, hint: i < 9 ? String(i + 1) : '' })),
+        ...mine.map((p) => ({ project: p, label: p.title, detail: p.steps?.next ? `${t('project.next')} ${p.steps.next}` : p.goal, icon: 'target', accent: 'projects', run: () => go(nodeHref(p.path)) })),
+        ...recentPaths().map(nodeByPath).filter((d) => d && d.type !== 'project').slice(0, 5).map((d) => ({ node: d, label: nodeTitle(d, lang), detail: typeLabel(d.type), icon: typeIcon(d.type), accent: typeAccent(d.type), run: () => go(nodeHref(d.path)) })),
+      ];
+    }
     // A hit found through one of its problems shows that problem instead of the first sentence.
     const nodes = (q ? searchNodes(q, { limit: 8 }) : recentPaths().map(nodeByPath).filter(Boolean).slice(0, 4)).map((d) => {
       const problem = q ? bestProblem(d, q, lang) : '';
@@ -356,11 +379,22 @@ export function startShell(root) {
     selected = Math.min(selected, Math.max(shown.length - 1, 0));
     results.replaceChildren();
     let section = null;
+    let tiles = null;
     shown.forEach((c, i) => {
-      const kind = c.node ? (input.value.trim() ? 'hits' : 'recent') : 'commands';
+      const kind = c.jump ? 'jump' : c.project ? 'projects' : c.node ? (input.value.trim() ? 'hits' : 'recent') : 'commands';
       if (kind !== section) {
         section = kind;
         results.append(h('div', { class: 'cmd-sec', text: t(`commandbar.${kind}`) }));
+        if (kind === 'jump') { tiles = h('div', { class: 'cmd-jumps' }); results.append(tiles); }
+      }
+      if (c.jump) {
+        const tile = iconEl(c.icon, 'tile');
+        paintAccent(tile, c.accent);
+        const b = h('div', { class: `cmd-row cmd-jump${i === selected ? ' sel' : ''}`, role: 'option', id: `cmd-opt-${i}`, 'aria-selected': String(i === selected), dataset: { id: c.id } }, tile, h('span', { class: 'cmd-label', text: c.label }), c.hint ? h('kbd', { text: c.hint }) : null);
+        b.addEventListener('pointerdown', (e) => e.preventDefault());
+        b.addEventListener('click', () => runAt(i));
+        tiles.append(b);
+        return;
       }
       const lead = c.swatch ? h('span', { class: 'swatch small', style: { background: c.swatch } }) : iconEl(c.icon, 'tile small');
       if (c.accent) paintAccent(lead, c.accent);
@@ -415,6 +449,10 @@ export function startShell(root) {
     const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); input.focus(); }
     else if (e.key === '/' && !typing) { e.preventDefault(); input.focus(); }
+    else if (e.altKey && !e.metaKey && !e.ctrlKey && /^Digit[1-9]$/.test(e.code)) {
+      const j = jumps()[Number(e.code.slice(5)) - 1];
+      if (j) { e.preventDefault(); hideResults(); input.blur(); j.run(); }
+    }
     else if (e.key.toLowerCase() === 'n' && !typing && !e.metaKey && !e.ctrlKey && !e.altKey && !document.querySelector('.modal-backdrop, .sheet-backdrop')) { e.preventDefault(); openCreate(); }
     else if (e.key === 'Escape' && !typing) { if (!closeTopModal()) setDrawer(false); }
   });
@@ -423,6 +461,7 @@ export function startShell(root) {
     const rows = [
       [isMac ? '⌘K  /' : 'Ctrl K  /', t('help.focus')],
       ['N', t('help.create')],
+      [isMac ? '⌥1 … ⌥7' : 'Alt 1 … Alt 7', t('help.jump')],
       [isMac ? '⌘ Enter' : 'Ctrl Enter', t('help.note')],
       ['↑ ↓', t('help.choose')],
       ['Enter', t('help.run')],

@@ -67,6 +67,56 @@ export function applyTool(value, start, end, tool) {
   }
 }
 
+// ------------------------------------------------------------------ "/" at the start of a line (0.15.1)
+// What you are typing after a "/" that starts a line, or null: "/for" gives "for".
+export function slashQuery(value, caret) {
+  const a = lineStart(value, caret);
+  const m = value.slice(a, caret).match(/^\/([\p{L}\d-]{0,20})$/u);
+  return m ? m[1] : null;
+}
+// The blocks "/" offers: id, the words it is found by, the text it puts in place of the line (‸ = the cursor).
+export const SLASH = [
+  { id: 'h2', keys: 'heading überschrift h2 title titel', text: '## ‸' },
+  { id: 'h3', keys: 'subheading unterüberschrift h3', text: '### ‸' },
+  { id: 'display', keys: 'formula formel math equation gleichung display', text: '$$\n‸\n$$' },
+  { id: 'list', keys: 'list liste bullet punkte', text: '- ‸' },
+  { id: 'numbered', keys: 'numbered nummeriert ordered schritte steps', text: '1. ‸' },
+  { id: 'task', keys: 'task aufgabe todo check', text: '- [ ] ‸' },
+  { id: 'quote', keys: 'quote zitat', text: '> ‸' },
+  { id: 'code', keys: 'code python rust snippet', text: '```python\n‸\n```' },
+  { id: 'table', keys: 'table tabelle', text: '| ‸ | |\n| --- | --- |\n| | |' },
+  { id: 'link', keys: 'link verweis karte card node knoten', text: '[[‸]]' },
+  { id: 'rule', keys: 'line linie trenner divider', text: '---\n‸' },
+];
+export function slashHits(q) {
+  const w = String(q || '').toLowerCase();
+  return SLASH.filter((s) => !w || s.id.startsWith(w) || s.keys.split(' ').some((k) => k.startsWith(w)));
+}
+// Replaces the "/…" line with a block; returns { value, caret }.
+export function applySlash(value, caret, item) {
+  const a = lineStart(value, caret);
+  const [before, after] = item.text.split('‸');
+  const v = value.slice(0, a) + before + after + value.slice(caret);
+  return { value: v, caret: a + before.length };
+}
+
+// The headings of a text (## and ###), with the line they stand on; code and display formulas are skipped.
+export function headingsOf(text) {
+  const out = [];
+  let fence = false;
+  let math = false;
+  String(text).split('\n').forEach((line, i) => {
+    const s = line.trim();
+    if (/^(```|~~~)/.test(s)) { fence = !fence; return; }
+    if (fence) return;
+    if (s === '$$') { math = !math; return; }
+    if (math) return;
+    const m = line.match(/^(#{2,3})\s+(.+?)\s*#*\s*$/);
+    if (m) out.push({ level: m[1].length - 1, title: m[2], line: i });
+  });
+  return out;
+}
+
 // What you are typing after "[[", or null.
 export function linkQuery(value, caret) {
   const m = String(value).slice(Math.max(0, caret - 60), caret).match(/\[\[([^\]\n|[]{0,50})$/);
@@ -92,8 +142,12 @@ export function mountEditor(opts) {
   const page = opts.page;
   let mode = loadPref('editor.mode', 'split');
   const el = h('div', { class: 'pe', dataset: { mode } });
-  const title = h('input', { class: 'field pe-title', type: 'text', value: page.title, 'aria-label': t('editor.title'), placeholder: t('editor.title') });
+  const title = h('input', { class: 'pe-title', type: 'text', value: page.title, 'aria-label': t('editor.title'), placeholder: t('editor.title') });
   const helps = h('input', { class: 'field pe-helps small', type: 'text', value: page.problems.join('; '), 'aria-label': t('editor.helps'), placeholder: t('editor.helps.placeholder') });
+  // "Helps with" stays folded until you want it (0.15.1); with something in it, it says what
+  const helpsBox = h('details', { class: 'pe-more', open: page.problems.length ? null : null },
+    h('summary', { class: 'small muted' }, h('span', { text: page.problems.length ? `${t('editor.helps')}: ${page.problems.join('; ')}` : t('editor.helps.add') })),
+    h('label', { class: 'pe-helps-row' }, h('span', { class: 'small', text: t('editor.helps') }), helps));
   const status = h('span', { class: 'pe-status small muted', 'aria-live': 'polite' });
   const bar = h('div', { class: 'pe-bar', role: 'toolbar', 'aria-label': t('editor.tools') });
   const modes = h('div', { class: 'segmented pe-modes', role: 'group' });
@@ -102,7 +156,7 @@ export function mountEditor(opts) {
   const preview = h('div', { class: 'pe-preview rd-inner' });
   const suggest = h('ul', { class: 'pe-suggest', role: 'listbox', hidden: true });
   const wrapEl = h('div', { class: 'pe-panes' }, h('div', { class: 'pe-write' }, text, suggest), preview);
-  el.append(h('div', { class: 'pe-head' }, title, h('label', { class: 'pe-helps-row' }, h('span', { class: 'small', text: t('editor.helps') }), helps)),
+  el.append(h('div', { class: 'pe-head' }, title, helpsBox),
     h('div', { class: 'pe-tools' }, bar, modes, status), wrapEl);
 
   const fields = () => ({ title: title.value, problems: helps.value.split(/[;\n]/).map((x) => x.trim()).filter(Boolean), body: text.value });
@@ -169,7 +223,19 @@ export function mountEditor(opts) {
   // [[link]] suggestions
   let hits = [];
   let pick = 0;
+  let slash = false;   // the list shows blocks for "/" instead of nodes for "[["
   function showSuggest() {
+    const sq = slashQuery(text.value, text.selectionStart);
+    if (sq != null) {
+      slash = true;
+      hits = slashHits(sq);
+      pick = 0;
+      if (!hits.length) { suggest.hidden = true; return; }
+      drawSuggest();
+      suggest.hidden = false;
+      return;
+    }
+    slash = false;
     const q = linkQuery(text.value, text.selectionStart);
     if (q == null) { suggest.hidden = true; hits = []; return; }
     const own = page.path;
@@ -181,6 +247,16 @@ export function mountEditor(opts) {
     suggest.hidden = false;
   }
   function drawSuggest() {
+    if (slash) {
+      suggest.replaceChildren(...hits.map((s, k) => {
+        const li = h('li', { role: 'option', class: `pe-slash${k === pick ? ' on' : ''}`, 'aria-selected': String(k === pick), dataset: { id: s.id } },
+          h('span', { class: 'pe-slash-mark', text: s.text.replace('‸', '').split('\n')[0].trim().slice(0, 6) || '¶' }),
+          h('span', { class: 'pe-suggest-title', text: t(`editor.slash.${s.id}`) }));
+        li.addEventListener('pointerdown', (e) => { e.preventDefault(); choose(s); });
+        return li;
+      }));
+      return;
+    }
     suggest.replaceChildren(...hits.map((d, k) => {
       const li = h('li', { role: 'option', class: k === pick ? 'on' : '', 'aria-selected': String(k === pick) },
         h('span', { class: 'rs-tag', text: t(`type.${d.type}`) === `type.${d.type}` ? d.type : t(`type.${d.type}`) }),
@@ -191,6 +267,14 @@ export function mountEditor(opts) {
     }));
   }
   function choose(d) {
+    if (slash) {
+      const r = applySlash(text.value, text.selectionStart, d);
+      suggest.hidden = true;
+      slash = false;
+      setText(r.value, r.caret);
+      if (d.id === 'link') showSuggest();
+      return;
+    }
     const r = completeLink(text.value, text.selectionStart, d.slug);
     suggest.hidden = true;
     setText(r.value, r.caret);
@@ -207,7 +291,9 @@ export function mountEditor(opts) {
   });
 
   const cursorSoon = debounce(() => opts.onCursor?.(text.selectionStart), 250);
+  const headsSoon = debounce(() => opts.onHeadings?.(headingsOf(text.value)), 400);
   function onText() {
+    headsSoon();
     changed();
     previewSoon();
     showSuggest();
@@ -217,6 +303,8 @@ export function mountEditor(opts) {
   for (const ev of ['keyup', 'click', 'select']) text.addEventListener(ev, () => { cursorSoon(); if (ev !== 'select') showSuggest(); });
   text.addEventListener('blur', () => { setTimeout(() => { suggest.hidden = true; }, 150); opts.onCursor?.(text.selectionStart); opts.onLeave?.(); });
   title.addEventListener('input', changed);
+  title.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); text.focus(); } });
+  helps.addEventListener('input', () => { helpsBox.querySelector('summary span').textContent = helps.value.trim() ? `${t('editor.helps')}: ${helps.value.trim()}` : t('editor.helps.add'); });
   helps.addEventListener('input', changed);
   for (const f of [title, helps]) f.addEventListener('blur', () => opts.onLeave?.());
 
@@ -238,6 +326,21 @@ export function mountEditor(opts) {
       const r = block(v, s, s, '', '', md);
       setText(r.value, r.end);
     },
+    // Goes to a line of the text (a heading in the outline): the cursor there, the line near the top, the preview too.
+    jumpTo(line, heading = '') {
+      const lines = text.value.split('\n');
+      const at = lines.slice(0, line).reduce((n, l) => n + l.length + 1, 0);
+      if (mode === 'preview') { mode = narrow() ? 'write' : 'split'; drawModes(); drawPreview(); }
+      text.focus({ preventScroll: true });
+      text.setSelectionRange(at, at);
+      const lh = parseFloat(getComputedStyle(text).lineHeight) || 22;
+      text.scrollTop = Math.max(0, line * lh - 40);
+      if (heading) {
+        const hit = [...preview.querySelectorAll('h2, h3, h4')].find((x) => x.textContent.trim() === heading.replace(/[*`$]/g, '').trim());
+        if (hit) preview.scrollTop = hit.offsetTop - preview.offsetTop - 12;
+      }
+    },
+    headings: () => headingsOf(text.value),
     setStatus(kind) { status.textContent = kind ? t(`editor.status.${kind}`) : ''; status.dataset.kind = kind || ''; },
     focus() { text.focus(); },
     refresh(body) { const at = text.selectionStart; text.value = body; text.setSelectionRange(Math.min(at, body.length), Math.min(at, body.length)); drawPreview(); },

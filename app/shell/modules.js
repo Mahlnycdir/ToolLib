@@ -20,12 +20,13 @@ export const ACCENTS = [
 // CREATORS of create.js; types: the kinds of nodes it shows, which take its colour.
 export const MODULES = [
   { id: 'projects', icon: 'target', accent: 'violet', types: ['project', 'note'] },                 // 0.15.0
-  { id: 'scraper', icon: 'globe', accent: 'blue', types: ['clip', 'research', 'library', 'page'] }, // research window (0.14.0)
+  { id: 'scraper', icon: 'globe', accent: 'blue', types: ['clip', 'research'] },                    // research window (0.14.0)
+  { id: 'library', icon: 'file', accent: 'teal', types: ['library', 'page'] },                       // its own tool since 0.15.1
   { id: 'formulary', icon: 'vars', accent: 'rose', types: ['formula', 'convention', 'definition', 'theorem', 'term', 'topic'] },   // stage 3 (0.12.0)
   { id: 'cheatsheet', icon: 'book', accent: 'sky', types: ['snippet', 'recipe'] },
   { id: 'kobra', icon: 'code', accent: 'yellow', href: 'kobra/', types: [] },   // Kobra as its own page (0.11.0)
-  { id: 'parts', icon: 'chip', accent: 'teal', planned: true, types: ['part', 'device'] },
-  { id: 'pins', icon: 'board', accent: 'green', planned: true, types: ['rule', 'pin_map'] },
+  { id: 'parts', icon: 'chip', accent: 'green', planned: true, types: ['part', 'device'] },
+  { id: 'pins', icon: 'board', accent: 'sky', planned: true, types: ['rule', 'pin_map'] },
   { id: 'kladde', icon: 'edit', accent: 'orange', planned: true, types: [] },
   { id: 'workmode', icon: 'chalkboard', accent: 'violet', planned: true, types: ['card'] },
 ];

@@ -71,7 +71,7 @@ export function renderStart(main, { go, onSync, onSetup, focusCommand }) {
     if (ready && !d) continue;
     const title = d ? nodeTitle(d, lang) : e.title;
     if (e.kind === 'read') items.push({ type: 'clip', verb: t('start.resume.read'), title, run: () => { savePref('research.read', e.path); go('#/m/scraper'); } });
-    else if (e.kind === 'write') items.push({ type: 'page', verb: t('start.resume.write'), title, run: () => { savePref('library.open', { path: e.lib, page: e.path, at: Date.now() }); go('#/m/scraper'); } });
+    else if (e.kind === 'write') items.push({ type: 'page', verb: t('start.resume.write'), title, run: () => { savePref('library.open', { path: e.lib, page: e.path, at: Date.now() }); go('#/m/library'); } });
     else if (d?.type !== 'project' || d.path !== focus?.path) items.push({ type: d?.type || 'note', verb: d ? typeLabel(d.type) : '', title, run: () => go(nodeHref(e.path)) });
     if (items.length >= 5) break;
   }

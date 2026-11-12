@@ -96,6 +96,21 @@ export const movePage = (path, slug, { dir = 0, toChapter = null } = {}) => chan
   return cs;
 });
 
+// Puts a page at a place (0.15.1, dragging in the table of contents): chapter `to`, before the page at `index`
+// (at the end with index -1). A page without a chapter comes in too.
+export const placePage = (path, slug, to, index = -1) => changeChapters(path, (cs) => {
+  if (!cs[to]) return null;
+  const from = cs.findIndex((c) => c.pages.includes(slug));
+  const old = from >= 0 ? cs[from].pages.indexOf(slug) : -1;
+  if (from >= 0) cs[from].pages = cs[from].pages.filter((s) => s !== slug);
+  const list = cs[to].pages;
+  let at = index < 0 || index > list.length ? list.length : index;
+  if (from === to && old >= 0 && old < at) at -= 1;   // the page left a gap above the place
+  if (from === to && old === at) return null;
+  list.splice(at, 0, slug);
+  return cs;
+});
+
 // ------------------------------------------------------------------ libraries
 export async function createLibrary({ title, lang = 'en', firstChapter = 'Chapter 1' }) {
   const name = String(title).trim();

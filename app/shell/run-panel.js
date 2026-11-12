@@ -82,7 +82,12 @@ export function runControls(node, options) {
   const checkOnly = !parts.code && !!parts.check && CHECK_ONLY.has(String(node.meta.type || ''));
   // Instead of "Try it": a short line why this one does not run here (copying works as always)
   const elsewhere = (name, key) => ({ buttons: [], panel: h('p', { class: 'run-later muted small' }, iconEl(name), h('span', { text: t(key) })) });
-  if (!parts.code && !checkOnly) return String(node.meta.language || '') === 'shell' ? elsewhere('terminal', 'run.terminal') : null;
+  if (!parts.code && !checkOnly) {
+    const language = String(node.meta.language || '');
+    if (language === 'shell') return elsewhere('terminal', 'run.terminal');
+    // a snippet in another language (0.15.1): copying works, running is for Python
+    return node.meta.type === 'snippet' && language && language !== 'python' ? elsewhere('copy', 'run.copyOnly') : null;
+  }
   if (String(node.meta.runs || '') === 'desktop') return elsewhere('server', 'run.desktopOnly');
   if (GUI_IMPORT.test(parts.code)) return elsewhere('window', 'run.guiLater');
   const prev = kept.get(node.path);

@@ -13,12 +13,13 @@ import {
   saveFolderNotes, updateClipVersions, workFromClip,
 } from '../services/research-store.js';
 import { mark } from '../services/trail.js';
-import { indexState, nodeByPath, onIndexChange } from '../services/search.js';
+import { LEARN_GROUPS, LEARN_SOURCES, learnOn, learnSearch, setLearnOn } from '../services/learn.js';
+import { nodeByPath, onIndexChange } from '../services/search.js';
 import { nodeHref } from './node-view.js';
 import { renderMarkdown } from './markdown.js';
 import { planFor } from '../services/reader.js';
 import { mountReader } from './reader-view.js';
-import { createLibrary, libraries, pagesOf } from '../services/library-store.js';
+import { libraries, } from '../services/library-store.js';
 import { mountLibrary } from './library-view.js';
 import { createFromWork } from './card-dialog.js';
 import { crawlState, onCrawl, pageWork, parseStart } from '../services/crawl.js';
@@ -49,6 +50,9 @@ const st = {
   libSeen: 0,
   address: '',           // an address in the search field (0.14.3): go through the website or read the page
   web: null,             // the same search on the web through SearXNG (0.14.4): { query, state, results, error }
+  mode: loadPref('research.mode', 'learn'),   // learn | papers (0.15.1): what a search of words looks for first
+  learn: null,           // { query, groups, finished }: the search for learning
+  learnSearch: null,
   webPdf: new Map(),     // key of a work -> { state, results }: "Search the web for a PDF"
 };
 let view = null;         // the mounted view: { root, draw* }
@@ -74,6 +78,7 @@ export function errorText(id, code, status = '') {
   return (text !== own ? text : t(`research.err.${code}`, { status: status || '' })).replace(/\s+/g, ' ').trim();
 }
 export const versionLabel = (v) => `${t(KIND_LABEL[v.kind] || KIND_LABEL.other)} · ${t(v.free ? 'research.free' : 'research.paid')}`;
+const LEARN_ICON = { overview: 'globe', intro: 'sparkle', books: 'book', courses: 'list', practice: 'code', web: 'search' };
 const authorLine = (a, n = 3) => (a.length > n ? `${a.slice(0, n).join(', ')} ${t('research.etal')}` : a.join(', '));
 const currentFolder = () => folders().find((f) => f.path === st.folder) || null;
 const workOf = (w) => st.extra.get(w.key) || w;
@@ -89,11 +94,14 @@ function shownWorks() {
     return true;
   });
 }
+const learnWorks = () => (st.learn ? LEARN_GROUPS.flatMap((g) => st.learn.groups[g]?.works || []) : []);
 const selectedWork = () => {
   if (st.kept) return st.kept;
-  const w = st.result?.works.find((x) => x.key === st.selected);
+  const w = st.result?.works.find((x) => x.key === st.selected) || (st.mode === 'learn' ? learnWorks().find((x) => x.key === st.selected) : null);
   return w ? workOf(w) : null;
 };
+// A search of words in learning mode; a DOI, an arXiv id and the like always look for papers.
+const learning = () => st.mode === 'learn' && (!st.query || parseQuery(st.query).kind === 'text');
 
 // ------------------------------------------------------------------ the view
 export function renderResearch(main) {
@@ -115,6 +123,22 @@ export function renderResearch(main) {
   });
   const go = h('button', { type: 'submit', class: 'btn primary rs-go' }, iconEl('search'), h('span', { text: t('research.search') }));
   const form = h('form', { class: 'rs-search', role: 'search' }, input, go);
+  // Learn or papers (0.15.1): learning asks for overviews, introductions, books, courses and code; papers asks the
+  // seven paper sources. The choice stays; switching runs the same words in the other way.
+  const modes = h('div', { class: 'segmented small rs-mode', role: 'group', 'aria-label': t('research.mode') });
+  const drawModes = () => modes.replaceChildren(...['learn', 'papers'].map((m) => {
+    const b = h('button', { type: 'button', class: st.mode === m ? 'on' : '', 'aria-pressed': String(st.mode === m), dataset: { mode: m } }, iconEl(m === 'learn' ? 'sparkle' : 'file'), h('span', { text: t(`research.mode.${m}`) }));
+    b.addEventListener('click', () => {
+      if (st.mode === m) return;
+      st.mode = m;
+      savePref('research.mode', m);
+      drawModes();
+      st.selected = null;
+      if (st.query) run(st.query, { keep: true }); else view.drawAll();
+    });
+    return b;
+  }));
+  drawModes();
   form.addEventListener('submit', (e) => { e.preventDefault(); run(input.value); input.blur(); });
   const filters = h('div', { class: 'rs-filters' });
   const sources = h('div', { class: 'rs-sources', 'aria-live': 'polite' });
@@ -124,7 +148,37 @@ export function renderResearch(main) {
   // on the phone the filters and the sources stay folded away until you ask for them (0.15.0)
   const moreBtn = h('button', { type: 'button', class: 'btn small rs-more-btn', 'aria-expanded': 'false' }, iconEl('format'), h('span', { text: t('research.more.filters') }));
   moreBtn.addEventListener('click', () => { const on = mid.classList.toggle('more'); moreBtn.setAttribute('aria-expanded', String(on)); });
-  mid.append(form, h('div', { class: 'rs-switch-row' }, switcher, moreBtn), filters, sources, notice, list);
+  const keysHint = h('span', { class: 'rs-keys muted small', text: t('research.keys') });
+  mid.append(modes, form, h('div', { class: 'rs-switch-row' }, switcher, moreBtn, keysHint), filters, sources, notice, list);
+  // Going through the hits with the keyboard (0.15.1): ↑↓ or j/k move, Enter shows the details, L reads, M keeps.
+  root.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey || document.querySelector('.modal-backdrop, .sheet-backdrop')) return;
+    const rows = [...list.querySelectorAll('.rs-hit')];
+    if (!rows.length) return;
+    const focusRow = (i) => {
+      const r = rows[Math.max(0, Math.min(rows.length - 1, i))];
+      r.querySelector('button.rs-hit-main, a.rs-hit-title')?.focus();
+      r.scrollIntoView({ block: 'nearest' });
+    };
+    if (e.target === input) { if (e.key === 'ArrowDown') { e.preventDefault(); focusRow(0); } return; }
+    if (e.target.matches('input, textarea, select, [contenteditable]')) return;
+    const cur = rows.findIndex((r) => r.contains(document.activeElement));
+    const key = e.key.toLowerCase();
+    if (e.key === 'ArrowDown' || key === 'j') { e.preventDefault(); focusRow(cur + 1); return; }
+    if (e.key === 'ArrowUp' || key === 'k') { e.preventDefault(); if (cur <= 0) input.focus(); else focusRow(cur - 1); return; }
+    if (cur < 0) return;
+    const row = rows[cur];
+    if (key === 'l') {
+      e.preventDefault();
+      const web = row.querySelector('.rs-web-read');
+      if (web) { web.click(); return; }
+      const w = [...(st.result?.works || []), ...learnWorks()].find((x) => x.key === row.dataset.key);
+      if (w) { st.kept = null; st.selected = w.key; openReader(workOf(w)); }
+    } else if (key === 'm') {
+      e.preventDefault();
+      row.querySelector('.rs-keep-quick, .rs-web-keep')?.click();
+    }
+  });
 
   view = {
     root, input,
@@ -195,11 +249,8 @@ export function renderResearch(main) {
     }
   }
   function openLibrary(path, page = '') {
-    st.lib = { path, page };
-    savePref('library.open', st.lib);
-    st.read = null;
-    showReader();
-    if (narrow()) setPane('results');
+    savePref('library.open', { path, page, at: Date.now() });
+    location.hash = '#/m/library';
   }
   function closeLibrary() {
     st.lib = null;
@@ -266,27 +317,10 @@ export function renderResearch(main) {
       });
       items.append(h('li', {}, b));
     }
-    const libs = libraries();
-    const addLib = h('button', { type: 'button', class: 'icon-btn rs-lib-new', title: t('library.new'), 'aria-label': t('library.new'), html: icon('plus') });
-    addLib.addEventListener('click', async () => {
-      const title = await promptDialog(t('library.new'), { label: t('library.name'), placeholder: t('library.placeholder'), okLabel: t('research.folder.create'), validate: (v) => (v.trim() ? '' : t('library.needTitle')) });
-      if (!title || !title.trim()) return;
-      try {
-        const path = await createLibrary({ title, lang: getLang(), firstChapter: t('library.chapter.default', { n: 1 }) });
-        toast(t('library.created', { title: title.trim() }), 'ok');
-        openLibrary(path);
-      } catch (e) {
-        console.warn('Could not create the library', e);
-        toast(t('library.saveFailed'), 'error', 5000);
-      }
-    });
-    const libList = h('ul', { class: 'rs-folder-list rs-lib-list' }, ...libs.map((l) => h('li', {}, h('button', { type: 'button', class: 'rs-folder rs-lib', onclick: () => openLibrary(l.path) },
-      iconEl('book'), h('span', { class: 'rs-folder-name', text: l.title }), h('span', { class: 'rs-count', text: String(pagesOf(l.slug).length) })))));
+    // your libraries moved into a tool of their own (0.15.1); the research window is for finding and reading
     left.replaceChildren(
       h('div', { class: 'rs-head' }, h('h2', { text: t('research.folders') }), h('div', { class: 'rs-head-btns' }, crawlBtn, add)),
       all.length || loose.length ? items : h('p', { class: 'muted small', text: t('research.folder.none') }),
-      h('div', { class: 'rs-head rs-lib-head' }, h('h2', { text: t('library.libraries') }), addLib),
-      libs.length ? libList : h('p', { class: 'muted small', text: t('library.none') }),
       h('div', { class: 'rs-left-foot' },
         !solo() && !isIos() && !narrow() ? h('button', { type: 'button', class: 'btn small', onclick: openWindow }, iconEl('window'), h('span', { text: t('research.ownWindow') })) : null,
         h('a', { class: 'small', href: '#/settings/research', text: t('research.settings') })));
@@ -310,11 +344,12 @@ export function renderResearch(main) {
 
   function drawSwitch() {
     const f = currentFolder();
-    const n = st.result ? shownWorks().length : 0;
+    const n = learning() ? learnCount() : st.result ? shownWorks().length : 0;
+    mid.dataset.mode = learning() ? 'learn' : 'papers';
     const loose = f ? 0 : looseClips().length;
     mid.dataset.list = st.list;
     switcher.replaceChildren(
-      h('button', { type: 'button', class: st.list === 'hits' ? 'on' : '', 'aria-pressed': String(st.list === 'hits'), text: st.result ? t('research.hits', { n }) : t('research.hitsNone'), onclick: () => { st.list = 'hits'; drawAll2(); } }),
+      h('button', { type: 'button', class: st.list === 'hits' ? 'on' : '', 'aria-pressed': String(st.list === 'hits'), text: (learning() ? st.learn : st.result) ? t('research.hits', { n }) : t('research.hitsNone'), onclick: () => { st.list = 'hits'; drawAll2(); } }),
       h('button', { type: 'button', class: st.list === 'kept' ? 'on' : '', disabled: f || loose ? null : true, 'aria-pressed': String(st.list === 'kept'), text: f ? t('research.kept', { n: f.clips.length }) : loose ? `${t('research.loose')} (${loose})` : t('research.keptNone'), onclick: () => { st.list = 'kept'; drawAll2(); drawFolders(); } }));
   }
   const drawAll2 = () => { drawSwitch(); drawSources(); drawNotice(); drawList(); };
@@ -350,11 +385,13 @@ export function renderResearch(main) {
     notice.replaceChildren();
     if (st.list !== 'hits') return;
     const s = researchSettings();
+    if (learning()) return;
     const errors = Object.entries(st.result?.status || {}).filter(([, v]) => v.state === 'error');
     const lines = [];
-    if (!hasFetcher(s) && (sourceOn('arxiv', s) || sourceOn('doab', s))) lines.push(['info', t('research.needWorker')]);
-    if (!s.openalexKey && sourceOn('openalex', s)) lines.push(['info', t('research.needKey')]);
-    for (const [id, v] of errors) lines.push(['warn', `${sourceById(id).name}: ${errorText(id, v.error, v.status)}`]);
+    // 0.15.1: what is missing and who did not answer, each in one line; why stands on the chip of each source
+    const missing = [!hasFetcher(s) && (sourceOn('arxiv', s) || sourceOn('doab', s)) ? t('research.missing.fetcher') : '', !s.openalexKey && sourceOn('openalex', s) ? t('research.missing.key') : ''].filter(Boolean);
+    if (missing.length) lines.push(['info', t('research.missing', { list: missing.join(', ') })]);
+    if (errors.length) lines.push(['warn', t('research.silent', { list: errors.map(([id]) => sourceById(id).name).join(', ') })]);
     if (typeof navigator !== 'undefined' && navigator.onLine === false) lines.unshift(['warn', t('research.offline')]);
     for (const [kind, text] of lines.slice(0, 4)) {
       notice.append(h('p', { class: `rs-line ${kind}` }, iconEl(kind === 'warn' ? 'warn' : 'info'), h('span', { text }),
@@ -378,6 +415,7 @@ export function renderResearch(main) {
         h('p', { class: 'muted small', text: t('crawl.address.hint') })));
       return;
     }
+    if (learning()) { drawLearn(); return; }
     if (!st.result) {
       list.append(h('li', { class: 'rs-empty' }, h('p', { text: t('research.intro') }),
         h('ul', { class: 'muted small' }, ['research.example.topic', 'research.example.doi', 'research.example.arxiv', 'research.example.pmid'].map((k) => h('li', { text: t(k) })))));
@@ -393,6 +431,40 @@ export function renderResearch(main) {
     if (!st.result.finished) list.append(h('li', { class: 'rs-empty muted small' }, iconEl('refresh', 'spin'), h('span', { text: ` ${t('research.more')}` })));
     appendWeb();
   }
+
+  // ---------------------------------------------------------------- learning a subject (0.15.1)
+  function drawLearn() {
+    if (!st.learn) {
+      list.append(h('li', { class: 'rs-empty' }, h('p', { text: t('learn.intro') }),
+        h('ul', { class: 'muted small' }, LEARN_GROUPS.map((g) => h('li', { text: `${t(`learn.group.${g}`)}: ${t(`learn.group.${g}.hint`)}` }))),
+        h('p', { class: 'muted small' }, t('learn.sources'), ' ', ...LEARN_SOURCES.map((s) => {
+          const on = learnOn(s.id);
+          const b = h('button', { type: 'button', class: `rs-src ${on ? 'idle' : 'off'}`, 'aria-pressed': String(on), text: s.name, title: s.helper ? t('learn.helperOnly') : '' });
+          b.addEventListener('click', () => { setLearnOn(s.id, !on); drawList(); });
+          return b;
+        }))));
+      return;
+    }
+    let any = false;
+    for (const g of LEARN_GROUPS) {
+      const grp = st.learn.groups[g];
+      if (!grp || grp.state === 'off') continue;
+      const n = grp.items.length + grp.works.length;
+      if (grp.state !== 'busy' && !n) continue;
+      any = any || n > 0;
+      list.append(h('li', { class: `rs-learn-head learn-${g}` }, iconEl(LEARN_ICON[g]),
+        h('span', { class: 'rs-learn-name' }, h('strong', { text: t(`learn.group.${g}`) }), h('span', { class: 'muted small', text: t(`learn.group.${g}.hint`) })),
+        grp.state === 'busy' ? iconEl('refresh', 'spin') : h('span', { class: 'rs-count', text: String(n) })));
+      for (const w of grp.works) list.append(hitRow(w));
+      for (const r of grp.items) list.append(webRow(r, { crawl: g === 'courses' || g === 'web', overview: g === 'overview' }));
+    }
+    if (st.learn.finished && !any) list.append(h('li', { class: 'rs-empty muted', text: t('learn.none') }));
+    if (st.learn.finished) {
+      list.append(h('li', { class: 'rs-learn-foot muted small' }, h('span', { text: t('learn.papersToo') }), ' ',
+        h('button', { type: 'button', class: 'link-btn', text: t('learn.toPapers'), onclick: () => modes.querySelector('[data-mode="papers"]').click() })));
+    }
+  }
+  const learnCount = () => (st.learn ? LEARN_GROUPS.reduce((n, g) => n + (st.learn.groups[g]?.items.length || 0) + (st.learn.groups[g]?.works.length || 0), 0) : 0);
 
   // ---------------------------------------------------------------- on the web (SearXNG in the Mac helper, 0.14.4)
   function appendWeb() {
@@ -413,12 +485,12 @@ export function renderResearch(main) {
     return { ...w, title: String(r.title || '').trim() || w.title, abstract: String(r.content || '').trim() };
   }
 
-  function webRow(r, { compact = false } = {}) {
+  function webRow(r, { compact = false, crawl: canCrawl = true, overview = false } = {}) {
     let host = '';
     try { host = new URL(r.url).hostname.replace(/^www\./, ''); } catch { host = r.url; }
     const read = h('button', { type: 'button', class: 'btn small rs-web-read' }, iconEl('book'), h('span', { text: t('research.read') }));
     read.addEventListener('click', () => { st.kept = null; st.selected = null; openReader(webWork(r)); });
-    const crawl = compact ? null : h('button', { type: 'button', class: 'btn small rs-web-crawl', title: t('crawl.title') }, iconEl('globe'), h('span', { text: t('research.web.crawl') }));
+    const crawl = compact || !canCrawl ? null : h('button', { type: 'button', class: 'btn small rs-web-crawl', title: t('crawl.title') }, iconEl('globe'), h('span', { text: t('research.web.crawl') }));
     crawl?.addEventListener('click', () => openCrawl(r.url));
     const keep = compact ? null : h('button', { type: 'button', class: 'btn small rs-web-keep' }, iconEl('bookmark'), h('span', { text: t('research.keep') }));
     keep?.addEventListener('click', async () => {
@@ -431,11 +503,11 @@ export function renderResearch(main) {
       }
       view.drawAll();
     });
-    return h('li', { class: 'rs-hit rs-web' },
+    return h('li', { class: `rs-hit rs-web${overview ? ' rs-overview' : ''}` },
       h('div', { class: 'rs-hit-main rs-web-main' },
         h('a', { class: 'rs-hit-title', href: r.url, target: '_blank', rel: 'noopener noreferrer', text: r.title || r.url }),
         h('span', { class: 'rs-hit-meta muted small', text: [host, r.published ? String(r.published).slice(0, 10) : ''].filter(Boolean).join(' · ') }),
-        r.content ? h('span', { class: 'small rs-web-snippet', text: String(r.content).slice(0, 280) }) : null,
+        r.content ? h('span', { class: 'small rs-web-snippet', text: String(r.content).slice(0, overview ? 600 : 280) }) : null,
         /\.pdf($|[?#])/i.test(r.url) ? h('span', { class: 'rs-hit-tags' }, h('span', { class: 'rs-tag', text: 'PDF' })) : null),
       h('div', { class: 'rs-hit-actions' }, read, crawl, keep));
   }
@@ -475,7 +547,7 @@ export function renderResearch(main) {
     const on = !st.kept && st.selected === w.key;
     const meta = [authorLine(w.authors), w.year, w.venue].filter(Boolean).join(' · ');
     const open = best ? h('a', { class: 'btn small', href: (best.pdf && best.free) || !best.url ? best.pdf : best.url, target: '_blank', rel: 'noopener noreferrer', title: best.url }, iconEl('external'), h('span', { text: t('research.open') })) : null;
-    const keep = h('button', { type: 'button', class: `btn small${clip ? ' kept' : ''}`, title: t(clip ? 'research.keptAlready' : 'research.keep') }, iconEl(clip ? 'check' : 'bookmark'), h('span', { text: t(clip ? 'research.keptShort' : 'research.keep') }));
+    const keep = h('button', { type: 'button', class: `btn small rs-keep-quick${clip ? ' kept' : ''}`, title: t(clip ? 'research.keptAlready' : 'research.keep') }, iconEl(clip ? 'check' : 'bookmark'), h('span', { text: t(clip ? 'research.keptShort' : 'research.keep') }));
     keep.addEventListener('click', (e) => { e.stopPropagation(); keepQuick(w); });
     const row = h('li', { class: `rs-hit${on ? ' on' : ''}`, dataset: { key: w.key } },
       h('button', { type: 'button', class: 'rs-hit-main', 'aria-pressed': String(on) },
@@ -827,14 +899,11 @@ export function renderResearch(main) {
   if (show) { savePref('research.showFolder', ''); st.folder = show; st.list = 'kept'; st.kept = null; st.read = null; if (narrow()) st.pane = 'results'; root.dataset.pane = st.pane; }
   // a search handed over by the command bar, a project or a note, or a new folder: they come in front of a library
   // that was open the last time (before 0.15.0 the search ran unseen behind it)
-  if (show || st.queued) { savePref('library.open', null); st.read = null; }
+  if (show || st.queued) st.read = null;
   view.drawAll();
   const pendingCrawl = loadPref('crawl.open', '');
   if (pendingCrawl) { savePref('crawl.open', ''); setTimeout(() => openCrawl(pendingCrawl), 50); }
-  // a library opened from its node ("Write"): it comes to the front, also over the reader
-  const open = loadPref('library.open', null);
-  st.lib = open?.path && (!indexState().ready || nodeByPath(open.path)) ? open : null;
-  if (st.lib && (open.at || 0) > st.libSeen) { st.libSeen = open.at || 0; if (open.at) st.read = null; }
+  st.lib = null;   // libraries open in their own tool since 0.15.1
   if (st.read) showReader(); else applyMode();
   readQueued();
   if (st.queued) { st.queued = false; run(st.query); } else if (!st.result && st.query) input.focus();
@@ -848,7 +917,27 @@ export function queueSearch(q) {
 }
 
 // ------------------------------------------------------------------ searching
-function run(raw, { words = false } = {}) {
+// A search for learning (0.15.1): see services/learn.js.
+function runLearn(q) {
+  st.learnSearch?.cancel();
+  st.selected = null;
+  st.kept = null;
+  st.list = 'hits';
+  st.learn = { query: q, groups: {}, finished: false };
+  if (narrow()) st.pane = 'results';
+  const handle = learnSearch(q, {
+    onUpdate: (r) => {
+      if (st.learnSearch !== handle) return;
+      st.learn = r;
+      if (view?.root.isConnected) { view.root.dataset.pane = st.pane; view.drawAll(); }
+    },
+  });
+  st.learnSearch = handle;
+  view?.drawAll();
+}
+
+// keep: the same words again after switching between learning and papers; an answer already there stays.
+function run(raw, { words = false, keep = false } = {}) {
   const q = String(raw || '').trim();
   if (!q) return;
   st.query = q;
@@ -867,6 +956,13 @@ function run(raw, { words = false } = {}) {
     if (view?.root.isConnected) { view.root.dataset.pane = st.pane; view.drawAll(); }
     return;
   }
+  if (st.mode === 'learn' && parseQuery(q).kind === 'text') {
+    if (keep && st.learn?.query === q) { view?.drawAll(); return; }
+    runLearn(q);
+    return;
+  }
+  if (keep && st.paperQuery === q && st.result) { view?.drawAll(); return; }
+  st.paperQuery = q;
   st.selected = null;
   st.kept = null;
   st.extra.clear();

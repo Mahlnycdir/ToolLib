@@ -99,7 +99,7 @@ export function mountReader(host, opts) {
     }
     const again = state.doc ? h('button', { type: 'button', class: 'btn small', title: t('reader.refetch'), 'aria-label': t('reader.refetch'), onclick: () => load({ refetch: true }) }, iconEl('refresh')) : null;
     const size = h('button', { type: 'button', class: 'btn small rd-size', title: t('reader.size'), 'aria-label': t('reader.size'), onclick: cycleSize }, h('span', { text: 'Aa' }));
-    bar.replaceChildren(back, title, via, save, link, again, size);
+    bar.replaceChildren(...[back, title, via, save, link, again, size].filter(Boolean));   // null would show as the word "null" (until 0.15.1 while loading and after an error)
   }
 
   function cycleSize() {

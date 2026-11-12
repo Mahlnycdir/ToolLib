@@ -3,7 +3,7 @@ import { h, toast, copyText, confirmDialog } from '../services/ui.js';
 import { loadPref, savePref } from '../services/prefs.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
-import { getNode, isOwn, linksOf, localize, readNodeText, replaceBlock, runParts, setVerified, sourcesOf, summary, titleOf, writeNode } from '../services/nodes.js';
+import { getNode, isOwn, languageName, linksOf, localize, readNodeText, replaceBlock, runParts, setVerified, sourcesOf, summary, titleOf, writeNode } from '../services/nodes.js';
 import { allNodes, bestProblem, indexState, nodeByPath, nodeBySlug, onIndexChange, refreshNode, searchNodes } from '../services/search.js';
 import { githubRepo, isConfigured, noteChange, repoUrl } from '../services/sync.js';
 import { moduleOfType, paintAccent } from './modules.js';
@@ -29,6 +29,8 @@ const TYPE_ICON = {
 };
 export const typeIcon = (type) => TYPE_ICON[type] || 'file';
 export const typeAccent = (type) => moduleOfType(type);
+const SOURCE_ELSEWHERE = new Set(['clip', 'research', 'library', 'page', 'project', 'note']);
+export const sourceHref = (path) => `#/src/${path.split('/').map(encodeURIComponent).join('/')}`;
 export const typeLabel = (type) => (t(`type.${type}`) === `type.${type}` ? type : t(`type.${type}`));
 export const groupLabel = (group) => (t(`group.${group}`) === `group.${group}` ? group : t(`group.${group}`));
 export const GROUP_ORDER = ['control-flow', 'functions-classes', 'errors-files', 'data', 'data-structures', 'numpy', 'scipy', 'matplotlib', 'animation', 'lattice', 'sympy', 'debugging', 'threading', 'gui', 'git', 'science', 'imports'];
@@ -129,6 +131,7 @@ export async function renderNode(main, path, ctx) {
   // Head: kind, title, the title in the other language. A checked node looks like any other: no mark.
   const own = isOwn(node.meta);
   const chips = h('div', { class: 'node-chips' }, h('span', { class: 'chip', text: typeLabel(d.type) }));
+  if (d.type === 'snippet' && d.language && d.language !== 'python') chips.append(h('span', { class: 'chip', text: languageName(d.language) }));
   if (d.group) chips.append(h('span', { class: 'chip', text: groupLabel(d.group) }));
   for (const a of d.area) chips.append(h('span', { class: 'chip', text: t(`area.${a}`) === `area.${a}` ? a : t(`area.${a}`) }));
   chips.append(...topicChips(d));
@@ -139,7 +142,11 @@ export async function renderNode(main, path, ctx) {
     h('div', { class: 'node-titles' },
       h('h1', { class: 'view-title', text: nodeTitle(d, lang) }),
       other ? h('p', { class: 'muted other-title', text: other }) : null,
-      chips)));
+      chips),
+    // Edit (0.15.1): every node opens as it is written, with a preview; works you kept, folders and pages have
+    // their own places for that, your own snippets their form
+    editable && !SOURCE_ELSEWHERE.has(d.type) && !(own && d.type === 'snippet')
+      ? h('a', { class: 'btn small edit-source', href: sourceHref(path) }, iconEl('edit'), h('span', { text: t('node.edit') })) : null));
 
   // The problems this node solves: what the search matches first.
   const problems = problemsOf(d, lang);
@@ -221,7 +228,7 @@ export async function renderNode(main, path, ctx) {
   }
 
   // Your libraries (0.14.2): a library shows its chapters, a page where it stands, with the pages before and after it.
-  const writeIn = (libPath, pagePath = '') => { savePref('library.open', { path: libPath, page: pagePath, at: Date.now() }); go('#/m/scraper'); };
+  const writeIn = (libPath, pagePath = '') => { savePref('library.open', { path: libPath, page: pagePath, at: Date.now() }); go('#/m/library'); };
   let libInfo = null;
   if ((d.type === 'library' || d.type === 'page') && !node.conflict) {
     const libPath = d.type === 'library' ? path : allNodes().find((x) => x.type === 'library' && !x.conflict && x.slug === d.library)?.path;
@@ -350,9 +357,26 @@ export function renderCheatsheet(main, mod, { go }) {
     b.addEventListener('click', () => { show = id; savePref('cheatsheet.show', id); draw(); });
     seg.append(b);
   }
-  const newBtn = h('button', { type: 'button', class: 'btn small new-snippet', onclick: () => go('#/new') }, iconEl('plus'), h('span', { text: t('cheatsheet.new') }));
+  // Languages (0.15.1): once there are snippets in more than one, chips pick one; a new snippet starts in it.
+  let only = loadPref('cheatsheet.lang', '');
+  const langs = h('div', { class: 'lang-chips', role: 'group', 'aria-label': t('snippet.field.language') });
+  const newBtn = h('button', { type: 'button', class: 'btn small new-snippet', onclick: () => { if (only) savePref('snippet.language', only); go('#/new'); } }, iconEl('plus'), h('span', { text: t('cheatsheet.new') }));
   const tools = h('div', { class: 'cheat-tools' }, seg, progress);
-  main.append(head, h('div', { class: 'filter-row' }, iconEl('search'), input), h('div', { class: 'cheat-bar' }, tools, newBtn), list);
+  main.append(head, h('div', { class: 'filter-row' }, iconEl('search'), input), langs, h('div', { class: 'cheat-bar' }, tools, newBtn), list);
+  // recipes are built from Python snippets: they show with all languages and with Python
+  const inLang = (d) => (d.type === 'snippet' ? !only || d.language === only : !only || only === 'python');
+  function drawLangs(all) {
+    const count = {};
+    for (const d of all) if (d.type === 'snippet') count[d.language] = (count[d.language] || 0) + 1;
+    const names = Object.keys(count).sort((a, b) => count[b] - count[a]);
+    if (only && !count[only]) only = '';
+    langs.hidden = names.length < 2;
+    langs.replaceChildren(...['', ...names].map((l) => {
+      const b = h('button', { type: 'button', class: `lang-chip${only === l ? ' on' : ''}`, 'aria-pressed': String(only === l), dataset: { lang: l } }, h('span', { text: l ? languageName(l) : t('cheatsheet.show.all') }), l ? h('span', { class: 'count', text: String(count[l]) }) : null);
+      b.addEventListener('click', () => { only = l; savePref('cheatsheet.lang', l); draw(); });
+      return b;
+    }));
+  }
 
   // Checking is for drafts (by Claude or an import). Once none is left, the filter, the bar and the marks go away.
   let checking = true;
@@ -365,6 +389,7 @@ export function renderCheatsheet(main, mod, { go }) {
   const row = (d) => h('div', { class: 'snip-row' },
     h('a', { class: 'snip-main', href: nodeHref(d.path) },
       h('span', { class: 'snip-title' }, h('span', { text: nodeTitle(d) }),
+        !only && d.type === 'snippet' && d.language !== 'python' ? h('span', { class: 'snip-lang', text: languageName(d.language) }) : null,
         !d.verified ? h('span', { class: 'snip-open', text: t('cheatsheet.unverified') }) : null,
         d.source === 'you' ? h('span', { class: 'snip-own', title: t('node.own'), 'aria-label': t('node.own'), html: icon('edit') }) : null),
       h('span', { class: 'snip-lead muted', text: lead(d) })),
@@ -391,6 +416,7 @@ export function renderCheatsheet(main, mod, { go }) {
     const s = indexState();
     list.replaceChildren();
     drawTools(s.ready ? allNodes().filter(inCheatsheet) : []);
+    drawLangs(s.ready ? allNodes().filter(inCheatsheet) : []);
     if (!s.ready) { list.append(h('p', { class: 'muted', text: t('commandbar.indexing') })); return; }
     if (!s.hasKnowledge) {
       list.append(h('div', { class: 'card' }, h('p', { class: 'muted', text: t('cheatsheet.noKnowledge') }),
@@ -399,19 +425,19 @@ export function renderCheatsheet(main, mod, { go }) {
     }
     const q = input.value.trim();
     if (q) {
-      const hits = searchNodes(q, { limit: 200, filter: (d) => inCheatsheet(d) && wanted(d) });
+      const hits = searchNodes(q, { limit: 200, filter: (d) => inCheatsheet(d) && wanted(d) && inLang(d) });
       list.append(hits.length ? h('div', { class: 'card snip-card' }, hits.map(row)) : h('p', { class: 'muted', text: t('cheatsheet.none') }));
       return;
     }
     const byTitle = (a, b) => nodeTitle(a).localeCompare(nodeTitle(b));
-    const recipes = allNodes().filter((d) => d.type === 'recipe' && inCheatsheet(d) && wanted(d)).sort(byTitle);
+    const recipes = allNodes().filter((d) => d.type === 'recipe' && inCheatsheet(d) && wanted(d) && inLang(d)).sort(byTitle);
     if (recipes.length) {
       list.append(h('section', { class: 'card snip-card recipes' },
         h('h2', {}, h('span', { class: 'icon', html: icon('list') }), t('cheatsheet.recipes'), h('span', { class: 'count', text: String(recipes.length) })),
         h('p', { class: 'muted small recipes-hint', text: t('cheatsheet.recipes.hint') }),
         recipes.map(row)));
     }
-    const snippets = allNodes().filter((d) => d.type === 'snippet' && inCheatsheet(d) && wanted(d));
+    const snippets = allNodes().filter((d) => d.type === 'snippet' && inCheatsheet(d) && wanted(d) && inLang(d));
     const groups = [...new Set([...GROUP_ORDER, ...snippets.map((d) => d.group || 'other')])];
     for (const g of groups) {
       const items = snippets.filter((d) => (d.group || 'other') === g).sort((a, b) => nodeTitle(a).localeCompare(nodeTitle(b)));
