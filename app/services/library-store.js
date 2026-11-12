@@ -195,9 +195,12 @@ async function removePageFile(path) {
   announce([path]);
 }
 
+// Takes a page out of the chapters, the file stays.
+export const unlistPage = (libPath, slug) => changeChapters(libPath, (cs) => (cs.some((c) => c.pages.includes(slug)) ? cs.map((c) => ({ ...c, pages: c.pages.filter((s) => s !== slug) })) : null));
+
 export async function deletePage(libPath, slug) {
   const d = nodeBySlug(slug);
-  await changeChapters(libPath, (cs) => cs.map((c) => ({ ...c, pages: c.pages.filter((s) => s !== slug) })));
+  await unlistPage(libPath, slug);
   if (d?.type === 'page') await removePageFile(d.path);
 }
 

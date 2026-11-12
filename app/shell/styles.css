@@ -1221,7 +1221,15 @@ textarea.field { height: auto; padding: 10px 12px; line-height: 1.45; resize: ve
 .snippet-form label[hidden] { display: none; }
 
 /* edit a node as it is written */
-.node-head .edit-source { margin-left: auto; flex: none; text-decoration: none; }
+.node-head-actions { margin-left: auto; flex: none; display: flex; gap: 6px; }
+.node-head .edit-source { flex: none; text-decoration: none; }
+.node-head .delete-node { color: var(--muted); }
+.node-head .delete-node:hover, .node-head .delete-node:focus-visible { color: var(--danger, #b42318); }
+.toast.show.with-action { pointer-events: auto; padding-right: 6px; }
+.toast-action { margin-left: 6px; padding: 6px 10px; border: 0; border-radius: 8px; background: rgba(255, 255, 255, 0.16); color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+.toast-action:hover, .toast-action:focus-visible { background: rgba(255, 255, 255, 0.28); }
+.delete-ask p { margin: 0 0 8px; }
+.delete-ask p:last-child { margin-bottom: 0; }
 .main[data-view="source"] > * { max-width: 1400px; }
 .source-head { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 8px; }
 .source-head .view-title { margin-bottom: 2px; }

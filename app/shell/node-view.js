@@ -18,6 +18,8 @@ import { workFromClip } from '../services/research-store.js';
 import { createFromWork } from './card-dialog.js';
 import { openOriginal } from '../services/pdf-inbox.js';
 import { contextBox } from './context.js';
+import { askDelete } from './delete-node.js';
+import { DELETED_ELSEWHERE } from '../services/remove.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 
@@ -145,8 +147,13 @@ export async function renderNode(main, path, ctx) {
       chips),
     // Edit (0.15.1): every node opens as it is written, with a preview; works you kept, folders and pages have
     // their own places for that, your own snippets their form
-    editable && !SOURCE_ELSEWHERE.has(d.type) && !(own && d.type === 'snippet')
-      ? h('a', { class: 'btn small edit-source', href: sourceHref(path) }, iconEl('edit'), h('span', { text: t('node.edit') })) : null));
+    h('div', { class: 'node-head-actions' }, ...[
+      editable && !SOURCE_ELSEWHERE.has(d.type) && !(own && d.type === 'snippet')
+        ? h('a', { class: 'btn small edit-source', href: sourceHref(path) }, iconEl('edit'), h('span', { text: t('node.edit') })) : null,
+      // Delete (0.15.2): every node, also one that does not read; a library is deleted in the library (its pages go too)
+      !node.conflict && !DELETED_ELSEWHERE.has(d.type)
+        ? h('button', { type: 'button', class: 'btn small delete-node', title: t('delete.ok'), 'aria-label': t('delete.ok'), onclick: () => askDelete(path, { go, title: nodeTitle(d, lang) }) }, iconEl('trash')) : null,
+    ].filter(Boolean))));
 
   // The problems this node solves: what the search matches first.
   const problems = problemsOf(d, lang);

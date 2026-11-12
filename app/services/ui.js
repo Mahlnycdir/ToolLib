@@ -42,14 +42,18 @@ export function tapKeepFocus(el, fn) {
 }
 
 let toastTimer = null;
-export function toast(msg, kind = 'info', ms = 2600) {
+// action (0.15.2): { label, run } puts a button into the toast, e.g. "Undo"; the toast then stays longer.
+export function toast(msg, kind = 'info', ms = 2600, action = null) {
   let el = document.getElementById('toast');
   if (!el) { el = h('div', { id: 'toast', role: 'status' }); document.body.append(el); }
-  el.className = `toast show ${kind}`;
+  el.className = `toast show ${kind}${action ? ' with-action' : ''}`;
   el.innerHTML = `${icon(kind === 'error' ? 'warn' : kind === 'ok' ? 'check' : 'info')}<span></span>`;
   el.querySelector('span').textContent = msg;
+  if (action) {
+    el.append(h('button', { type: 'button', class: 'toast-action', text: action.label, onclick: () => { el.classList.remove('show'); action.run(); } }));
+  }
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), ms);
+  toastTimer = setTimeout(() => el.classList.remove('show'), action ? Math.max(ms, 8000) : ms);
 }
 
 // ------------------------------------------------------------- Dialogs
