@@ -80,12 +80,14 @@ function startDrag(el, data, label, x, y) {
   document.body.append(ghost);
   document.body.classList.add('dragging-now');
   el.classList.add('dragging');
-  active = { data, ghost, el, zone: null, place: null, dx: x - r.left, dy: y - r.top };
+  active = { data, ghost, el, zone: null, place: null, dx: x - r.left, dy: y - r.top, at: { x, y }, raf: 0 };
   moveDrag(x, y);
+  active.raf = requestAnimationFrame(keepScrolling);
 }
 
 function moveDrag(x, y) {
   if (!active) return;
+  active.at = { x, y };
   active.ghost.style.transform = `translate(${x - Math.min(active.dx, 40)}px, ${y - 14}px)`;
   const under = document.elementFromPoint(x, y);
   let zoneEl = under?.closest?.('[data-dropzone]') || null;
@@ -97,13 +99,13 @@ function moveDrag(x, y) {
     active.zone = place ? zoneEl : null;
     active.place = place;
   }
-  autoScroll(under, y);
 }
 
 function endDrag(cancel) {
   const a = active;
   active = null;
   if (!a) return;
+  cancelAnimationFrame(a.raf);
   a.ghost.remove();
   a.el.classList.remove('dragging');
   document.body.classList.remove('dragging-now');
@@ -118,18 +120,45 @@ function suppressClick(el) {
   setTimeout(() => el.removeEventListener('click', stop, { capture: true }), 400);
 }
 
-// Near the top or bottom edge of a scrolling list: scroll it a little.
-function autoScroll(under, y) {
-  let box = under;
-  while (box && box !== document.body) {
+// Near an edge of a scrolling area the page keeps scrolling while you hold there, faster the closer you get
+// (0.19.0; before, it moved only while the pointer moved, so a widget far down never reached the first place).
+// Up and down for the page, sideways for the board's sections on a wide screen.
+function scrollBox(from, axis) {
+  for (let box = from; box && box !== document.documentElement; box = box.parentElement) {
+    if (box === document.body) break;
     const s = getComputedStyle(box);
-    if (/(auto|scroll)/.test(s.overflowY) && box.scrollHeight > box.clientHeight) break;
-    box = box.parentElement;
+    const over = axis === 'y' ? s.overflowY : s.overflowX;
+    if (/(auto|scroll)/.test(over) && (axis === 'y' ? box.scrollHeight > box.clientHeight : box.scrollWidth > box.clientWidth)) return box;
   }
-  if (!box || box === document.body) return;
-  const r = box.getBoundingClientRect();
-  if (y < r.top + 36) box.scrollTop -= 12;
-  else if (y > r.bottom - 36) box.scrollTop += 12;
+  const doc = document.scrollingElement;
+  return doc && (axis === 'y' ? doc.scrollHeight > doc.clientHeight : doc.scrollWidth > doc.clientWidth) ? doc : null;
+}
+function step(pos, lo, hi) {
+  const edge = Math.max(24, Math.min(72, (hi - lo) / 4));
+  const speed = (d) => Math.ceil(Math.min(1, d / edge) ** 2 * 22);
+  if (pos < lo + edge) return -speed(lo + edge - pos);
+  if (pos > hi - edge) return speed(pos - (hi - edge));
+  return 0;
+}
+function keepScrolling() {
+  if (!active) return;
+  const { x, y } = active.at;
+  const under = document.elementFromPoint(Math.max(0, Math.min(innerWidth - 1, x)), Math.max(0, Math.min(innerHeight - 1, y)));
+  let moved = false;
+  const v = (under && scrollBox(under, 'y')) || scrollBox(active.el, 'y');
+  if (v) {
+    const r = v === document.scrollingElement ? { top: 0, bottom: innerHeight } : v.getBoundingClientRect();
+    const dy = step(y, Math.max(0, r.top), Math.min(innerHeight, r.bottom));
+    if (dy) { const before = v.scrollTop; v.scrollTop += dy; moved = v.scrollTop !== before; }
+  }
+  const sideways = under && scrollBox(under, 'x');
+  if (sideways && sideways !== document.scrollingElement) {
+    const r = sideways.getBoundingClientRect();
+    const dx = step(x, Math.max(0, r.left), Math.min(innerWidth, r.right));
+    if (dx) { const before = sideways.scrollLeft; sideways.scrollLeft += dx; moved = moved || sideways.scrollLeft !== before; }
+  }
+  if (moved) moveDrag(x, y);   // what is under the pointer now
+  if (active) active.raf = requestAnimationFrame(keepScrolling);
 }
 
 // Upper or lower half of an element.

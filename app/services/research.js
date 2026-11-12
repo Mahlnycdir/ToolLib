@@ -71,6 +71,28 @@ function timed(signal, ms) {
 }
 
 // ------------------------------------------------------------------ the Mac helper (0.14.4)
+// Chromium browsers (Chrome, Vivaldi, Edge, Brave) and Firefox let a web page reach this computer (localhost) or
+// the home network only after you allowed it (0.19.0). The request says which it is, so the browser asks properly
+// instead of failing quietly; the permission is checked first, and the connection test tells what to do.
+export function addressSpace(url) {
+  let host = '';
+  try { host = new URL(url).hostname.replace(/^\[|\]$/g, '').toLowerCase(); } catch { return null; }
+  if (host === 'localhost' || host === '::1' || /^127\./.test(host)) return 'loopback';
+  if (/\.local$/.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host) || /^169\.254\./.test(host) || /^f[cd][0-9a-f]{0,2}:/.test(host) || /^fe80:/.test(host)) return 'local';
+  return null;
+}
+// 'granted' | 'prompt' | 'denied' | 'unknown' (Safari asks nothing; then it is 'unknown')
+export async function networkPermission(url) {
+  const space = addressSpace(url);
+  if (!space || !navigator.permissions?.query) return { space, state: 'unknown' };
+  try {
+    // the two names of today's Chromium; the old combined name is not asked, it can crash older versions
+    const st = await navigator.permissions.query({ name: space === 'loopback' ? 'loopback-network' : 'local-network' });
+    return { space, state: st.state };
+  } catch { return { space, state: 'unknown' }; }
+}
+const spaceOpt = (url) => { const space = addressSpace(url); return space ? { targetAddressSpace: space } : {}; };
+
 // Asked first when it answers; a Mac that sleeps or a phone away from home costs one short /ping every two minutes.
 const HELPER_OK_MS = 5 * 60 * 1000;
 const HELPER_DOWN_MS = 2 * 60 * 1000;
@@ -88,14 +110,18 @@ export async function helperReady(settings = researchSettings(), { fresh = false
   mine.pending = (async () => {
     const c = new AbortController();
     const id = setTimeout(() => c.abort(), 4000);
+    const perm = await networkPermission(settings.helper);
     try {
-      const res = await fetch(`${settings.helper}/ping`, { headers: { 'X-Toollib-Token': settings.helperToken }, credentials: 'omit', cache: 'no-store', signal: c.signal });
+      if (perm.state === 'denied') throw new Error('local network not allowed');
+      const res = await fetch(`${settings.helper}/ping`, { headers: { 'X-Toollib-Token': settings.helperToken }, credentials: 'omit', cache: 'no-store', signal: c.signal, ...spaceOpt(settings.helper) });
       const body = await res.json().catch(() => ({}));
       mine.ok = res.ok && body.ok === true;
       mine.info = mine.ok ? body : { status: res.status, error: body.error || '' };
     } catch {
       mine.ok = false;
-      mine.info = null;
+      // why, as far as the browser tells: the permission for the local network, or nothing at all
+      const after = perm.state === 'unknown' ? perm : await networkPermission(settings.helper);
+      mine.info = after.state === 'denied' || after.state === 'prompt' ? { network: after.state, space: after.space } : null;
     } finally {
       clearTimeout(id);
     }
@@ -173,7 +199,7 @@ export async function getFor(src, req, { settings = researchSettings(), signal, 
     if (await helperReady(settings)) {
       let res = null;
       try {
-        res = await fetch(`${settings.helper}/fetch?url=${encodeURIComponent(req.url)}`, { headers: helperHeaders(settings, headers), signal: t.signal, credentials: 'omit', cache: 'no-store' });
+        res = await fetch(`${settings.helper}/fetch?url=${encodeURIComponent(req.url)}`, { headers: helperHeaders(settings, headers), signal: t.signal, credentials: 'omit', cache: 'no-store', ...spaceOpt(settings.helper) });
       } catch {
         if (t.signal.aborted) throw t.signal.reason instanceof ResearchError ? t.signal.reason : new ResearchError('aborted');
         helperDown();   // the Mac sleeps or you are away: the worker takes over
@@ -238,7 +264,7 @@ export async function fetchPage(url, { signal, settings = researchSettings(), on
     }
     if (await helperReady(settings)) {
       try {
-        res = await fetch(`${settings.helper}/fetch?url=${encodeURIComponent(url)}${keep ? '&keep=1' : ''}`, { headers: helperHeaders(settings, { Accept: '*/*' }), signal: t.signal, credentials: 'omit', cache: 'no-store' });
+        res = await fetch(`${settings.helper}/fetch?url=${encodeURIComponent(url)}${keep ? '&keep=1' : ''}`, { headers: helperHeaders(settings, { Accept: '*/*' }), signal: t.signal, credentials: 'omit', cache: 'no-store', ...spaceOpt(settings.helper) });
         via = 'helper';
       } catch {
         if (t.signal.aborted) throw t.signal.reason instanceof ResearchError ? t.signal.reason : new ResearchError('aborted');
@@ -309,7 +335,7 @@ export async function helperFetch(path, { method = 'GET', json = null, signal, s
   try {
     res = await fetch(`${settings.helper}${path}`, {
       method, body: json ? JSON.stringify(json) : null, headers: helperHeaders(settings, json ? { 'Content-Type': 'application/json' } : {}),
-      signal, credentials: 'omit', cache: 'no-store',
+      signal, credentials: 'omit', cache: 'no-store', ...spaceOpt(settings.helper),
     });
   } catch {
     if (signal?.aborted) throw new ResearchError('aborted');
@@ -340,7 +366,7 @@ export async function renderPage(url, { signal, settings = researchSettings() } 
   try {
     let res;
     try {
-      res = await fetch(`${settings.helper}/render?url=${encodeURIComponent(url)}`, { headers: helperHeaders(settings), signal: t.signal, credentials: 'omit', cache: 'no-store' });
+      res = await fetch(`${settings.helper}/render?url=${encodeURIComponent(url)}`, { headers: helperHeaders(settings), signal: t.signal, credentials: 'omit', cache: 'no-store', ...spaceOpt(settings.helper) });
     } catch {
       if (t.signal.aborted) throw t.signal.reason instanceof ResearchError ? t.signal.reason : new ResearchError('aborted');
       helperDown();
@@ -474,10 +500,12 @@ export async function testResearch(onLine) {
       await helperReady(s, { fresh: true });
       const st = helperState();
       if (st.ok) set('helper', 'ok', st.info.render ? 'research.test.helper' : 'research.test.helperNoRender', { version: st.info.version || '?', folder: st.info.pdfDir || '', n: st.info.inbox || 0 });
+      else if (st.info?.network === 'denied') set('helper', 'fail', st.info.space === 'loopback' ? 'research.test.helperLoopbackDenied' : 'research.test.helperLocalDenied', { origin: location.origin });
+      else if (st.info?.network === 'prompt') set('helper', 'warn', 'research.test.helperAsk');
       else if (st.info?.status === 401) set('helper', 'fail', 'research.test.helperToken');
       else if (st.info?.error === 'origin-not-allowed') set('helper', 'fail', 'research.test.helperOrigin', { origin: location.origin });
       else if (st.info) set('helper', 'fail', 'research.test.workerError', { status: st.info.status });
-      else set('helper', 'fail', 'research.test.helperUnreachable');
+      else set('helper', 'fail', 'research.test.helperUnreachable', { url: `${s.helper}/ping` });
     })());
     await checks[0];   // the sources below then know whether the helper answers
   }

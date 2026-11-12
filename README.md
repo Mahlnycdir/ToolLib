@@ -105,6 +105,32 @@ Der Rahmen ist um eine Arbeitsweise gebaut: sammeln, festhalten, anwenden, und z
 - **Hell und dunkel** (Einstellungen › Aussehen): wie das Gerät, hell oder dunkel. `app/boot-theme.js` setzt die Wahl vor dem ersten Bild, damit nichts weiß aufblitzt; `app/services/theme.js` folgt danach dem Gerät. Die Wahl kommt mit in die verschlüsselte Einstellungsdatei. Kobra bleibt vorerst hell.
 - **Im Wissen** (siehe Wissen/README): Bereiche, Kartenplätze und Widgets sind je eine Zeile im Kopf der Projektdatei (`sections`, `board_<id>`, `widgets`, `read`, `pins`, `due`, `due_what`), Links, Rechenzettel und Fokuszeiten Abschnitte darunter (`## Links`, `## Calc`, `## Time`). Ändern zwei Geräte gleichzeitig, vereint der Sync die Listen; bei einem umbenannten Bereich gewinnt dieses Gerät.
 
+## Suche unter anderen Namen, 58 neue Snippets, Korrekturen (0.19.0)
+
+- **Suche** (`app/services/search.js`, `app/services/synonyms.js`):
+  - Code-Namen werden zerlegt und zusammengesetzt: curve_fit, FuncAnimation, np.linspace; „curvefit“ findet curve_fit.
+  - Jedes Wort sucht auch seine Geschwister aus dem Wörterbuch (126 Gruppen, deutsch, englisch, Code-Namen, Kürzel wie np, plt, gh): „Ausgleichsgerade“, „regression“ und „kleinste quadrate“ finden die Fits, „Diagramm“ findet plot. Treffer über Geschwister zählen etwas weniger.
+  - Eine Karte, die genau so heißt, wie du tippst (Titel oder Alias), steht vorn.
+  - Ein Wort, das nirgends vorkommt, wird zum nächsten bekannten Namen korrigiert, auch bei vertauschten Buchstaben („plto“ → plot, „jackkinfe“ → jackknife). Die Suchleiste und der Spickzettel sagen es in einer Zeile.
+  - Die Suche lernt: Was du nach einer Suche öffnest oder kopierst, steht beim nächsten Mal für dieselben Wörter vorn. Das Gelernte liegt unter `search.learned`, reist in der verschlüsselten Einstellungsdatei mit und lässt sich in Einstellungen › Allgemein vergessen.
+- **Spickzettel:** Gruppen-Chips über der Liste, ein Tipp zeigt nur eine Gruppe. Neue Gruppen: Fits & Fehler, Physikalische Modelle, Logs & Protokolle, Terminal & Bash, GitHub.
+- **58 neue Snippets im Wissen:**
+  - 14 Fits: Messfehler, χ² und p-Wert, Startwerte, Peaks, Potenzgesetz, gedämpfte Schwingung, Grenzen, globaler Fit, Bootstrap, Residuen, x-Fehler, Ausreißer, effektive Masse aus Korrelatoren;
+  - 6 Modelle: Ising, Zufallsweg, Oszillator, Wärmeleitung, Schrödinger 1D, Leapfrog;
+  - 7 NumPy und 7 Matplotlib;
+  - 10 Terminal und 8 GitHub (Token, SSH, zwei Konten, Fork und PR, gh, Actions, Release, geleakter Token);
+  - 6 Logs.
+
+  Alle sind als ungeprüft markiert. Alle 39 Python-Checks laufen in Pyodide.
+- **`$${…}` in Snippets** bleibt ein wörtliches `${…}`, für Bash (`$${f%.dat}`) und GitHub Actions. `${name}` bleibt ein Platzhalter.
+- **Korrekturen nach dem ersten Alltagstag:**
+  - Ein Widget oder Bereich, den du auf einen anderen ziehst, nimmt dessen Platz ein (vorher entschied die linke oder rechte Hälfte).
+  - Am Rand scrollt die Seite weiter, solange du hältst; neu ist auch „Ganz nach vorne“ im Menü.
+  - Dialoge: Ein Tipp auf OK bei offener iPhone-Tastatur zählt nicht mehr als Tipp daneben (das brach das Umbenennen ab). Umbenennen meldet, ob gespeichert wurde.
+- **Mac-Helfer in Chrome, Vivaldi, Edge, Brave und Firefox:** Diese Browser fragen, bevor eine Webseite den eigenen Rechner (localhost) oder das Heimnetz erreicht.
+  - Die App kennzeichnet ihre Anfragen (`targetAddressSpace`), fragt die Erlaubnis ab (`loopback-network`, `local-network`) und erklärt im Verbindungstest, wo man sie erteilt.
+  - Der Knopf „Im neuen Tab prüfen“ öffnet `…/ping`: Eine Antwort mit „error“ heißt, Helfer und Zertifikat sind in Ordnung.
+
 ## Wissen abgleichen
 
 Das Wissen liegt auf jedem Gerät im Browser-Speicher (IndexedDB, Dateisystem `toollib`, Ordner `/knowledge`), getrennt von Kobras Dateisystem `kobra`. Der Knopf Sync

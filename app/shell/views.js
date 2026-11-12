@@ -16,7 +16,7 @@ import { SOURCES } from '../services/research-sources.js';
 import { errorText } from './research-view.js';
 import { crawlDefaults } from '../services/crawl.js';
 import { MIN_PASSWORD, SettingsFileError, applySettings, collectSettings, diffSettings, exportSettings, fileName, readSettingsFile, undoImport, undoInfo } from '../services/settings-file.js';
-import { normalize } from '../services/search.js';
+import { normalize, forgetPicks } from '../services/search.js';
 import { LEARN_SOURCES, learnOn, setLearnOn } from '../services/learn.js';
 import { ACTIONS, AREAS, keysOf, formatCombo, setKeys, resetKeys, isDefault, conflictOf, comboOf, hasKeyboard, onKeysChange } from '../services/keys.js';
 import { SHORTHAND } from './tex-catalog.js';
@@ -98,7 +98,7 @@ export function renderSettings(main, { onChange, onCheckUpdate, onSync, section 
 
   const keyboard = hasKeyboard();
   const content = {
-    general: () => [languageCard(), aboutCard(onCheckUpdate)],
+    general: () => [languageCard(), searchCard(), aboutCard(onCheckUpdate)],
     write: () => [editorCard(), commandsCard(), macrosCard()],
     keys: () => [keysCard()],
     access: () => [syncCard({ onSync }), researchCard(), kobraCard()],
@@ -173,6 +173,21 @@ function languageCard() {
     }));
   }
   return card(t('settings.language'), seg);
+}
+
+// 0.19.0: the search learns what you open after a search; here you see how much and can forget it
+function searchCard() {
+  const count = () => Object.keys(loadPref('search.learned', {}) || {}).length;
+  const line = h('p', { class: 'muted small' });
+  const forget = h('button', { type: 'button', class: 'btn small', text: t('settings.finding.forget') });
+  const draw = () => { const n = count(); line.textContent = n ? t('settings.finding.count', { n }) : t('settings.finding.none'); forget.hidden = !n; };
+  forget.addEventListener('click', async () => {
+    if (!(await confirmDialog(t('settings.finding.forget'), t('settings.finding.forget.confirm'), { okLabel: t('settings.finding.forget'), danger: true }))) return;
+    forgetPicks();
+    draw();
+  });
+  draw();
+  return card(t('settings.finding'), h('p', { class: 'muted small', text: t('settings.finding.hint') }), line, h('div', { class: 'btn-row' }, forget));
 }
 
 function aboutCard(onCheckUpdate) {
@@ -555,6 +570,16 @@ function researchCard() {
   const helperRow = h('div', { class: 'row-input' });
   helperToken.input.before(helperRow);
   helperRow.append(helperToken.input, showH);
+  // the address in a tab of its own (0.19.0): a short answer with "error" means helper and certificate are fine
+  const tryTab = h('button', { type: 'button', class: 'btn small', text: t('settings.research.helperTab') });
+  tryTab.addEventListener('click', () => {
+    const v = helper.input.value.trim().replace(/\/+$/, '');
+    if (/^https:\/\/[^\s/]+$/.test(v)) window.open(`${v}/ping`, '_blank', 'noopener');
+    else toast(t('settings.research.helperTabBad'), 'error');
+  });
+  const addrRow = h('div', { class: 'row-input' });
+  helper.input.before(addrRow);
+  addrRow.append(helper.input, tryTab);
   const oa = field('openalexKey', t('settings.research.openalex'), { type: 'password', autocomplete: 'off' }, t('settings.research.openalex.hint'), { href: 'https://openalex.org/settings/api', text: 'openalex.org/settings/api' });
   const s2 = field('s2Key', t('settings.research.s2'), { type: 'password', autocomplete: 'off' }, t('settings.research.s2.hint'), { href: 'https://www.semanticscholar.org/product/api', text: 'semanticscholar.org/product/api' });
 
@@ -761,6 +786,7 @@ const SETTING_LABEL = {
   'editor.commands': ['settings.sec.write', 'settings.write.commands'], 'editor.macros': ['settings.sec.write', 'settings.write.macros'], keys: ['', 'settings.sec.keys'],
   'learn.off': ['settings.research', 'backup.learnOff'], 'research.mode': ['settings.research', 'backup.researchMode'],
   appearance: ['settings.sec.look', 'settings.appearance'],
+  'search.learned': ['settings.sec.general', 'settings.finding'],
 };
 function settingLabel(key) {
   const k = key.replace(/^toollib\./, '');

@@ -110,7 +110,9 @@ export function codeBlocks(markdown) {
 }
 
 // Snippets mark the spots to fill in like Kobra: ${name} or ${1:name}. Copying keeps the names.
-export const fillPlaceholders = (code) => code.replace(/\$\{(?:\d+:)?([^}]*)\}/g, '$1');
+// $${…} is a plain ${…} that stays as it is (0.19.0): bash ($${f%.dat}) and GitHub Actions ($${{ secrets.X }}).
+export const PLACEHOLDER = /\$(\$?)\{(?:\d+:)?([^}]*)\}/g;
+export const fillPlaceholders = (code) => code.replace(PLACEHOLDER, (m, plain, name) => (plain ? m.slice(1) : name));
 
 // What a snippet runs with: its code (the first Python block before any "## " heading), its check (the first
 // Python block under "## Check") and the snippets the check needs ("# needs: a, b" as its first line).

@@ -31,7 +31,6 @@ const paintSection = (el, color) => el.style.setProperty('--sec', COLOUR_HEX[col
 export const sectionTitle = (s) => s.title || (['collect', 'keep', 'apply'].includes(s.id) ? t(`station.${s.id}`) : s.id);
 const WIDGET_ICON = { steps: 'check', reading: 'book', pins: 'bookmark', calc: 'vars', timer: 'history', due: 'target', links: 'link', pages: 'file', notes: 'edit' };
 const upper = (e, el) => { const r = el.getBoundingClientRect(); return e.clientY < r.top + r.height * 0.6 ? 'before' : 'after'; };
-const side = (e, el) => { const r = el.getBoundingClientRect(); return narrow() ? upper(e, el) : (e.clientX < r.left + r.width / 2 ? 'before' : 'after'); };
 
 // ------------------------------------------------------------------ the body of a project: actions, widgets, board
 // ctx: { path, go, redraw, refocus: { get, set } }
@@ -86,14 +85,18 @@ function board(p, members, ctx) {
     });
     const head = h('header', { class: 'board-head' }, fold, menu);
     draggable(head, { data: { kind: 'section', id: s.id, project: path }, label: sectionTitle(s) });
+    // A section dropped on another takes its place (0.19.0): from the right it goes in front, from the left behind it.
+    const takePlace = (x) => (secs.findIndex((y) => y.id === x.id) > si ? 'before' : 'after');
+    const moveHere = async (x, place) => { if (await moveSectionTo(path, x.id, place === 'before' ? si : si + 1)) redraw(); };
     dropZone(head, {
       accept: (x) => (x.kind === 'section' && x.project === path && x.id !== s.id) || (x.kind === 'card' && x.project === path),
-      place: (x, e, el) => (x.kind === 'card' ? 'into' : side(e, el)),
+      place: (x) => (x.kind === 'card' ? 'into' : takePlace(x)),
       drop: async (x, place) => {
         if (x.kind === 'card') { if (await placeItem(path, x.slug, s.id, -1)) redraw(); return; }
-        if (await moveSectionTo(path, x.id, place === 'before' ? si : si + 1)) redraw();
+        await moveHere(x, place);
       },
     });
+    dropZone(col, { accept: (x) => x.kind === 'section' && x.project === path && x.id !== s.id, place: takePlace, drop: moveHere });
     const list = h('ul', { class: 'board-cards members' }, ...s.items.map((n, k) => cardRow(n, k, s, p, ctx, lang)));
     if (!s.items.length) list.append(h('li', { class: 'board-empty muted small', text: t('board.empty') }));
     dropZone(list, { accept: (x) => x.kind === 'card' && x.project === path, place: () => 'into', drop: async (x) => { if (await placeItem(path, x.slug, s.id, -1)) redraw(); } });
@@ -156,6 +159,7 @@ async function sectionMenu(p, s, si, count, ctx) {
   const pick = await actionSheet(sectionTitle(s), [
     { label: t('board.section.rename'), value: 'rename', icon: 'edit' },
     { label: t('board.section.colour'), value: 'colour', icon: 'palette' },
+    ...(si > 1 ? [{ label: t('board.section.first'), value: 'first', icon: 'arrowLeft' }] : []),
     { label: t('board.section.left'), value: 'left', icon: 'arrowLeft', disabled: si === 0 },
     { label: t('board.section.right'), value: 'right', icon: 'arrowRight', disabled: si === count - 1 },
     '-',
@@ -163,10 +167,14 @@ async function sectionMenu(p, s, si, count, ctx) {
   ]);
   if (pick === 'rename') {
     const v = await promptDialog(t('board.section.rename'), { value: sectionTitle(s), validate: (x) => (x.trim() ? '' : t('project.needTitle')) });
-    if (v && await updateSection(path, s.id, { title: v })) redraw();
+    if (v == null || v.trim() === sectionTitle(s)) return;
+    if (await updateSection(path, s.id, { title: v })) { toast(t('board.section.renamed', { title: v.trim() }), 'ok'); redraw(); }
+    else toast(t('board.section.renameFailed'), 'error', 6000);
   } else if (pick === 'colour') {
     const c = await actionSheet(t('board.section.colour'), SECTION_COLOURS.map((id) => ({ label: t(`colour.${id}`), value: id, icon: 'dot', color: COLOUR_HEX[id] })));
     if (c && await updateSection(path, s.id, { color: c })) redraw();
+  } else if (pick === 'first') {
+    if (await moveSectionTo(path, s.id, 0)) redraw();
   } else if (pick === 'left' || pick === 'right') {
     if (await moveSectionTo(path, s.id, pick === 'left' ? si - 1 : si + 2)) redraw();
   } else if (pick === 'delete') {
@@ -232,6 +240,7 @@ function widgetsArea(p, members, ctx) {
     const menu = h('button', { type: 'button', class: 'icon-btn small widget-menu no-drag', title: t('widget.menu'), 'aria-label': t('widget.menu'), html: icon('more') });
     menu.addEventListener('click', async () => {
       const pick = await actionSheet(t(`widget.${id}`), [
+        ...(i > 1 ? [{ label: t('widget.first'), value: 'first', icon: 'arrowLeft' }] : []),
         { label: t('widget.earlier'), value: 'up', icon: 'arrowLeft', disabled: i === 0 },
         { label: t('widget.later'), value: 'down', icon: 'arrowRight', disabled: i === list.length - 1 },
         '-', { label: t('widget.remove'), value: 'remove', icon: 'close', danger: true },
@@ -239,6 +248,7 @@ function widgetsArea(p, members, ctx) {
       if (!pick) return;
       const next = [...list];
       if (pick === 'remove') next.splice(i, 1);
+      else if (pick === 'first') next.unshift(...next.splice(i, 1));
       else { const j = pick === 'up' ? i - 1 : i + 1; [next[i], next[j]] = [next[j], next[i]]; }
       if (await setWidgets(path, next)) redraw();
     });
@@ -247,7 +257,8 @@ function widgetsArea(p, members, ctx) {
     draggable(head, { data: { kind: 'widget', id, project: path }, label: t(`widget.${id}`) });
     dropZone(w, {
       accept: (x) => x.kind === 'widget' && x.project === path && x.id !== id,
-      place: (x, e, el) => side(e, el),
+      // a widget dropped on another takes its place (0.19.0); which half you hit no longer matters
+      place: (x) => (list.indexOf(x.id) > i ? 'before' : 'after'),
       drop: async (x, place) => {
         const next = list.filter((y) => y !== x.id);
         let at = next.indexOf(id) + (place === 'after' ? 1 : 0);

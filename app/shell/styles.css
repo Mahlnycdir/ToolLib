@@ -1768,3 +1768,9 @@ body.dragging-now, body.dragging-now * { cursor: grabbing !important; -webkit-us
 .track-stop .board-dot { background: var(--sec); }
 .track.many { overflow-x: auto; padding-bottom: 4px; }
 .track.many .track-stop { flex: 1 0 128px; }
+
+/* ------------------------------------------------------------------ 0.19.0: how a search found its hits, groups in the cheatsheet */
+.cmd-note { padding: 0 12px 6px; }
+.search-note { margin: -4px 4px 10px; }
+.group-chips { margin-top: -4px; }
+.group-chips[hidden] { display: none; }

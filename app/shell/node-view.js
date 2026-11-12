@@ -4,7 +4,8 @@ import { loadPref, savePref } from '../services/prefs.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
 import { getNode, isOwn, languageName, linksOf, localize, readNodeText, replaceBlock, runParts, setVerified, sourcesOf, summary, titleOf, writeNode } from '../services/nodes.js';
-import { allNodes, bestProblem, indexState, nodeByPath, nodeBySlug, onIndexChange, refreshNode, searchNodes } from '../services/search.js';
+import { allNodes, bestProblem, indexState, nodeByPath, nodeBySlug, onIndexChange, refreshNode, searchNodes, searchDetailed, rememberPick } from '../services/search.js';
+import { searchNote } from './search-note.js';
 import { githubRepo, isConfigured, noteChange, repoUrl } from '../services/sync.js';
 import { moduleOfType, paintAccent } from './modules.js';
 import { renderMarkdown } from './markdown.js';
@@ -35,7 +36,7 @@ const SOURCE_ELSEWHERE = new Set(['clip', 'research', 'library', 'page', 'projec
 export const sourceHref = (path) => `#/src/${path.split('/').map(encodeURIComponent).join('/')}`;
 export const typeLabel = (type) => (t(`type.${type}`) === `type.${type}` ? type : t(`type.${type}`));
 export const groupLabel = (group) => (t(`group.${group}`) === `group.${group}` ? group : t(`group.${group}`));
-export const GROUP_ORDER = ['control-flow', 'functions-classes', 'errors-files', 'data', 'data-structures', 'numpy', 'scipy', 'matplotlib', 'animation', 'lattice', 'sympy', 'debugging', 'threading', 'gui', 'git', 'science', 'imports'];
+export const GROUP_ORDER = ['control-flow', 'functions-classes', 'errors-files', 'data', 'data-structures', 'numpy', 'scipy', 'fits', 'models', 'matplotlib', 'animation', 'lattice', 'sympy', 'debugging', 'logs', 'threading', 'gui', 'shell', 'git', 'github', 'science', 'imports'];
 const inCheatsheet = (d) => d && (d.type === 'snippet' || d.type === 'recipe') && !d.conflict;
 const problemsOf = (d, lang = getLang()) => (lang === 'de' && d.problems_de.length ? d.problems_de : d.problems.length ? d.problems : d.problems_de);
 
@@ -369,7 +370,23 @@ export function renderCheatsheet(main, mod, { go }) {
   const langs = h('div', { class: 'lang-chips', role: 'group', 'aria-label': t('snippet.field.language') });
   const newBtn = h('button', { type: 'button', class: 'btn small new-snippet', onclick: () => { if (only) savePref('snippet.language', only); go('#/new'); } }, iconEl('plus'), h('span', { text: t('cheatsheet.new') }));
   const tools = h('div', { class: 'cheat-tools' }, seg, progress);
-  main.append(head, h('div', { class: 'filter-row' }, iconEl('search'), input), langs, h('div', { class: 'cheat-bar' }, tools, newBtn), list);
+  // groups (0.19.0): one tap shows only that group; remembered on this device, hidden while you search
+  let only1 = loadPref('cheatsheet.group', '');
+  const groupChips = h('div', { class: 'lang-chips group-chips', role: 'group', 'aria-label': t('cheatsheet.groups') });
+  main.append(head, h('div', { class: 'filter-row' }, iconEl('search'), input), langs, groupChips, h('div', { class: 'cheat-bar' }, tools, newBtn), list);
+  function drawGroups(all) {
+    const count = {};
+    for (const d of all) if (d.type === 'snippet' && inLang(d) && wanted(d)) count[d.group || 'other'] = (count[d.group || 'other'] || 0) + 1;
+    const names = [...new Set([...GROUP_ORDER, ...Object.keys(count)])].filter((g) => count[g]);
+    if (only1 && !count[only1]) only1 = '';
+    groupChips.hidden = names.length < 4 || !!input.value.trim();
+    groupChips.replaceChildren(...['', ...names].map((g) => {
+      const b = h('button', { type: 'button', class: `lang-chip${only1 === g ? ' on' : ''}`, 'aria-pressed': String(only1 === g), dataset: { group: g } },
+        h('span', { text: g ? groupLabel(g) : t('cheatsheet.show.all') }), g ? h('span', { class: 'count', text: String(count[g]) }) : null);
+      b.addEventListener('click', () => { only1 = g; savePref('cheatsheet.group', g); draw(); });
+      return b;
+    }));
+  }
   // recipes are built from Python snippets: they show with all languages and with Python
   const inLang = (d) => (d.type === 'snippet' ? !only || d.language === only : !only || only === 'python');
   function drawLangs(all) {
@@ -394,13 +411,15 @@ export function renderCheatsheet(main, mod, { go }) {
     return problem ? t('commandbar.solves', { problem }) : nodeLead(d);
   };
   const row = (d) => h('div', { class: 'snip-row' },
-    h('a', { class: 'snip-main', href: nodeHref(d.path) },
+    h('a', { class: 'snip-main', href: nodeHref(d.path), onclick: () => pick(d) },
       h('span', { class: 'snip-title' }, h('span', { text: nodeTitle(d) }),
         !only && d.type === 'snippet' && d.language !== 'python' ? h('span', { class: 'snip-lang', text: languageName(d.language) }) : null,
         !d.verified ? h('span', { class: 'snip-open', text: t('cheatsheet.unverified') }) : null,
         d.source === 'you' ? h('span', { class: 'snip-own', title: t('node.own'), 'aria-label': t('node.own'), html: icon('edit') }) : null),
       h('span', { class: 'snip-lead muted', text: lead(d) })),
-    d.code ? h('button', { type: 'button', class: 'icon-btn', title: t('node.copyCode'), 'aria-label': `${t('node.copyCode')}: ${nodeTitle(d)}`, html: icon('copy'), onclick: () => copyWithToast(d.code) }) : null);
+    d.code ? h('button', { type: 'button', class: 'icon-btn', title: t('node.copyCode'), 'aria-label': `${t('node.copyCode')}: ${nodeTitle(d)}`, html: icon('copy'), onclick: () => { pick(d); copyWithToast(d.code); } }) : null);
+  // opened or copied after a search: your words lead there next time (0.19.0)
+  const pick = (d) => { const q = input.value.trim(); if (q) rememberPick(q, d.slug); };
 
   function drawTools(all) {
     const snippets = all.filter((d) => d.source !== 'you');
@@ -424,6 +443,7 @@ export function renderCheatsheet(main, mod, { go }) {
     list.replaceChildren();
     drawTools(s.ready ? allNodes().filter(inCheatsheet) : []);
     drawLangs(s.ready ? allNodes().filter(inCheatsheet) : []);
+    drawGroups(s.ready ? allNodes().filter(inCheatsheet) : []);
     if (!s.ready) { list.append(h('p', { class: 'muted', text: t('commandbar.indexing') })); return; }
     if (!s.hasKnowledge) {
       list.append(h('div', { class: 'card' }, h('p', { class: 'muted', text: t('cheatsheet.noKnowledge') }),
@@ -432,13 +452,15 @@ export function renderCheatsheet(main, mod, { go }) {
     }
     const q = input.value.trim();
     if (q) {
-      const hits = searchNodes(q, { limit: 200, filter: (d) => inCheatsheet(d) && wanted(d) && inLang(d) });
+      const { hits, note } = searchDetailed(q, { limit: 200, filter: (d) => inCheatsheet(d) && wanted(d) && inLang(d) });
+      const how = searchNote(note);
+      if (how) list.append(how);
       list.append(hits.length ? h('div', { class: 'card snip-card' }, hits.map(row)) : h('p', { class: 'muted', text: t('cheatsheet.none') }));
       return;
     }
     const byTitle = (a, b) => nodeTitle(a).localeCompare(nodeTitle(b));
     const recipes = allNodes().filter((d) => d.type === 'recipe' && inCheatsheet(d) && wanted(d) && inLang(d)).sort(byTitle);
-    if (recipes.length) {
+    if (recipes.length && !only1) {
       list.append(h('section', { class: 'card snip-card recipes' },
         h('h2', {}, h('span', { class: 'icon', html: icon('list') }), t('cheatsheet.recipes'), h('span', { class: 'count', text: String(recipes.length) })),
         h('p', { class: 'muted small recipes-hint', text: t('cheatsheet.recipes.hint') }),
@@ -447,6 +469,7 @@ export function renderCheatsheet(main, mod, { go }) {
     const snippets = allNodes().filter((d) => d.type === 'snippet' && inCheatsheet(d) && wanted(d) && inLang(d));
     const groups = [...new Set([...GROUP_ORDER, ...snippets.map((d) => d.group || 'other')])];
     for (const g of groups) {
+      if (only1 && g !== only1) continue;
       const items = snippets.filter((d) => (d.group || 'other') === g).sort((a, b) => nodeTitle(a).localeCompare(nodeTitle(b)));
       if (!items.length) continue;
       list.append(h('section', { class: 'card snip-card' }, h('h2', {}, groupLabel(g), h('span', { class: 'count', text: String(items.length) })), items.map(row)));

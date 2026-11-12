@@ -78,6 +78,9 @@ export function modal({ title, body, actions = [{ label: t('action.ok'), value: 
     };
     for (const a of actions) {
       const b = h('button', { class: `btn ${a.kind || ''}`, type: 'button', text: a.label });
+      // a tap on OK keeps the focus in the field: on the iPhone the keyboard then does not close first and shift the
+      // dialog, which made the tap land beside it and cancel (0.19.0)
+      b.addEventListener('pointerdown', (e) => { if (content.contains(document.activeElement) && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) e.preventDefault(); });
       b.addEventListener('click', () => {
         const v = typeof a.value === 'function' ? a.value(content) : a.value;
         if (v === undefined) return; // validation failed
@@ -87,7 +90,7 @@ export function modal({ title, body, actions = [{ label: t('action.ok'), value: 
     }
     if (actions.length) box.append(bar);
     backdrop.append(box);
-    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(dismissValue); });
+    outsideCloses(backdrop, () => close(dismissValue));
     document.body.append(backdrop);
     stack.push(close);
     requestAnimationFrame(() => backdrop.classList.add('show'));
@@ -169,11 +172,19 @@ export function actionSheet(title, items) {
     }
     sheet.append(h('button', { class: 'sheet-item cancel', type: 'button', text: t('action.cancel'), onclick: () => close(null) }));
     backdrop.append(sheet);
-    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(null); });
+    outsideCloses(backdrop, () => close(null));
     document.body.append(backdrop);
     stack.push(close);
     requestAnimationFrame(() => backdrop.classList.add('show'));
   });
+}
+
+// A tap beside a dialog closes it, but only when the press began there too: when the keyboard closes and the
+// dialog moves under the finger, the tap that was meant for a button does not count as "beside" (0.19.0).
+function outsideCloses(backdrop, close) {
+  let downHere = false;
+  backdrop.addEventListener('pointerdown', (e) => { downHere = e.target === backdrop; });
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop && downHere) close(); downHere = false; });
 }
 
 // Full sheet, e.g. for snippets, diffs or settings
@@ -199,7 +210,7 @@ export function openSheet(title, content, { onClose, full = false, actions } = {
     onClose?.();
   };
   closeBtn.addEventListener('click', close);
-  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+  outsideCloses(backdrop, close);
   document.body.append(backdrop);
   stack.push(close);
   requestAnimationFrame(() => backdrop.classList.add('show'));

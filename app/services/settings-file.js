@@ -30,6 +30,8 @@ const KEYS = {
   keys: 'json', 'learn.off': 'list', 'research.mode': 'string',
   // 0.18.0: light or dark
   appearance: 'string',
+  // 0.19.0: the words the search learned from what you opened
+  'search.learned': 'json',
 };
 const ACCENT = /^accent\.[a-z0-9-]{1,40}$/;
 const KOBRA = { proxy: 'string', token: 'secret', name: 'string', email: 'string' };   // kobra.git.*

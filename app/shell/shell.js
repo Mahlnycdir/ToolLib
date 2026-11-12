@@ -11,7 +11,8 @@ import { formatTime, renderModule, renderSettings } from './views.js';
 import { applyUpdate, checkForUpdate, onPwaChange, pwaState } from '../services/pwa.js';
 import { isConfigured, onSyncChange, phaseText, refreshPending, syncKnowledge, syncState } from '../services/sync.js';
 import { bind, matches, keyTitle, withKeys, formatKeys, helpRows, onKeysChange, hasKeyboard } from '../services/keys.js';
-import { bestProblem, buildIndex, indexState, nodeByPath, onIndexChange, refreshNode, searchNodes } from '../services/search.js';
+import { bestProblem, buildIndex, indexState, nodeByPath, onIndexChange, refreshNode, searchDetailed, rememberPick } from '../services/search.js';
+import { searchNote } from './search-note.js';
 import { renderFormulary } from './formulary.js';
 import { copyWithToast, nodeHref, nodeLead, nodeTitle, recentPaths, renderCheatsheet, renderNode, typeAccent, typeIcon, typeLabel } from './node-view.js';
 import { renderSnippetForm } from './snippet-form.js';
@@ -327,6 +328,7 @@ export function startShell(root) {
   const jumps = () => [{ id: 'home', icon: 'home', accent: 'shell', label: t('nav.home'), run: () => go('#/home') },
     ...READY.map((m) => ({ id: m.id, icon: m.icon, accent: m.id, label: t(`rail.${m.id}`) === `rail.${m.id}` ? t(`module.${m.id}.name`) : t(`rail.${m.id}`), run: () => { if (m.href) location.href = m.href; else go(`#/m/${m.id}`); } }))];
 
+  let lastNote = null;
   function entries(query) {
     const q = query.trim();
     const cmds = match(query);
@@ -342,7 +344,9 @@ export function startShell(root) {
       ];
     }
     // A hit found through one of its problems shows that problem instead of the first sentence.
-    const nodes = (q ? searchNodes(q, { limit: 8 }) : recentPaths().map(nodeByPath).filter(Boolean).slice(0, 4)).map((d) => {
+    const found = q ? searchDetailed(q, { limit: 8 }) : null;
+    lastNote = found?.note || null;
+    const nodes = (found ? found.hits : recentPaths().map(nodeByPath).filter(Boolean).slice(0, 4)).map((d) => {
       const problem = q ? bestProblem(d, q, lang) : '';
       return {
         node: d, label: nodeTitle(d, lang), problem,
@@ -395,6 +399,8 @@ export function startShell(root) {
       if (kind !== section) {
         section = kind;
         results.append(h('div', { class: 'cmd-sec', text: t(`commandbar.${kind}`) }));
+        // how the hits were found (0.19.0): a corrected word, other names, what you opened before
+        if (kind === 'hits' && lastNote) { const n = searchNote(lastNote, 'cmd-note'); if (n) results.append(n); }
         if (kind === 'jump') { tiles = h('div', { class: 'cmd-jumps' }); results.append(tiles); }
       }
       if (c.jump) {
@@ -436,6 +442,8 @@ export function startShell(root) {
   function runAt(i) {
     const c = shown[i];
     if (!c) return;
+    // a node opened after a search: the words lead to it next time (0.19.0)
+    if (c.node && input.value.trim()) rememberPick(input.value.trim(), c.node.slug);
     input.value = '';
     selected = 0;
     hideResults();

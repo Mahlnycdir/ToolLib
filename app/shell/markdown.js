@@ -12,6 +12,7 @@ import { icon } from '../services/icons.js';
 import { t } from '../i18n/i18n.js';
 import { typeset } from './math.js';
 import { renderPlot } from './plot.js';
+import { PLACEHOLDER, fillPlaceholders } from '../services/nodes.js';
 
 const SECTION_KEYS = {
   example: 'section.example', examples: 'section.example', pitfalls: 'section.pitfalls', check: 'section.check', steps: 'section.steps', derivation: 'section.derivation',
@@ -163,7 +164,6 @@ function copyButton(getText, label, options) {
   }, iconEl('copy'), h('span', { text: t('node.copy') }));
 }
 
-const PLACEHOLDER = /\$\{(?:\d+:)?([^}]*)\}/g;
 
 const SPOT = /([\uE000\uE002])([^\uE001]*)\uE001/g;
 const spotEl = (open, text) => h('mark', { class: `choice-spot${open ? ' open' : ''}`, title: t('choice.spot') }, text);
@@ -182,14 +182,15 @@ function codeBlock(code, lang, options) {
   };
   for (const m of code.matchAll(PLACEHOLDER)) {
     plain(code.slice(last, m.index));
-    el.append(h('span', { class: 'ph', title: t('node.placeholder'), text: m[1] }));
+    if (m[1]) plain(m[0].slice(1));   // $${…}: a plain ${…}
+    else el.append(h('span', { class: 'ph', title: t('node.placeholder'), text: m[2] }));
     last = m.index + m[0].length;
   }
   plain(code.slice(last));
   pre.append(el);
   const label = lang || t('node.code');
   return h('div', { class: 'code-block' },
-    h('div', { class: 'code-head' }, h('span', { class: 'code-lang', text: label }), copyButton(() => stripMarks(code.replace(PLACEHOLDER, '$1')), label, options)),
+    h('div', { class: 'code-head' }, h('span', { class: 'code-lang', text: label }), copyButton(() => stripMarks(fillPlaceholders(code)), label, options)),
     pre);
 }
 
