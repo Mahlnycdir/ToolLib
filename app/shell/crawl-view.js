@@ -202,7 +202,7 @@ export function crawlPanel(folder) {
       buttons.push(btn(t('crawl.pause'), 'pause', () => pauseCrawl(folder.path)), btn(t('crawl.stop'), 'stop', () => stopCrawl(folder.path)));
     } else if (b && (status === 'paused' || status === 'error')) {
       buttons.push(btn(t('crawl.resume'), 'play', act(() => resumeCrawl(folder.path)), true), btn(t('crawl.again'), 'refresh', again));
-      if (['no-worker', 'worker-token', 'worker-origin', 'worker', 'helper-token', 'helper-origin', 'helper'].includes(b.why)) buttons.push(h('a', { class: 'btn small', href: '#/settings/research' }, iconEl('settings'), h('span', { text: t('research.toSettings') })));
+      if (['no-worker', 'worker-token', 'worker-origin', 'worker', 'helper-token', 'helper-origin', 'helper'].includes(b.why)) buttons.push(h('a', { class: 'btn small', href: /^helper/.test(b.why) ? '#/settings/helper' : '#/settings/research' }, iconEl('settings'), h('span', { text: t('research.toSettings') })));
     } else if (b && status === 'done' && b.why === 'limit') {
       const more = crawlDefaults().max;
       buttons.push(btn(t('crawl.more', { n: more }), 'play', act(() => resumeCrawl(folder.path, { more })), true), btn(t('crawl.again'), 'refresh', again));

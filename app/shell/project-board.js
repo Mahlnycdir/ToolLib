@@ -23,11 +23,13 @@ import { draggable, dropZone } from './drag.js';
 import { typeset } from './math.js';
 import { compile } from './plot.js';
 import { keyTitle } from '../services/keys.js';
+import { PALETTE, colourVar } from './colors.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const narrow = () => window.matchMedia('(max-width: 899px)').matches;
-export const COLOUR_HEX = { blue: '#1f63e0', sky: '#0b7bbd', teal: '#0f8078', green: '#1e7e3a', orange: '#c2410c', rose: '#c0265e', violet: '#6d4aff', yellow: '#c99a06', slate: '#64748b' };
-const paintSection = (el, color) => el.style.setProperty('--sec', COLOUR_HEX[color] || COLOUR_HEX.slate);
+// section colours come from the one colour system (colors.js): light and dark shades, switched by CSS (0.25.0)
+export const COLOUR_HEX = Object.fromEntries(Object.entries(PALETTE).map(([k, v]) => [k, v[0]]));   // light shades, for older callers
+const paintSection = (el, color) => el.style.setProperty('--sec', colourVar(color));
 export const sectionTitle = (s) => s.title || (['collect', 'keep', 'apply'].includes(s.id) ? t(`station.${s.id}`) : s.id);
 const WIDGET_ICON = { steps: 'check', reading: 'book', pins: 'bookmark', calc: 'vars', timer: 'history', due: 'target', links: 'link', pages: 'file', notes: 'edit' };
 const upper = (e, el) => { const r = el.getBoundingClientRect(); return e.clientY < r.top + r.height * 0.6 ? 'before' : 'after'; };

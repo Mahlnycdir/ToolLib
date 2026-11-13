@@ -21,6 +21,8 @@ export const ACTIONS = [
   { id: 'go.settings', area: 'global', keys: ['Mod+,'] },
   { id: 'sync', area: 'global', keys: ['Alt+S'] },
   { id: 'project.drawer', area: 'global', keys: ['Alt+B'] },
+  { id: 'node.link', area: 'global', keys: ['Alt+L'] },          // 0.25.0: link the node on screen with another
+  { id: 'theme.toggle', area: 'global', keys: ['Alt+D'] },       // 0.25.0: light ↔ dark
   { id: 'jump', area: 'global', keys: ['Alt+1…9'], fixed: true },
   { id: 'cmd.note', area: 'cmd', keys: ['Mod+Enter'] },
   { id: 'cmd.copy', area: 'cmd', keys: ['Shift+Enter'] },

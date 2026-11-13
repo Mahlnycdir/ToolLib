@@ -735,7 +735,7 @@ export function renderKladde(main, mod, { go }) {
     if (reason === 'unreachable' && isConfigured()) actions.push({ label: t('kladde.askMac'), kind: 'primary', value: 'mac' });
     if (reason === 'no-helper') actions.push({ label: t('kladde.toSettings'), kind: 'primary', value: 'settings' });
     const v = await modal({ title: t('kladde.noHelper.title'), body: h('p', { text }), actions });
-    if (v === 'settings') go('#/settings/access');
+    if (v === 'settings') go('#/settings/helper');
     if (v === 'mac' && note.path) { await askMac(note.path); note.inkRead = 'mac'; setStatus(t('kladde.waitsMac')); toast(t('kladde.askedMac'), 'ok', 4000); }
   }
 

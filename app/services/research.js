@@ -484,7 +484,8 @@ export async function findVersions(work, { onUpdate, signal, settings = research
 
 // ------------------------------------------------------------------ settings test
 // One line per check: { id, status: 'ok'|'warn'|'fail'|'info', key, vars }. onLine(lines) after every answer.
-export async function testResearch(onLine) {
+// only: 'helper' checks just the Mac helper (its own settings page since 0.25.0).
+export async function testResearch(onLine, { only = '' } = {}) {
   const s = researchSettings();
   const lines = [];
   const set = (id, status, key, vars = {}) => {
@@ -508,6 +509,10 @@ export async function testResearch(onLine) {
       else set('helper', 'fail', 'research.test.helperUnreachable', { url: `${s.helper}/ping` });
     })());
     await checks[0];   // the sources below then know whether the helper answers
+  }
+  if (only === 'helper') {
+    if (!hasHelper(s)) set('helper', 'info', 'research.test.noHelper');
+    return lines;
   }
   set('worker', hasWorker(s) ? 'busy' : 'info', hasWorker(s) ? 'research.test.busy' : 'research.test.noWorker', { name: 'Fetcher' });
   if (hasWorker(s)) {

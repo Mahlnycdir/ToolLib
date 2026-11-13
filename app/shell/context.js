@@ -1,21 +1,25 @@
-// What a node belongs to (0.15.0), shown with every node: the projects it is in, the nodes that link to it and
-// what you can do with it next. This is the context panel of the frame: on a wide screen it stands beside the
-// node, on the phone below it.
+// What a node belongs to (0.15.0), shown with every node: the projects it is in, its connections and what you can do
+// with it next. This is the context panel of the frame: on a wide screen it stands beside the node, on the phone
+// below it. Since 0.25.0 the connections come from services/relations.js (both directions, every kind, live) through
+// relationsPanel in link-ui.js; until then this file looked up "who links here" by itself.
 import { h, toast, actionSheet } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
-import { allNodes } from '../services/search.js';
 import { addToProject, focusProject, projects, projectsWith, removeFromProject } from '../services/projects.js';
-import { nodeHref, nodeTitle, typeTile } from './node-view.js';
+import { relationsOf } from '../services/relations.js';
+import { nodeHref, nodeTitle } from './node-view.js';
 import { newNote, newProject } from './create.js';
 import { paintProject } from './projects-view.js';
 import { queueSearch } from './research-view.js';
+import { relationsPanel } from './link-ui.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 
-// Nodes that name this one in their links or their text; projects are listed apart, pages of the same run are too many.
+// Nodes that name this one in their links, their text or their sources, without projects (they are listed apart) and
+// without pages of the same run through a website (too many). Kept for older callers; the panel uses relationsOf.
 export function backlinks(d, limit = 12) {
-  return allNodes().filter((n) => n.path !== d.path && !n.conflict && n.type !== 'project' && n.links.includes(d.slug) && !(n.run && n.run === d.run) && !(d.type === 'research' && n.type === 'clip'))
+  return relationsOf(d.slug).in.map((x) => x.d)
+    .filter((n) => !(n.run && n.run === d.run) && !(d.type === 'research' && n.type === 'clip'))
     .slice(0, limit);
 }
 
@@ -54,12 +58,8 @@ export function contextBox(d, { go, redraw }) {
   chips.append(pick);
   box.append(h('section', {}, h('h3', { text: t('module.projects.name') }), chips));
 
-  // who links here
-  const back = backlinks(d);
-  if (back.length) {
-    box.append(h('section', {}, h('h3', { text: t('ctx.usedIn') }),
-      h('div', { class: 'related ctx-back' }, back.map((n) => h('a', { class: 'related-link', href: nodeHref(n.path) }, typeTile(n.type, 'small'), h('span', { text: nodeTitle(n, lang) }))))));
-  }
+  // connections: both directions, every kind, and a button to draw a new one (0.25.0)
+  box.append(relationsPanel(d));
 
   // go on with it
   const title = nodeTitle(d, lang);

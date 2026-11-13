@@ -12,7 +12,8 @@ import {
   STATES, addToProject, deleteProject, focusPath, loadProject, projectNodes, projects, projectsWith, setFocus, setProjectField, touchProject, stationOf,
   boardOf, parseSections, repoLabel, repoUrl,
 } from '../services/projects.js';
-import { projectBody, sectionTitle, COLOUR_HEX } from './project-board.js';
+import { projectBody, sectionTitle } from './project-board.js';
+import { colourVar } from './colors.js';
 import { capture, deleteNote, inbox, loadNote, saveNote } from '../services/notes.js';
 import { nodeHref, nodeLead, nodeTitle, typeLabel, typeTile } from './node-view.js';
 import { renderMarkdown } from './markdown.js';
@@ -61,7 +62,7 @@ export function track(d, { onStation } = {}) {
     if (i) el.append(h('span', { class: 'track-line', 'aria-hidden': 'true' }));
     const stop = h('button', { type: 'button', class: `track-stop${s.items.length ? '' : ' empty'}`, dataset: { station: s.id }, onclick: () => onStation?.(s.id) },
       STATION_ICON[s.id] ? iconEl(STATION_ICON[s.id]) : h('span', { class: 'board-dot' }), h('span', { class: 'track-name', text: sectionTitle(s) }), h('span', { class: 'track-n', text: String(s.items.length) }));
-    stop.style.setProperty('--sec', COLOUR_HEX[s.color] || COLOUR_HEX.slate);
+    stop.style.setProperty('--sec', colourVar(s.color));
     el.append(stop);
   });
   return el;

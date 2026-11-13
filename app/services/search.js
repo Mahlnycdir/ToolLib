@@ -68,6 +68,20 @@ export function onIndexChange(fn) {
 }
 const emit = () => { for (const fn of listeners) fn(indexState()); };
 
+// Every change of the content, big or small (0.25.0): a whole rebuild after a sync (paths = null) or single nodes
+// saved or deleted on this device (paths = [path]). onIndexChange above only reports the state of the index (ready,
+// building); this one tells what changed, so relations.js can redraw links drawn anywhere everywhere at once.
+const changeListeners = new Set();
+export function onNodesChange(fn) {
+  changeListeners.add(fn);
+  return () => changeListeners.delete(fn);
+}
+function changed(paths) {
+  for (const fn of changeListeners) {
+    try { fn(paths); } catch (e) { console.warn('onNodesChange', e); }
+  }
+}
+
 let building = null;
 export function buildIndex() {
   if (building) return building.then(() => buildIndex()); // a newer state of the files: build again afterwards
@@ -95,6 +109,7 @@ export function buildIndex() {
       state.count = docs.length;
       state.hasKnowledge = nodes !== null;
       state.ready = true;
+      changed(null);
     } catch (e) {
       console.warn('Index failed', e);
     } finally {
@@ -315,6 +330,7 @@ export async function refreshNode(path) {
   byPath.set(path, d);
   if (!d.conflict) bySlug.set(d.slug, d);
   state.count = byPath.size;
+  changed([path]);
   return d;
 }
 
@@ -325,6 +341,7 @@ export function forgetNode(path) {
   byPath.delete(path);
   if (d && bySlug.get(d.slug)?.path === path) bySlug.delete(d.slug);
   state.count = byPath.size;
+  if (d) changed([path]);
 }
 
 // The problem phrase of a node that shares the most words with the query; coverage = share of the query's words.

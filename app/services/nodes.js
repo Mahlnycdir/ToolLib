@@ -160,6 +160,20 @@ export function linksOf(node) {
   return [...out];
 }
 
+// [@slug] and [@a, p. 3; @b] in the text (0.25.0): the sources a page or note cites, so they count as relations too.
+// Same reading as parseCite in shell/markdown.js; code blocks are left out, a [@x] there is code, not a citation.
+export function citesOf(node) {
+  const out = new Set();
+  const prose = String(node.body).split(/^```/m).filter((_, i) => i % 2 === 0).join('\n');
+  for (const m of prose.matchAll(/\[@([^\]\n]+)\]/g)) {
+    for (const part of m[1].split(';')) {
+      const x = part.trim().match(/^@?([\w.-]+)/);
+      if (x) out.add(x[1]);
+    }
+  }
+  return [...out];
+}
+
 // The steps of a project: the "- [ ] …" lines under "## Next". { open, done, next } with the first open one.
 export function projectSteps(body) {
   const part = String(body).split(/^## /m).find((x) => /^Next\b/.test(x)) || '';
@@ -240,6 +254,8 @@ export function summary(node) {
     // the frame (0.15.0): what a node links to (so every node knows who links to it), when it was made, the run a
     // page of a website belongs to and whether you marked something in it; a project names its goal and next step
     links: linksOf(node),
+    drawn: asList(m.links),   // 0.25.0: only those of the head, the ones you can take away again (relations.js)
+    cites: m.type === 'page' || m.type === 'note' || m.type === 'project' ? citesOf(node) : [],
     at: String(m.at || m.created || ''),
     // a note with handwriting (0.21.0): its strokes in a .ink file beside it, and whether the Mac should read them
     ink: m.type === 'note' && typeof m.ink === 'string' && /^[a-z0-9][a-z0-9.-]{0,120}\.ink$/.test(m.ink) ? m.ink : '',

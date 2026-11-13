@@ -9,7 +9,10 @@ import { t, getLang, setLang, onLangChange } from '../i18n/i18n.js';
 import { ACCENTS, READY, moduleById, paintAccent, setAccent } from './modules.js';
 import { renderKladde } from './kladde-view.js';
 import { renderKobra } from './kobra-view.js';
-import { formatTime, renderModule, renderSettings } from './views.js';
+import { formatTime, renderModule } from './views.js';
+import { renderSettings, PAGES } from './settings/index.js';   // 0.25.0: control centre and one page per topic
+import { linkFrom } from './link-ui.js';
+import { appearance, onThemeChange, setAppearance, shownTheme } from '../services/theme.js';
 import { applyUpdate, checkForUpdate, onPwaChange, pwaState } from '../services/pwa.js';
 import { isConfigured, onSyncChange, phaseText, refreshPending, syncKnowledge, syncState } from '../services/sync.js';
 import { bind, matches, keyTitle, withKeys, formatKeys, helpRows, onKeysChange, hasKeyboard } from '../services/keys.js';
@@ -251,9 +254,13 @@ export function startShell(root) {
   }).observe(main, { childList: true });
 
   let renderToken = 0;
+  let renderedHash = null;
   function render() {
     const route = currentRoute();
     const token = ++renderToken;
+    // a dialog or sheet belongs to the page it was opened on: a new page closes it (0.25.0; until then it stayed open)
+    if (renderedHash !== null && location.hash !== renderedHash) for (let i = 0; i < 6 && closeTopModal(); i++);
+    renderedHash = location.hash;
     setDrawer(false); // also when the route changes from outside, e.g. the back button
     savePosition();
     const entry = entryId();
@@ -329,9 +336,25 @@ export function startShell(root) {
     }
     rail.append(list);
     rail.append(h('div', { class: 'rail-spacer' }));
+    rail.append(themeButton());
     rail.append(railButton({ id: 'settings', iconName: 'settings', label: t('nav.settings'), active: route.kind === 'settings', accentId: 'shell', onclick: () => go('#/settings') }));
     rail.append(h('div', { class: 'rail-status' }, statusItems()));
   }
+
+  // Light or dark with one tap (0.25.0). The first tap leaves "like the device" and takes the other shade; the choice
+  // stays until you change it here or under Settings › Look ("Like the device" brings the automatic back).
+  function themeButton() {
+    const dark = shownTheme() === 'dark';
+    const label = t(dark ? 'theme.toLight' : 'theme.toDark');
+    const tile = iconEl(dark ? 'sun' : 'moon', 'tile');
+    paintAccent(tile, 'shell');
+    const b = h('button', { type: 'button', class: 'rail-btn theme-btn', 'aria-label': label, title: label, dataset: { id: 'theme', theme: shownTheme(), mode: appearance() }, onclick: toggleTheme },
+      tile, h('span', { class: 'rail-label', text: label }), h('span', { class: 'rail-short', 'aria-hidden': 'true', text: t(dark ? 'rail.light' : 'rail.dark') }));
+    keyTitle(b, label, 'theme.toggle');
+    return b;
+  }
+  function toggleTheme() { setAppearance(shownTheme() === 'dark' ? 'light' : 'dark'); }
+  onThemeChange(() => renderRail());
 
   function setDrawer(open) {
     app.classList.toggle('drawer-open', open);
@@ -398,7 +421,8 @@ export function startShell(root) {
   function commands() {
     const list = [
       { label: t('cmd.home'), keys: 'home übersicht start', icon: 'home', run: () => go('#/home') },
-      { label: t('cmd.settings'), keys: 'settings einstellungen preferences', icon: 'settings', run: () => go('#/settings') },
+      { label: t('cmd.settings'), keys: 'settings einstellungen preferences kontrollzentrale control centre center', icon: 'settings', run: () => go('#/settings') },
+      { label: t(shownTheme() === 'dark' ? 'theme.toLight' : 'theme.toDark'), keys: 'theme hell dunkel light dark mode nacht night aussehen', icon: shownTheme() === 'dark' ? 'sun' : 'moon', run: toggleTheme },
       { label: t('cmd.lang.en'), keys: 'language sprache english englisch en', icon: 'translate', run: () => setLang('en') },
       { label: t('cmd.lang.de'), keys: 'language sprache german deutsch de', icon: 'translate', run: () => setLang('de') },
     ];
@@ -414,6 +438,14 @@ export function startShell(root) {
       : { label: t('cmd.syncSetup'), keys: 'sync abgleichen abgleich einrichten setup git github token knowledge wissen', icon: 'refresh', run: () => go('#/settings/sync') });
     for (const c of CREATORS) {
       list.push({ label: t(`create.${c.id}.cmd`), keys: `new neu neue neues neuer anlegen erstellen create ${c.keys}`, icon: c.icon, accent: c.accent, run: () => c.run({ go }) });
+    }
+    // every settings page by its name (0.25.0): "Einstellungen Mac-Helfer", "settings python" …
+    for (const pg of PAGES) list.push({ label: t('cmd.settingsPage', { page: t(`settings.sec.${pg.id}`) }), keys: `settings einstellungen ${pg.id} ${t(`settings.sec.${pg.id}.hint`)}`, icon: pg.icon, run: () => go(`#/settings/${pg.id}`) });
+    // the node on screen: link it with another one (0.25.0)
+    const here = currentRoute();
+    if (here.kind === 'node') {
+      const d = nodeByPath(here.path);
+      if (d && !d.conflict) list.push({ label: t('cmd.link', { title: nodeTitle(d) }), keys: 'link verknüpfen verknüpfung verbinden connect relation beziehung', icon: 'link', run: () => linkFrom(d) });
     }
     list.push({ label: t('cmd.update'), keys: 'update aktualisieren version', icon: 'cloudDown', run: runUpdateCheck });
     list.push({ label: t('cmd.help'), keys: 'help hilfe shortcuts tastenkürzel keyboard', icon: 'info', run: showHelp });
@@ -600,6 +632,14 @@ export function startShell(root) {
     'go.research': () => go('#/m/scraper'),
     'go.settings': () => go('#/settings'),
     sync: () => { runSync(); },
+    'theme.toggle': () => { toggleTheme(); },
+    'node.link': () => {
+      if (document.querySelector('.modal-backdrop, .sheet-backdrop')) return false;
+      const r = currentRoute();
+      const d = r.kind === 'node' ? nodeByPath(r.path) : null;
+      if (!d || d.conflict) return false;
+      linkFrom(d);
+    },
     'project.drawer': () => { if (document.querySelector('.modal-backdrop, .sheet-backdrop')) return false; const r = currentRoute(); openProjectDrawer({ go, current: r.kind === 'node' ? r.path : '' }); },
   });
   document.addEventListener('keydown', (e) => {

@@ -3,14 +3,14 @@ import { h, toast, copyText, confirmDialog } from '../services/ui.js';
 import { loadPref, savePref } from '../services/prefs.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
-import { getNode, isOwn, languageName, linksOf, localize, readNodeText, replaceBlock, runParts, setVerified, sourcesOf, summary, titleOf, writeNode } from '../services/nodes.js';
+import { getNode, isOwn, languageName, localize, readNodeText, replaceBlock, runParts, setVerified, sourcesOf, summary, titleOf, writeNode } from '../services/nodes.js';
 import { allNodes, bestProblem, indexState, nodeByPath, nodeBySlug, onIndexChange, refreshNode, searchNodes, searchDetailed, rememberPick } from '../services/search.js';
 import { searchNote } from './search-note.js';
 import { githubRepo, isConfigured, noteChange, repoUrl } from '../services/sync.js';
 import { moduleOfType, paintAccent } from './modules.js';
 import { renderMarkdown } from './markdown.js';
 import { runControls } from './run-panel.js';
-import { CARD_TYPES, cardSections, shownElsewhere, topicChips } from './formulary.js';
+import { CARD_TYPES, cardSections, topicChips } from './formulary.js';
 import { choiceBox, choiceState, decide, pickedNode } from './choice-box.js';
 import { markSpots } from '../services/choices.js';
 import { conflictActions } from './conflict-actions.js';
@@ -307,13 +307,7 @@ export async function renderNode(main, path, ctx) {
     box.append(h('nav', { class: 'lb-steps' }, step(libInfo.prev, 'library.prev', 'lb-prev'), step(libInfo.next, 'library.next', 'lb-next')));
   }
 
-  // Related nodes (without the ones listed above)
-  const elsewhere = shownElsewhere(node, d);
-  const related = linksOf(node).filter((slug) => !elsewhere.has(slug)).map((slug) => nodeBySlug(slug)).filter((n) => n && n.path !== path);
-  if (related.length) {
-    box.append(h('h2', { text: t('node.related') }),
-      h('div', { class: 'related' }, related.map((n) => h('a', { class: 'related-link', href: nodeHref(n.path) }, typeTile(n.type, 'small'), h('span', { text: nodeTitle(n, lang) })))));
-  }
+  // Related nodes moved into the context panel beside the node (0.25.0, link-ui.js): both directions, live.
 
   // Sources with links and the exact place
   const sources = sourcesOf(node.meta);
