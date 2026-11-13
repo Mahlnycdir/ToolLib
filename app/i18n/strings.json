@@ -1362,7 +1362,7 @@
   "settings.keyboard.use": { "en": "I use a keyboard on this device", "de": "Ich nutze an diesem Gerät eine Tastatur" },
   "settings.keyboard.hint": { "en": "Shows the keys in buttons and the section Keys, also on a phone or tablet.", "de": "Zeigt Tasten an Knöpfen und den Bereich Tasten, auch auf Handy oder Tablet." },
   "settings.keys.title": { "en": "Keyboard shortcuts", "de": "Tastenkürzel" },
-  "settings.keys.hint": { "en": "Change: press the new keys. Esc keeps the old ones, Backspace removes them. Pointing at a button shows its keys.", "de": "Ändern: neue Tasten drücken. Esc behält die alten, Rücktaste entfernt sie. Zeigst du auf einen Knopf, siehst du seine Tasten." },
+  "settings.keys.hint": { "en": "Change: press the new keys. Esc keeps the old ones, Backspace removes them. Pointing at a button shows its keys. Keys with Alt (Option) alone work outside text fields; in a field the key types its sign.", "de": "Ändern: neue Tasten drücken. Esc behält die alten, Rücktaste entfernt sie. Zeigst du auf einen Knopf, siehst du seine Tasten. Kürzel nur mit Alt (Option) gelten außerhalb von Textfeldern; in einem Feld schreibt die Taste ihr Zeichen." },
   "settings.keys.change": { "en": "Change", "de": "Ändern" },
   "settings.keys.default": { "en": "Back to the default", "de": "Zurück zum Standard" },
   "settings.keys.none": { "en": "none", "de": "keine" },

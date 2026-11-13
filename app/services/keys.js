@@ -209,6 +209,9 @@ function dispatch(e) {
   const c = comboOf(e);
   if (!c) return;
   const bare = !/^(Mod|Ctrl|Alt)\+/.test(c);
+  // Alt (Option) with a key types a sign on a Mac (Option+P = π on a German keyboard): while you type in a field,
+  // shortcuts with Alt alone stay off, the sign wins (0.24.1, ENTE 13.11.). Mod+Alt combinations still work.
+  const altOnly = /^Alt\+/.test(c);
   const typing = typingIn(e.target) || typingIn(document.activeElement);
   const inEditor = !!e.target?.closest?.('.cm-editor');
   for (const b of bindings) {
@@ -218,7 +221,7 @@ function dispatch(e) {
       const a = byId.get(id);
       if (!a || !keysOf(id).some((k) => normalizeCombo(k) === c)) continue;
       if (a.area === 'editor' && inEditor) continue;
-      if (bare && typing && !b.typing.includes(id) && a.area !== 'cmd' && a.area !== 'run') continue;
+      if (typing && !b.typing.includes(id) && (altOnly || (bare && a.area !== 'cmd' && a.area !== 'run'))) continue;
       if (fn(e) === false) continue;
       e.preventDefault();
       return;
