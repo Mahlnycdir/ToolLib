@@ -131,6 +131,10 @@ Der Rahmen ist um eine Arbeitsweise gebaut: sammeln, festhalten, anwenden, und z
   - Die App kennzeichnet ihre Anfragen (`targetAddressSpace`), fragt die Erlaubnis ab (`loopback-network`, `local-network`) und erklärt im Verbindungstest, wo man sie erteilt.
   - Der Knopf „Im neuen Tab prüfen“ öffnet `…/ping`: Eine Antwort mit „error“ heißt, Helfer und Zertifikat sind in Ordnung.
 
+## Dialoge scrollen auf dem Handy (0.24.2)
+
+- Hohe Dialoge (etwa „Website durchgehen“) ließen sich auf dem iPhone nicht scrollen. Jetzt hat jeder Dialog höchstens Bildschirmhöhe; nur der Inhalt scrollt, mit sichtbarer schmaler Scrollleiste, Titel und Knöpfe bleiben stehen (`.modal` in `app/shell/styles.css`).
+
 ## Alt-Kürzel nur außerhalb von Textfeldern (0.24.1)
 
 - Kürzel nur mit Alt (Option), etwa Alt+H, P, W, R, S, B, gelten nur noch außerhalb von Textfeldern. Auf der deutschen Mac-Tastatur schreiben diese Tasten ª π ∑ ® ‚ ∫; im Feld gewinnt jetzt das Zeichen (ENTE, 13.11.). Kürzel mit ⌘/Strg (auch ⌘+Option) wirken wie bisher, Alt+1…9 wie seit 0.22.0. Einstellungen › Tasten nennen die Regel.

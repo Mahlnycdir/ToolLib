@@ -369,6 +369,7 @@ dl.keys dd { margin: 0; }
 .modal-backdrop, .sheet-backdrop {
   position: fixed; inset: 0; z-index: 70;
   display: grid; place-items: center; padding: 16px;
+  grid-template-rows: minmax(0, 1fr);   /* a tall dialog gets at most the screen, then scrolls inside */
   background: rgba(15, 31, 61, 0.32);
   opacity: 0; transition: opacity 0.18s;
 }
@@ -377,10 +378,20 @@ dl.keys dd { margin: 0; }
   width: min(440px, 100%);
   background: var(--panel); border-radius: 16px; box-shadow: var(--shadow);
   padding: 20px;
+  display: flex; flex-direction: column; max-height: 100%; min-height: 0;
 }
 .modal.wide { width: min(720px, 100%); }
-.modal-title { font-weight: 700; font-size: 18px; margin-bottom: 12px; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.modal-title { font-weight: 700; font-size: 18px; margin-bottom: 12px; flex: none; }
+/* only the content scrolls (also on the phone); title and buttons stay in reach, the scrollbar stays visible */
+.modal-body {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  margin-right: -8px; padding-right: 8px;
+  scrollbar-width: thin; scrollbar-color: var(--muted) transparent;
+}
+.modal-body::-webkit-scrollbar { width: 6px; }
+.modal-body::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 3px; }
+.modal-body::-webkit-scrollbar-track { background: transparent; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; flex: none; }
 .field { width: 100%; height: 42px; padding: 0 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 16px; }
 .field-label { display: block; font-size: 14px; color: var(--muted); margin-bottom: 6px; }
 .field-error { color: var(--danger); font-size: 14px; min-height: 1.2em; margin-top: 6px; }
