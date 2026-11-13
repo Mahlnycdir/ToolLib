@@ -131,6 +131,11 @@ Der Rahmen ist um eine Arbeitsweise gebaut: sammeln, festhalten, anwenden, und z
   - Die App kennzeichnet ihre Anfragen (`targetAddressSpace`), fragt die Erlaubnis ab (`loopback-network`, `local-network`) und erklärt im Verbindungstest, wo man sie erteilt.
   - Der Knopf „Im neuen Tab prüfen“ öffnet `…/ping`: Eine Antwort mit „error“ heißt, Helfer und Zertifikat sind in Ordnung.
 
+## Schreiben am iPhone geht wieder (0.23.1)
+
+- **Der Editor behält seine Höhe:** Beim ersten Tipp in den Text schrieb CodeMirror seine Klassen neu und warf dabei `md-editor` hinaus. Der Editor wuchs dann auf die Länge des ganzen Texts, sein eigenes Scrollen endete, der Rahmen schnitt ihn ab: Scrollen ging nicht mehr, und alle Zeilen wurden auf einmal gezeichnet (es hing). Betraf jede Seite, Quelltext und Notiz mit diesem Editor, auch am Desktop. Die Klassen kommen jetzt über CodeMirror selbst (`EditorView.editorAttributes`).
+- **Mit offener Tastatur** sitzt die App fest auf dem sichtbaren Bereich (wie früher Kobras eigene Seite), statt mit der Seite mitzurutschen. Die Werte dafür werden nur noch gesetzt, wenn sie sich ändern; beim Gleiten des iPhones kamen sie viele Male in der Sekunde.
+
 ## Ein Python für alles (0.23.0)
 
 - **Ein Worker für die ganze App:** Spickzettel („Ausprobieren“, Checks), Plots in Seiten und Kobra teilen sich einen Python-Worker (`kobra/worker.js`, verwaltet von `app/services/python-host.js`). Pyodide lädt nur einmal; wer zuerst Python braucht, startet es, der andere findet es fertig vor.

@@ -213,14 +213,14 @@ function applyTheme() {
 
 function setupViewport() {
   const vv = window.visualViewport;
+  // In Toollib setzt der Rahmen --app-h und schiebt die App mit der Tastatur; Kobra merkt sich nur, ob sie offen ist
+  // (body.kb-open für die Leiste unten). Nur bei einer Änderung setzen: die Ereignisse kommen beim Gleiten des
+  // iPhones viele Male in der Sekunde (0.23.1).
+  let was = null;
   const sync = () => {
-    const height = vv ? vv.height : window.innerHeight;
-    const top = vv ? vv.offsetTop : 0;
-    const root = document.documentElement;
-    root.style.setProperty('--app-h', `${Math.round(height)}px`);
-    root.style.setProperty('--app-top', `${Math.round(top)}px`);
     const kb = vv ? window.innerHeight - vv.height > 140 : false;
-    document.body.classList.toggle('kb-open', kb);
+    if (kb !== was) document.body.classList.toggle('kb-open', kb);
+    was = kb;
   };
   sync();
   vv?.addEventListener('resize', sync);

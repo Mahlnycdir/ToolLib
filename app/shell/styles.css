@@ -78,8 +78,11 @@ kbd {
 .app {
   display: grid;
   height: var(--app-h, 100dvh);
-  position: relative;
-  top: var(--vv-top, 0px);   /* follows the visible area while the keyboard is open (0.22.1) */
+  /* Pinned to the visible area (0.23.1, like Kobra's own page did): fixed, moved by the offset of the visible area
+     while the keyboard is open. 0.22.1 moved it with position: relative and the page offset; moving it then made the
+     page itself taller, the iPhone scrolled on to show the cursor, the app moved again – writing in the library hung. */
+  position: fixed; left: 0; right: 0;
+  top: var(--vv-top, 0px);
   grid-template-columns: var(--rail-w) minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas: "rail cmd" "rail main" "rail status";

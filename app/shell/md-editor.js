@@ -352,8 +352,11 @@ export function createEditor(host, opts = {}) {
       : { fontFamily: 'inherit', lineHeight: '1.65' },
   }));
   if (opts.placeholder) extensions.push(cmPlaceholder(opts.placeholder));
+  // Our classes go through CodeMirror (0.23.1). Added by hand, they were gone at the first focus: CodeMirror writes
+  // its class attribute anew (cm-focused). Without .md-editor the editor grew to the whole text, its own scrolling
+  // ended, the frame around it cut it off – no scrolling, and every line drawn at once (writing in the library hung).
+  extensions.push(EditorView.editorAttributes.of({ class: `md-editor md-${opts.kind || 'page'}` }));
   const view = new EditorView({ parent: host, state: EditorState.create({ doc: opts.value || '', extensions }) });
-  view.dom.classList.add('md-editor', `md-${opts.kind || 'page'}`);
   view.dom.style.setProperty('--ed-size', `${Number(loadPref('editor.fontSize', 16)) || 16}px`);
 
   function images(files, v, e, at = null) {

@@ -722,15 +722,21 @@ export function startShell(root) {
   // ---------------------------------------------------------------- viewport
   // On the iPhone the keyboard shrinks the visible area; the shell follows the visual viewport.
   const vv = window.visualViewport;
-  // With the keyboard open the iPhone may also slide the visible area down to show the cursor; the app slides with it
-  // (--vv-top), so the bar above the keyboard sits right on it (0.22.1; Kobra on its own page did the same).
+  // With the keyboard open the iPhone may also slide the visible area down to show the cursor; the app (fixed) sits on
+  // the visible area with its offset (--vv-top), so the bar above the keyboard sits right on it. Values are only set
+  // when they change: these events come many times a second while the iPhone slides, and every new value on <html>
+  // makes the browser work through all styles again (0.23.1).
+  let fitted = { h: '', top: '', kb: null };
   function fitViewport() {
     const height = vv ? vv.height : window.innerHeight;
-    const root = document.documentElement;
-    root.style.setProperty('--app-h', `${Math.round(height)}px`);
     const keyboard = vv ? window.innerHeight - vv.height > 140 : false;
-    app.classList.toggle('kb-open', keyboard);
-    root.style.setProperty('--vv-top', `${keyboard && vv ? Math.max(0, Math.round(vv.pageTop)) : 0}px`);
+    const h = `${Math.round(height)}px`;
+    const top = `${keyboard && vv ? Math.max(0, Math.round(vv.offsetTop)) : 0}px`;
+    const root = document.documentElement;
+    if (h !== fitted.h) root.style.setProperty('--app-h', h);
+    if (top !== fitted.top) root.style.setProperty('--vv-top', top);
+    if (keyboard !== fitted.kb) app.classList.toggle('kb-open', keyboard);
+    fitted = { h, top, kb: keyboard };
     if (window.scrollY && !keyboard) window.scrollTo(0, 0);
   }
   vv?.addEventListener('resize', fitViewport);
