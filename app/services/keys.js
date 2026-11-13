@@ -18,6 +18,7 @@ export const ACTIONS = [
   { id: 'go.projects', area: 'global', keys: ['Alt+P'] },
   { id: 'go.write', area: 'global', keys: ['Alt+W'] },
   { id: 'go.research', area: 'global', keys: ['Alt+R'] },
+  { id: 'go.net', area: 'global', keys: ['Alt+G'] },             // 0.26.0: the network (around the node on screen)
   { id: 'go.settings', area: 'global', keys: ['Mod+,'] },
   { id: 'sync', area: 'global', keys: ['Alt+S'] },
   { id: 'project.drawer', area: 'global', keys: ['Alt+B'] },

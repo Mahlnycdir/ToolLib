@@ -20,7 +20,7 @@
   --code-bg: #f3f6fb;
   /* one colour system (0.25.0, app/shell/colors.js): the same nine colours for tools, kinds, areas, sections */
   --c-blue: #1f63e0; --c-sky: #0b7bbd; --c-teal: #0f8078; --c-green: #1e7e3a; --c-orange: #c2410c;
-  --c-rose: #c0265e; --c-violet: #6d4aff; --c-yellow: #c99a06; --c-slate: #64748b;
+  --c-rose: #c0265e; --c-violet: #6d4aff; --c-yellow: #c99a06; --c-slate: #64748b; --c-indigo: #4338ca; --c-lime: #4d7c0f;
   color-scheme: light;
 }
 /* 0.18.0: dark mode. "System" is turned into data-theme by index.html and services/theme.js. */
@@ -40,7 +40,7 @@
   --ink-base: #e4eaf3;
   --code-bg: #111720;
   --c-blue: #6b9bff; --c-sky: #38bdf8; --c-teal: #2dd4bf; --c-green: #4ade80; --c-orange: #fb923c;
-  --c-rose: #fb7185; --c-violet: #a78bfa; --c-yellow: #facc15; --c-slate: #94a3b8;
+  --c-rose: #fb7185; --c-violet: #a78bfa; --c-yellow: #facc15; --c-slate: #94a3b8; --c-indigo: #818cf8; --c-lime: #a3e635;
   color-scheme: dark;
 }
 
@@ -2054,3 +2054,92 @@ button.set-node:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(
   .set-tiles { grid-template-columns: minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) { .set-wire.s-busy, .set-node[data-state="busy"] .set-light, .set-flash { animation: none; } }
+
+/* ------------------------------------------------------------------ 0.26.0: the network (net-view.js, net-canvas.js)
+   The picture fills the whole view; bar, controls, legend and the chosen node float above it as glass. */
+:root { --net-bg1: #fbfcff; --net-bg2: #e4eaf5; --net-glass: rgba(255, 255, 255, 0.72); --net-glass-line: rgba(15, 31, 61, 0.1); --net-shadow: 0 10px 30px rgba(15, 31, 61, 0.1); }
+:root[data-theme="dark"] { --net-bg1: #141c2e; --net-bg2: #05080e; --net-glass: rgba(16, 22, 35, 0.66); --net-glass-line: rgba(255, 255, 255, 0.1); --net-shadow: 0 12px 36px rgba(0, 0, 0, 0.45); }
+.main[data-view="net"] { padding: 0; overflow: hidden; }
+.main[data-view="net"] > * { max-width: none; }
+.net-view { position: relative; height: 100%; min-height: 0; overflow: hidden; background: radial-gradient(ellipse at 50% 42%, var(--net-bg1), var(--net-bg2)); }
+.net-body, .net-stage { position: absolute; inset: 0; }
+.net-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; cursor: grab; }
+.net-canvas:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 50%, transparent); }
+.net-glass, .net-bar, .net-zoom, .net-legend, .net-side, .net-hint {
+  background: var(--net-glass); border: 1px solid var(--net-glass-line); box-shadow: var(--net-shadow);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5); backdrop-filter: blur(16px) saturate(1.5);
+}
+.net-bar { position: absolute; z-index: 3; top: 12px; left: 12px; right: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px; border-radius: 16px; }
+.net-title { font-size: 15px; font-weight: 700; margin: 0 8px 0 8px; letter-spacing: -0.01em; display: flex; align-items: center; gap: 6px; }
+.net-bar .btn { padding: 6px 11px; min-height: 34px; border-radius: 11px; border-color: transparent; background: transparent; font-size: 14px; }
+.net-bar .btn:hover { background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.net-bar .btn.on { background: color-mix(in srgb, var(--accent) 16%, transparent); color: color-mix(in srgb, var(--accent) 80%, var(--ink-base)); }
+.net-bar .icon-btn { border-radius: 11px; }
+.net-centre { max-width: 280px; }
+.net-centre-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.net-depth { display: inline-flex; align-items: center; gap: 8px; padding: 0 10px; font-size: 13.5px; color: var(--muted); height: 34px; border-radius: 11px; }
+.net-depth[hidden] { display: none; }
+.net-depth-in { width: 110px; accent-color: var(--accent); }
+.net-depth-val { font-variant-numeric: tabular-nums; min-width: 34px; color: var(--fg); font-weight: 600; }
+.net-filter .count { font-size: 11px; font-weight: 700; background: var(--accent); color: #fff; border-radius: 999px; padding: 0 6px; line-height: 17px; }
+.net-filter .count[hidden] { display: none; }
+.net-gap { flex: 1; }
+.net-zoom { position: absolute; z-index: 2; right: 12px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 2px; padding: 4px; border-radius: 14px; transition: right 0.25s ease; }
+.net-zoom .icon-btn { width: 34px; height: 34px; border-radius: 10px; }
+.net-zoom .icon-btn.on { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.net-legend { position: absolute; z-index: 2; left: 12px; bottom: 12px; display: flex; flex-wrap: wrap; gap: 4px 12px; max-width: min(64%, 680px); padding: 7px 12px; border-radius: 12px; pointer-events: none; font-size: 12px; color: var(--muted); }
+.net-legend:empty { display: none; }
+.net-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.net-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c, var(--muted)); flex: none; box-shadow: 0 0 8px var(--c, transparent); }
+.net-info { position: absolute; z-index: 2; right: 16px; bottom: 16px; pointer-events: none; text-align: right; max-width: 40%; font-size: 12px; transition: right 0.25s ease; }
+.net-hint { position: absolute; z-index: 2; left: 50%; top: 72px; transform: translateX(-50%); padding: 7px 14px; border-radius: 999px; font-size: 13px; pointer-events: none; max-width: calc(100% - 24px); text-align: center; }
+.net-hint[hidden], .net-empty[hidden], .net-side[hidden] { display: none; }
+.net-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); pointer-events: none; }
+.net-side { position: absolute; z-index: 3; top: 70px; right: 12px; bottom: 12px; width: 340px; overflow-y: auto; padding: 16px 16px 20px; border-radius: 18px; animation: netSideIn 0.22s ease-out; }
+@keyframes netSideIn { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+.net-view.side-open .net-zoom { right: 364px; }
+.net-view.side-open .net-info { right: 368px; }
+.net-side-head { display: flex; align-items: flex-start; gap: 10px; }
+.net-side-t { display: grid; flex: 1; min-width: 0; }
+.net-side-title { font-weight: 650; font-size: 16px; color: var(--fg); text-decoration: none; overflow-wrap: anywhere; }
+.net-side-title:hover { text-decoration: underline; }
+.net-side-x { margin: -4px -6px 0 0; }
+.net-side-actions { margin: 12px 0 4px; }
+.net-side .rel-group h4, .net-side .ctx-rel-head h3 { color: var(--muted); }
+.net-filter-body, .net-more-body { display: grid; gap: 14px; }
+.net-fs { border: 0; padding: 0; margin: 0; }
+.net-fs legend { font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+.net-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 4px 12px; }
+.net-check { display: flex; align-items: center; gap: 8px; min-height: 32px; font-size: 14.5px; }
+.net-check input { accent-color: var(--accent); width: 17px; height: 17px; }
+/* the small network beside a node */
+.net-mini { position: relative; display: block; height: 170px; margin: 12px 0 4px; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; background: radial-gradient(ellipse at 50% 45%, var(--net-bg1), var(--net-bg2)); }
+.net-mini[hidden] { display: none; }
+.net-mini .net-canvas { cursor: pointer; }
+.net-mini:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.net-mini-cap { position: absolute; left: 8px; top: 7px; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px 2px 6px; border-radius: 999px; font-size: 11.5px; color: var(--muted); pointer-events: none; background: var(--net-glass); border: 1px solid var(--net-glass-line); }
+.net-mini-cap .ic { width: 13px; height: 13px; }
+@media (max-width: 899px) {
+  .net-bar { top: 8px; left: 8px; right: 8px; padding: 4px; gap: 2px; border-radius: 14px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .net-bar::-webkit-scrollbar { display: none; }
+  .net-bar { -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent); mask-image: linear-gradient(90deg, #000 88%, transparent); }   /* more to the right */
+  .net-bar > * { flex: none; }
+  .net-gap { display: none; }
+  .net-title { display: none; }
+  .net-bar .btn { padding: 6px 9px; }
+  .net-bar .btn span:not(.icon):not(.count):not(.net-centre-t) { display: none; }
+  .net-centre { max-width: 40vw; }
+  .net-legend-item:nth-child(n+7) { display: none; }
+  .net-depth { padding: 0 6px; }
+  .net-depth > span:first-child { display: none; }
+  .net-depth-in { width: 80px; }
+  .net-side { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 52%; border-radius: 18px; animation-name: netSideUp; }
+  @keyframes netSideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+  .net-view.side-open .net-zoom, .net-view.side-open .net-legend { display: none; }
+  .net-zoom { right: 8px; top: auto; bottom: 64px; transform: none; }
+  .net-zoom .icon-btn:first-child, .net-zoom .icon-btn:nth-child(4) { display: none; }   /* zoom with two fingers */
+  .net-info { display: none; }
+  .net-legend { left: 8px; bottom: 8px; max-width: calc(100% - 16px); font-size: 11.5px; }
+  .net-hint { top: 62px; }
+}
+@media (prefers-reduced-motion: reduce) { .net-side { animation: none; } }

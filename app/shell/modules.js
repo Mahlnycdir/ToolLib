@@ -21,6 +21,7 @@ export const ACCENTS = [
 // CREATORS of create.js; types: the kinds of nodes it shows, which take its colour.
 export const MODULES = [
   { id: 'projects', icon: 'target', accent: 'violet', types: ['project', 'note', 'library', 'page'] },   // 0.15.0; pages since 0.16.0
+  { id: 'net', icon: 'net', accent: 'teal', types: [], keys: 'netz netzwerk network graph mindmap 3d verknüpfungen links' },   // 0.26.0: the network of your knowledge (net-view.js)
   { id: 'scraper', icon: 'globe', accent: 'blue', types: ['clip', 'research'] },                    // research window (0.14.0)
   { id: 'formulary', icon: 'vars', accent: 'rose', types: ['formula', 'convention', 'definition', 'theorem', 'term', 'topic'] },   // stage 3 (0.12.0)
   { id: 'cheatsheet', icon: 'book', accent: 'sky', types: ['snippet', 'recipe'] },

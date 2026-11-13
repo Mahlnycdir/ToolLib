@@ -12,6 +12,7 @@ import { newNote, newProject } from './create.js';
 import { paintProject } from './projects-view.js';
 import { queueSearch } from './research-view.js';
 import { relationsPanel } from './link-ui.js';
+import { miniNet } from './net-view.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 
@@ -60,6 +61,8 @@ export function contextBox(d, { go, redraw }) {
 
   // connections: both directions, every kind, and a button to draw a new one (0.25.0)
   box.append(relationsPanel(d));
+  // the small network: what lies around it, a tap opens the big one (0.26.0)
+  box.append(miniNet(d));
 
   // go on with it
   const title = nodeTitle(d, lang);

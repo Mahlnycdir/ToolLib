@@ -12,6 +12,7 @@ import { renderKobra } from './kobra-view.js';
 import { formatTime, renderModule } from './views.js';
 import { renderSettings, PAGES } from './settings/index.js';   // 0.25.0: control centre and one page per topic
 import { linkFrom } from './link-ui.js';
+import { renderNet } from './net-view.js';
 import { appearance, onThemeChange, setAppearance, shownTheme } from '../services/theme.js';
 import { applyUpdate, checkForUpdate, onPwaChange, pwaState } from '../services/pwa.js';
 import { isConfigured, onSyncChange, phaseText, refreshPending, syncKnowledge, syncState } from '../services/sync.js';
@@ -49,6 +50,8 @@ const VIEWS = {
   scraper: (main, mod) => renderResearch(main, mod),
   kladde: (main, mod, ctx) => renderKladde(main, mod, ctx),
   kobra: (main) => renderKobra(main),
+  // 0.26.0: #/m/net/<slug> puts that node in the middle
+  net: (main) => renderNet(main, { slug: (() => { try { return decodeURIComponent(location.hash.split('/')[3] || ''); } catch { return ''; } })() }),
 };
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -318,7 +321,7 @@ export function startShell(root) {
     const short = t(`rail.${id}`) === `rail.${id}` ? label : t(`rail.${id}`);
     const b = h('button', { type: 'button', class: `rail-btn${active ? ' active' : ''}`, 'aria-label': label, title: label, 'aria-current': active ? 'page' : null, dataset: { id }, onclick },
       tile, h('span', { class: 'rail-label', text: label }), h('span', { class: 'rail-short', 'aria-hidden': 'true', text: short }));
-    const action = { home: 'go.home', projects: 'go.projects', scraper: 'go.research', settings: 'go.settings' }[id];
+    const action = { home: 'go.home', projects: 'go.projects', scraper: 'go.research', settings: 'go.settings', net: 'go.net' }[id];
     if (action) keyTitle(b, label, action);
     return b;
   }
@@ -428,7 +431,7 @@ export function startShell(root) {
     ];
     for (const m of READY) {
       const name = t(`module.${m.id}.name`);
-      list.push({ label: t('cmd.open', { module: name }), keys: `${m.id} module modul ${t(`module.${m.id}.desc`)}`, icon: m.icon, accent: m.id, run: () => (m.href ? location.assign(m.href) : go(`#/m/${m.id}`)) });
+      list.push({ label: t('cmd.open', { module: name }), keys: `${m.id} module modul ${t(`module.${m.id}.desc`)} ${m.keys || ''}`, icon: m.icon, accent: m.id, run: () => (m.href ? location.assign(m.href) : go(`#/m/${m.id}`)) });
     }
     for (const a of ACCENTS) {
       list.push({ label: t('cmd.accent', { color: t(`accent.${a.id}`) }), keys: `accent akzent colour color farbe ${a.id}`, icon: 'palette', swatch: a.color, run: () => { setAccent('shell', a.id); refresh(); } });
@@ -446,6 +449,7 @@ export function startShell(root) {
     if (here.kind === 'node') {
       const d = nodeByPath(here.path);
       if (d && !d.conflict) list.push({ label: t('cmd.link', { title: nodeTitle(d) }), keys: 'link verknüpfen verknüpfung verbinden connect relation beziehung', icon: 'link', run: () => linkFrom(d) });
+      if (d && !d.conflict) list.push({ label: t('cmd.netAround', { title: nodeTitle(d) }), keys: 'netz graph network netzwerk um around mindmap', icon: 'net', run: () => go(`#/m/net/${encodeURIComponent(d.slug)}`) });
     }
     list.push({ label: t('cmd.update'), keys: 'update aktualisieren version', icon: 'cloudDown', run: runUpdateCheck });
     list.push({ label: t('cmd.help'), keys: 'help hilfe shortcuts tastenkürzel keyboard', icon: 'info', run: showHelp });
@@ -630,6 +634,7 @@ export function startShell(root) {
     'go.projects': () => go('#/m/projects'),
     'go.write': () => go('#/m/library'),
     'go.research': () => go('#/m/scraper'),
+    'go.net': () => { const r = currentRoute(); const d = r.kind === 'node' ? nodeByPath(r.path) : null; go(d && !d.conflict ? `#/m/net/${encodeURIComponent(d.slug)}` : '#/m/net'); },
     'go.settings': () => go('#/settings'),
     sync: () => { runSync(); },
     'theme.toggle': () => { toggleTheme(); },
@@ -650,7 +655,14 @@ export function startShell(root) {
       const j = jumps()[Number(e.code.slice(5)) - 1];
       if (j) { e.preventDefault(); hideResults(); input.blur(); j.run(); }
     }
-    else if (e.key === 'Escape' && !typing) { if (!closeTopModal()) setDrawer(false); }
+    // Escape closes the top dialog or sheet. In a text field it is left to the field (it may clear it), except in a
+    // sheet: there Escape closes the sheet as a whole (0.26.0; before, a sheet with a field in focus stayed open)
+    else if (e.key === 'Escape') {
+      const el = document.activeElement;
+      const field = typing && !(el?.tagName === 'INPUT' && /^(checkbox|radio|range|button|submit|color)$/.test(el.type));
+      const inSheet = !!el?.closest?.('.panel-sheet, .action-sheet');
+      if (!field || inSheet) { if (!closeTopModal()) setDrawer(false); }
+    }
   });
 
   function showHelp() {

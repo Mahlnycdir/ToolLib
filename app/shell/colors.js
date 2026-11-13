@@ -1,4 +1,4 @@
-// One colour system (0.25.0): the same nine colours everywhere: tools, kinds of nodes, areas of knowledge, sections
+// One colour system (0.25.0): the same colours everywhere: tools, kinds of nodes, areas of knowledge, sections
 // of a board, and soon the dots and threads of the network. Each colour has a light and a dark shade; both live in
 // app/shell/styles.css as CSS variables (--c-blue, --c-rose, …), so switching between light and dark repaints
 // everything at once without drawing again.
@@ -17,6 +17,8 @@ export const PALETTE = {
   violet: ['#6d4aff', '#a78bfa'],
   yellow: ['#c99a06', '#facc15'],
   slate: ['#64748b', '#94a3b8'],
+  indigo: ['#4338ca', '#818cf8'],   // 0.26.0: two more, so the kinds of nodes in the network are told apart
+  lime: ['#4d7c0f', '#a3e635'],
 };
 export const COLOURS = Object.keys(PALETTE);
 const known = (name) => (COLOURS.includes(name) ? name : 'slate');
@@ -30,9 +32,15 @@ export function colourValue(name) {
   return PALETTE[known(name)][dark ? 1 : 0];
 }
 
-// A kind of node takes the colour of the tool that shows it (a formula rose, a snippet sky, a project violet …);
-// you can change a tool's colour under Settings › Look, and its kinds follow.
-export const typeColour = (type) => known(accentOf(moduleOfType(type)).id);
+// The colour of a kind of node in the network (0.26.0): one colour per kind, so formulas, theorems and definitions
+// are told apart although one tool shows them all. Sources stay grey, so they recede behind your own knowledge.
+// Kinds not listed take the colour of the tool that shows them (Settings › Look).
+const TYPE = {
+  formula: 'rose', theorem: 'orange', definition: 'yellow', term: 'yellow', convention: 'teal', topic: 'indigo',
+  snippet: 'sky', recipe: 'sky', clip: 'slate', research: 'slate', project: 'violet', note: 'green',
+  page: 'lime', library: 'lime', part: 'orange', device: 'orange',
+};
+export const typeColour = (type) => TYPE[type] || known(accentOf(moduleOfType(type)).id);
 
 // The areas of your knowledge. New areas (Rust, crafts, nursing …) get a colour from their name, always the same one.
 const AREA = { physics: 'violet', math: 'teal', numerics: 'sky', electronics: 'orange', nursing: 'rose', programming: 'blue', rust: 'orange' };
@@ -41,5 +49,6 @@ export function areaColour(area) {
   if (AREA[a]) return AREA[a];
   let n = 0;
   for (const ch of a) n = (n * 31 + ch.charCodeAt(0)) >>> 0;
-  return COLOURS[n % (COLOURS.length - 1)];   // never slate: that is "no colour"
+  const usable = COLOURS.filter((c) => c !== 'slate');   // never slate: that is "no colour"
+  return usable[n % usable.length];
 }

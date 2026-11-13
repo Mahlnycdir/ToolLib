@@ -1,6 +1,6 @@
 # Toollib lesen, wenn man Python kann
 
-Diese Anleitung ist für jemanden, der Python gut kennt und JavaScript kaum. Sie zeigt, wo was liegt, wie ein Klick durch den Code läuft und welche JavaScript-Wörter man zum Lesen braucht. Stand: 0.25.0.
+Diese Anleitung ist für jemanden, der Python gut kennt und JavaScript kaum. Sie zeigt, wo was liegt, wie ein Klick durch den Code läuft und welche JavaScript-Wörter man zum Lesen braucht. Stand: 0.26.0.
 
 ## Das Wichtigste in einem Satz
 
@@ -27,6 +27,7 @@ Toollib ist eine Webseite, die im Browser läuft (Mac, iPhone, Linux). Dein Wiss
 4. `app/services/search.js`: der Suchindex über alle Knoten; meldet jede Änderung (`onNodesChange`).
 5. `app/services/relations.js`: das Netz der Verknüpfungen (seit 0.25.0). Hier steht, wie Knoten zusammenhängen.
 6. `app/services/sync.js`: Abgleich mit GitHub (isomorphic-git im Browser).
+7. Das Netz (0.26.0): `app/services/graph-layout.js` rechnet, wo die Punkte stehen (Kräfte wie bei networkx.spring_layout, in 3D, mit Ebenen); `app/shell/net-canvas.js` zeichnet und dreht; `app/shell/net-view.js` baut die Ansicht und rechnet die Spannung einer Linie aus (`tension`).
 
 ## Wie eine Verknüpfung durch den Code läuft
 
@@ -79,6 +80,8 @@ const R = await import('/app/services/relations.js');
 R.relationsOf('spectral-flow-2d')          // was zeigt wohin
 R.neighbourhood('spectral-flow-2d', { depth: 2 }).nodes.size
 R.dump().missing                            // Verweise auf Knoten, die es (noch) nicht gibt
+// im Netz (#/m/net): was gerade gezeichnet ist
+__netIds().length; __netEdges().slice(0, 5); __netCamera()
 ```
 
 ## Ein neues Werkzeug einbauen

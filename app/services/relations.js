@@ -118,8 +118,10 @@ export function degree(slug) {
 }
 
 // The neighbourhood of a node up to `depth` steps, in both directions: { nodes: Map slug → steps away, edges }.
-// kinds: only these kinds of relation; max: stop after so many nodes (the nearest come first, breadth first).
-export function neighbourhood(slug, { depth = 1, kinds = KINDS, max = 300 } = {}) {
+// kinds: only these kinds of relation; max: stop after so many nodes (the nearest come first, breadth first);
+// through(slug): whether the walk may go on from a node it reached (0.26.0). The network does not walk on through
+// conventions and projects: almost every card hangs on the metric, so two steps would otherwise reach everything.
+export function neighbourhood(slug, { depth = 1, kinds = KINDS, max = 300, through = () => true } = {}) {
   const g = graph();
   const allowed = new Set(kinds);
   const dist = new Map([[slug, 0]]);
@@ -127,6 +129,7 @@ export function neighbourhood(slug, { depth = 1, kinds = KINDS, max = 300 } = {}
   for (let step = 1; step <= depth && ring.length && dist.size < max; step++) {
     const next = [];
     for (const s of ring) {
+      if (s !== slug && !through(s)) continue;
       for (const e of [...(g.out.get(s) || []), ...(g.in.get(s) || [])]) {
         if (!allowed.has(e.kind)) continue;
         const other = e.from === s ? e.to : e.from;
