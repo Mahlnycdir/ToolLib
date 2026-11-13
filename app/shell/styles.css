@@ -1325,6 +1325,26 @@ textarea.field { height: auto; padding: 10px 12px; line-height: 1.45; resize: ve
 @media (max-width: 1100px) and (min-width: 760px) {
   .lb.side-open .lb-body { grid-template-columns: 200px minmax(0, 1fr) 280px; }
 }
+/* 0.24.3: "Only the page" keeps the text in a 760 px column, but the whole page is the scrolling area: the wheel
+   scrolls the text wherever the mouse is, also beside the column, and the scrollbar stands at the edge of the page.
+   (Until 0.24.2 the column itself scrolled; beside it the wheel did nothing.) The padding centres the column. */
+@media (min-width: 760px) {
+  .lb.focus .pe[data-mode="write"] .pe-text { max-width: none; margin: 0; }
+  .lb.focus .pe[data-mode="write"] .md-editor .cm-scroller { padding-inline: max(0px, calc((100% - 760px) / 2)); }
+  .lb.focus .pe[data-mode="preview"] .pe-preview { max-width: none; margin: 0; padding-inline: max(22px, calc((100% - 716px) / 2)); }
+}
+/* 0.24.3: a scrollbar you can see while writing (macOS hides it until you scroll), thin like in the dialogs.
+   Chromium and Safari draw it from ::-webkit-scrollbar only while scrollbar-width is unset, so Firefox gets the
+   standard properties apart. */
+@supports selector(::-webkit-scrollbar) {
+  .md-editor .cm-scroller::-webkit-scrollbar, .pe-preview::-webkit-scrollbar, .lb-toc::-webkit-scrollbar, .lb-side::-webkit-scrollbar { width: 8px; height: 8px; }
+  .md-editor .cm-scroller::-webkit-scrollbar-thumb, .pe-preview::-webkit-scrollbar-thumb, .lb-toc::-webkit-scrollbar-thumb, .lb-side::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--muted) 55%, transparent); border-radius: 4px; }
+  .md-editor .cm-scroller::-webkit-scrollbar-thumb:hover, .pe-preview::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+  .md-editor .cm-scroller::-webkit-scrollbar-track, .pe-preview::-webkit-scrollbar-track, .lb-toc::-webkit-scrollbar-track, .lb-side::-webkit-scrollbar-track { background: transparent; }
+}
+@supports not selector(::-webkit-scrollbar) {
+  .md-editor .cm-scroller, .pe-preview, .lb-toc, .lb-side { scrollbar-width: thin; scrollbar-color: var(--muted) transparent; }
+}
 @media (max-width: 759px) { .lb-focus, .lb-side-btn { display: none; } }
 @media (max-width: 1100px) { .lb-focus span, .lb-side-btn span { display: none; } }
 .lb-focus.on, .lb-side-btn.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--mix)); }

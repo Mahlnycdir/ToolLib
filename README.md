@@ -131,6 +131,11 @@ Der Rahmen ist um eine Arbeitsweise gebaut: sammeln, festhalten, anwenden, und z
   - Die App kennzeichnet ihre Anfragen (`targetAddressSpace`), fragt die Erlaubnis ab (`loopback-network`, `local-network`) und erklärt im Verbindungstest, wo man sie erteilt.
   - Der Knopf „Im neuen Tab prüfen“ öffnet `…/ping`: Eine Antwort mit „error“ heißt, Helfer und Zertifikat sind in Ordnung.
 
+## Scrollen beim Schreiben am Mac (0.24.3)
+
+- In der Library mit „Nur die Seite“ ließ sich der Text mit dem Mausrad nur scrollen, wenn die Maus über der schmalen Textspalte stand; daneben tat sich nichts (ENTE, 13.11.). Jetzt ist die ganze Seite die Scrollfläche, die Spalte bleibt 760 px breit und mittig, die Scrollleiste steht am Rand der Seite. Dasselbe in der Vorschau.
+- Editor, Vorschau, Inhaltsverzeichnis und Seitenleiste zeigen eine schmale Scrollleiste, auch wenn macOS sie sonst ausblendet (`app/shell/styles.css`, Ende des Abschnitts zur Library).
+
 ## Dialoge scrollen auf dem Handy (0.24.2)
 
 - Hohe Dialoge (etwa „Website durchgehen“) ließen sich auf dem iPhone nicht scrollen. Jetzt hat jeder Dialog höchstens Bildschirmhöhe; nur der Inhalt scrollt, mit sichtbarer schmaler Scrollleiste, Titel und Knöpfe bleiben stehen (`.modal` in `app/shell/styles.css`).
