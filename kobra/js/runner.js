@@ -1,6 +1,7 @@
 // Verbindung zum Python-Worker und die Konsole.
 import { h, loadPref } from './ui.js';
 import { icon } from './icons.js';
+import { onWorker, postWorker, restartWorker, startWorker, workerAlive, workerReady, workerToken } from '../../app/services/python-host.js';
 
 const MAX_CONSOLE_CHARS = 400000;
 
@@ -250,50 +251,53 @@ export class Runner {
     this.onTools = onTools;
     this.onRestart = onRestart;
     this.onRunDone = onRunDone;
-    this.worker = null;
     this.state = 'off';
     this.pending = new Map();
     this.nextId = 1;
-    this.token = '';
     this.sync = false;
     this.runStart = 0;
     this.moveQueue = [];
     this.moveScheduled = false;
   }
 
+  // Seit 0.23.0 teilt Kobra den einen Python-Worker mit Toollib (app/services/python-host.js). Kobra nimmt die
+  // Nachrichten ohne owner und die mit owner "kobra"; die Läufe aus Toollibs Spickzettel gehen Kobra nichts an.
   start(opts = {}) {
     this.lastOpts = opts;
-    this.token = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    const base = new URL('../', import.meta.url);   // kobra/, auch wenn Kobra in Toollibs Seite läuft (0.22.0)
-    this.worker = new Worker(new URL('worker.js', base), { type: 'module', name: 'python' });
-    this.worker.onmessage = (e) => this.onMessage(e.data);
-    this.worker.onerror = (e) => {
-      this.setState('error');
-      this.console.info(`Python-Worker meldet einen Fehler: ${e.message || 'unbekannt'}`, 'warn');
-    };
-    const useSync = !!navigator.serviceWorker?.controller && opts.useSync !== false;
-    this.worker.postMessage({
-      type: 'init',
-      token: this.token,
-      syncBase: new URL('__kobra__/', base).href,
-      pyBundleURL: new URL(`../vendor/py-bundle.json?v=${opts.version || ''}`, base).href,
-      screen: [window.innerWidth, window.innerHeight],
-      packages: opts.packages || [],
-      useSync,
-      indexURL: opts.indexURL || loadPref('indexURL', undefined),
-    });
-    this.setState('loading', 'Python wird geladen …');
+    if (!this.offWorker) this.offWorker = onWorker((m) => this.onHostMessage(m));
+    if (!workerReady()) this.setState('loading', 'Python wird geladen …');
+    startWorker();
   }
 
-  restart(opts) {
+  get worker() { return workerAlive(); }
+  get token() { return workerToken(); }
+
+  onHostMessage(m) {
+    if (m.type === 'restart') { if (m.by !== 'kobra') this.afterRestart(); return; }
+    if (m.type === 'worker-error') {
+      this.setState('error');
+      this.console.info(`Python-Worker meldet einen Fehler: ${m.message || 'unbekannt'}`, 'warn');
+      return;
+    }
+    if (m.owner && m.owner !== 'kobra') return;
+    this.onMessage(m);
+  }
+
+  // Python startet neu (hier oder von Toollib aus): offene Anfragen und Fenster enden, die Dateien kommen wieder hinein
+  afterRestart() {
     for (const [, p] of this.pending) p.reject(new Error('Neustart'));
     this.pending.clear();
     this.console.cancelInput();
     this.gui.reset();
-    if (this.worker) this.worker.terminate();
-    this.worker = null;
-    this.start(opts);
+    this.setState('loading', 'Python wird geladen …');
     this.onRestart?.();
+  }
+
+  restart(opts) {
+    if (opts) this.lastOpts = opts;
+    if (!this.offWorker) this.offWorker = onWorker((m) => this.onHostMessage(m));
+    restartWorker('kobra');
+    this.afterRestart();
   }
 
   setState(state, msg) {
@@ -301,7 +305,7 @@ export class Runner {
     this.onStatus?.(state, msg);
   }
 
-  post(msg, transfer) { this.worker?.postMessage(msg, transfer || []); }
+  post(msg, transfer) { postWorker(msg, transfer); }
 
   call(type, data = {}, timeout = 0) {
     const id = this.nextId++;

@@ -90,7 +90,21 @@ export function runControls(node, options) {
     return node.meta.type === 'snippet' && language && language !== 'python' ? elsewhere('copy', 'run.copyOnly') : null;
   }
   if (String(node.meta.runs || '') === 'desktop') return elsewhere('server', 'run.desktopOnly');
-  if (GUI_IMPORT.test(parts.code)) return elsewhere('window', 'run.guiLater');
+  // Windows (tkinter, Qt) run in Kobra (0.23.0): the code goes into Kobra's project "Spickzettel" and starts there,
+  // with the snippets it needs above it.
+  if (GUI_IMPORT.test(parts.code)) {
+    const go = button('play', 'run.inKobra', 'primary');
+    go.addEventListener('click', async () => {
+      go.disabled = true;
+      try {
+        const { deps } = await resolveNeeds(needsOf(parts.check || ''), loadBySlug);
+        const code = [...deps.map(([slug, c]) => `# ${slug}\n${trimEnd(c)}\n`), `${trimEnd(fillPlaceholders(parts.code))}\n`].join('\n');
+        localStorage.setItem('kobra.open', JSON.stringify({ run: { name: node.slug, code } }));
+        location.hash = '#/m/kobra';
+      } finally { go.disabled = false; }
+    });
+    return { buttons: [go], panel: h('p', { class: 'run-later muted small' }, iconEl('window'), h('span', { text: t('run.guiKobra') })) };
+  }
   const prev = kept.get(node.path);
   if (prev && prev.code === parts.code && prev.check === parts.check && prev.lang === getLang()) {
     prev.opts = options;

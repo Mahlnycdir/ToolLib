@@ -1,22 +1,18 @@
-// Python service: one worker for the whole app, started on first use. Output goes to the view that started
-// the current run (its "sink"). Taken from Kobra's Runner (runner.js); changes for Toollib: Pyodide comes from
-// vendor/pyodide, programs are snippets (code + definitions of needed snippets, or a check), texts via t(),
-// a running animation can be stopped without restarting Python, and Python can be stored for offline use.
-import { loadPref } from './prefs.js';
+// Python service: started on first use. Output goes to the view that started the current run (its "sink").
+// Taken from Kobra's Runner (runner.js); for Toollib: programs are snippets (code + definitions of needed snippets,
+// or a check), texts via t(), a running animation can be stopped without restarting Python, and Python can be
+// stored for offline use.
+// Since 0.23.0 there is one Python for the whole app: this service and Kobra share one worker (python-host.js,
+// kobra/worker.js). Messages of Kobra's runs (owner "kobra") are not for this service.
+import { onWorker, postWorker, pyUrl, pythonBundle, restartWorker, startWorker, workerReady, workerToken } from './python-host.js';
 
-const PYODIDE = 'vendor/pyodide/';
-const base = () => new URL('./', document.baseURI);
-const pyUrl = (name) => new URL(`${PYODIDE}${name}`, base()).href;
+export { pythonBundle };
 
 const state = { status: 'off', python: '', version: '', error: '', sync: false, animating: false };
 const listeners = new Set();
-let worker = null;
-let token = '';
 let sink = null;          // see ConsoleView: write, figure, figureClosed, progress, note, requestInput, done, started …
 let runStart = 0;
-let bundle = null;        // vendor/pyodide/toollib-bundle.json
-let startPromise = null;
-let readyResolve = null;
+let listening = null;
 let shownGuiNote = false;
 let reported = new Set(); // packages already reported in this run
 let stoppingLive = false;
@@ -35,51 +31,17 @@ function setStatus(status, extra = {}) {
   for (const fn of listeners) fn(pythonState());
 }
 
-// What Toollib ships: Pyodide and Python version, packages and every file with its size.
-export async function pythonBundle() {
-  if (!bundle) {
-    const res = await fetch(pyUrl('toollib-bundle.json'));
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    bundle = await res.json();
-  }
-  return bundle;
+function listen() {
+  if (!listening) listening = onWorker(onMessage);
 }
 
 export function startPython() {
-  if (startPromise) return startPromise;
-  startPromise = (async () => {
-    const info = await pythonBundle();
-    token = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    worker = new Worker(new URL('app/services/python-worker.js', base()), { type: 'module', name: 'python' });
-    worker.onmessage = (e) => onMessage(e.data);
-    worker.onerror = (e) => {
-      setStatus('error', { error: e.message || 'worker error' });
-      sink?.progress(null);
-      sink?.note('python.err.worker', { detail: e.message || '' }, 'warn');
-      readyResolve?.(false);
-    };
-    const ready = new Promise((r) => { readyResolve = r; });
-    setStatus('loading');
-    worker.postMessage({
-      type: 'init',
-      token,
-      syncBase: new URL('__toollib__/', base()).href,
-      indexURL: pyUrl(''),
-      pyBundleURL: new URL(`vendor/py-bundle.json?v=${info.pyodide}`, base()).href,
-      snippetsURL: new URL('app/services/toollib_snippets.py', base()).href,
-      bundled: info.packages,
-      screen: [window.innerWidth, window.innerHeight],
-      useSync: !!navigator.serviceWorker?.controller && loadPref('python.sync', true) !== false,
-    });
-    return ready;
-  })().catch((e) => {
-    setStatus('error', { error: String(e) });
-    sink?.progress(null);
-    sink?.note('python.err.load', {}, 'warn');
-    startPromise = null;
-    return false;
+  listen();
+  if (!workerReady() && state.status !== 'loading') setStatus('loading');
+  return startWorker().then((ok) => {
+    if (!ok && state.status === 'loading') setStatus('error', { error: state.error || 'start' });
+    return ok;
   });
-  return startPromise;
 }
 
 // Runs a program. spec: { name, code, deps: [[slug, code], ...], check }. The sink receives everything it prints.
@@ -96,13 +58,13 @@ export async function runPython(spec, newSink) {
   sink.started?.();
   const ok = await startPython();
   if (sink !== newSink) return;
-  if (!ok || !worker) {
+  if (!ok) {
     if (state.status !== 'off') sink.done?.({ exit: 1, gui: false, failed: true }, 0);   // off: stopped while loading
     return;
   }
   runStart = performance.now();
-  if (state.sync) navigator.serviceWorker?.controller?.postMessage({ type: 'clear-events', token });
-  worker.postMessage({ type: 'run', id: Date.now(), spec });
+  if (state.sync) navigator.serviceWorker?.controller?.postMessage({ type: 'clear-events', token: workerToken() });
+  postWorker({ type: 'run-spec', id: Date.now(), spec });
   setStatus('running');
 }
 
@@ -116,37 +78,33 @@ async function endRunning() {
 }
 
 // Stop: an animation is closed and Python stays ready, either after the script (status "live") or while plt.show()
-// waits for it (its figures get a "close" event, as with Kobra's close button). Anything else ends the worker,
-// and Python starts again (from the cache) with the next run.
+// waits for it (its figures get a "close" event, as with Kobra's close button). Anything else restarts the one
+// Python (Kobra's files come back into it by themselves).
 export function stopPython({ quiet = false, force = false } = {}) {
-  if (!worker) return;
+  if (state.status === 'off' || state.status === 'error') return;
   if (state.status === 'live' && !force) {
     stoppingLive = true;
-    worker.postMessage({ type: 'stop-live' });
+    postWorker({ type: 'stop-live' });
     if (!quiet) sink?.note('python.liveStopped', {}, 'info');
     return;
   }
   if (state.status === 'running' && state.animating && state.sync && !force) {
     if (stopTimer) return;
     const events = [...figures.keys()].map((key) => ({ k: 'close', w: key }));
-    navigator.serviceWorker?.controller?.postMessage({ type: 'gui-events', token, events });
+    navigator.serviceWorker?.controller?.postMessage({ type: 'gui-events', token: workerToken(), events });
     if (!quiet) sink?.note('python.liveStopped', {}, 'info');
-    // Still running a moment later (busy elsewhere): then the worker has to go after all.
+    // Still running a moment later (busy elsewhere): then Python has to start again after all.
     stopTimer = setTimeout(() => { stopTimer = null; if (state.status === 'running') stopPython({ quiet, force: true }); }, 1500);
     return;
   }
   clearTimeout(stopTimer);
   stopTimer = null;
-  worker.terminate();
-  worker = null;
   idleWaiters.splice(0).forEach((r) => r());
-  startPromise = null;
-  readyResolve?.(false);
-  readyResolve = null;
   sink?.cancelInput?.();
   sink?.progress?.(null);
   if (!quiet) sink?.note('python.stopped', {}, 'warn');
   setStatus('off');
+  restartWorker('toollib');
 }
 
 export function detachSink(s) {
@@ -155,7 +113,7 @@ export function detachSink(s) {
 export const isSink = (s) => sink === s;
 
 function replySync(id, value) {
-  navigator.serviceWorker?.controller?.postMessage({ type: 'sync-reply', token, id, value: JSON.stringify({ v: value === undefined ? null : value }) });
+  navigator.serviceWorker?.controller?.postMessage({ type: 'sync-reply', token: workerToken(), id, value: JSON.stringify({ v: value === undefined ? null : value }) });
 }
 
 async function onSyncRequest(id, kind) {
@@ -167,13 +125,30 @@ async function onSyncRequest(id, kind) {
 }
 
 function onMessage(msg) {
+  if (msg.type === 'restart') {
+    // Kobra restarted Python (Stop there): a run of ours ends with it
+    if (msg.by !== 'toollib' && state.status !== 'off') {
+      sink?.cancelInput?.();
+      sink?.progress?.(null);
+      if (state.status === 'running' || state.status === 'live') sink?.done?.({ exit: 1, gui: false, failed: true }, 0);
+      idleWaiters.splice(0).forEach((r) => r());
+      setStatus('off');
+    }
+    return;
+  }
+  if (msg.type === 'worker-error') {
+    setStatus('error', { error: msg.message || 'worker error' });
+    sink?.progress(null);
+    sink?.note('python.err.worker', { detail: msg.message || '' }, 'warn');
+    return;
+  }
+  if (msg.owner && msg.owner !== 'toollib') return;
   switch (msg.type) {
     case 'status':
-      if (msg.state === 'ready' && msg.python) {
-        Object.assign(state, { sync: !!msg.sync, python: msg.python, version: msg.version });
-        readyResolve?.(true);
-        readyResolve = null;
-      }
+      if (msg.state === 'ready' && msg.python) Object.assign(state, { sync: !!msg.sync, python: msg.python, version: msg.version });
+      // a broadcast (loading, ready) while a run of ours goes on does not change our state
+      if (!msg.owner && (state.status === 'running' || state.status === 'live') && msg.state !== 'ready') break;
+      if (!msg.owner && msg.state === 'ready' && state.status !== 'loading' && state.status !== 'off' && state.status !== 'error') break;
       setStatus(msg.state);
       if (msg.state === 'loading') sink?.progress(msg.code, msg.vars);
       else sink?.progress(null);
@@ -181,13 +156,8 @@ function onMessage(msg) {
     case 'fatal':
       setStatus('error', { error: msg.code });
       sink?.progress(null);
-      sink?.note(msg.code, {}, 'warn');
+      sink?.note(msg.code || 'python.err.load', {}, 'warn');
       if (msg.detail) sink?.write(`${msg.detail}\n`, 'err');
-      worker?.terminate();
-      worker = null;
-      startPromise = null;
-      readyResolve?.(false);
-      readyResolve = null;
       break;
     case 'progress': sink?.progress(msg.code, msg.vars); break;
     case 'stdout': sink?.write(msg.text, 'out'); break;
@@ -219,7 +189,7 @@ function onMessage(msg) {
       stoppingLive = false;
       break;
     case 'live-stopped':
-      // Windows (tkinter, Qt) keep a program alive even without figures: then the worker has to go.
+      // Windows (tkinter, Qt) keep a program alive even without figures: then Python starts again.
       if (msg.alive) stopPython({ quiet: true, force: true });
       break;
     default: break;
@@ -246,8 +216,8 @@ function notify(d) {
   }
 }
 
-// matplotlib figures go to the console; windows of tkinter and Qt need Kobra's GUI view, which comes later
-// ("new" and "qt_new" create a widget; "reset" at the start of every run and the rest are ignored).
+// matplotlib figures go to the console; windows of tkinter and Qt open in Kobra (the run panel offers that for code
+// that imports them; "new" and "qt_new" create a widget; "reset" at the start of every run and the rest are ignored).
 function handleGuiOps(json) {
   let ops;
   try { ops = JSON.parse(json); } catch { return; }
@@ -312,6 +282,6 @@ export async function storePython(onProgress) {
 
 export async function removePython() {
   const info = await pythonBundle();
-  if (state.status !== 'off') stopPython({ quiet: true });
+  if (state.status !== 'off') stopPython({ quiet: true, force: true });
   await caches.delete(pythonCacheName(info));
 }

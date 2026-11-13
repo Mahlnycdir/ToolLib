@@ -1,5 +1,8 @@
 // Kobra – Python-Worker (Modul-Worker). Laedt Pyodide, fuehrt Programme aus,
 // beantwortet IntelliSense-Anfragen und verwaltet Pakete.
+// Seit 0.23.0 der eine Python-Worker für ganz Toollib (app/services/python-host.js): Kobras Programme ("run",
+// "repl") und Toollibs Snippets und Checks ("run-spec", aus app/services/python-worker.js übernommen) laufen
+// im selben Pyodide. Nachrichten eines Laufs tragen owner: "kobra" oder "toollib"; ohne owner gehen sie an beide.
 const PYODIDE_VERSION = '314.0.7';
 // In Toollib: Python von Toollibs eigener Adresse (vendor/pyodide), kein fremder Server
 let INDEX_URL = new URL('../vendor/pyodide/', self.location).href;
@@ -25,8 +28,22 @@ const ready = new Promise(r => (readyResolve = r));
 let toolsResolve;
 const toolsReady = new Promise(r => (toolsResolve = r));
 let currentProject = null;
+let owner = 'kobra';       // wem der laufende oder letzte Lauf gehört
+let guiOwner = 'kobra';    // wem die offenen Fenster und Animationen gehören
+let snippets = null;      // toollib_snippets (Toollibs Snippets mit ihren Definitionen)
+let bundled = new Set();  // Pakete, die Toollib in vendor/pyodide mitliefert
+const TOOLLIB_RUN = `${HOME}/.toollib-run`;   // Arbeitsordner der Snippets, außerhalb von Kobras Projekten
 
-const post = (msg, transfer) => self.postMessage(msg, transfer || []);
+// Nachrichten eines Laufs bekommen ihren owner; "result", "files" gehören immer Kobra; wer owner selbst setzt
+// (auch ''), behält ihn.
+const OWNED = new Set(['stdout', 'stderr', 'gui', 'notify', 'sync-req', 'run-done', 'gui-ended', 'live-stopped', 'status', 'progress']);
+function post(msg, transfer) {
+  if (!('owner' in msg)) {
+    if (msg.type === 'result' || msg.type === 'files') msg = { ...msg, owner: 'kobra' };
+    else if (OWNED.has(msg.type)) msg = { ...msg, owner };
+  }
+  self.postMessage(msg, transfer || []);
+}
 
 // ------------------------------------------------------------ Ausgabe
 const decoderOut = new TextDecoder();
@@ -111,7 +128,7 @@ const jsModule = {
   notify(json) {
     let data = {};
     try { data = JSON.parse(json); } catch (e) { return; }
-    if (data.type === 'files-maybe-changed') { syncBackFiles(); return; }
+    if (data.type === 'files-maybe-changed') { if (owner === 'kobra') syncBackFiles(); return; }
     post({ type: 'notify', data });
   },
 };
@@ -121,18 +138,18 @@ async function boot(msg) {
   token = msg.token;
   syncBase = msg.syncBase;
   if (msg.indexURL) INDEX_URL = msg.indexURL;
-  post({ type: 'status', state: 'loading', msg: 'Python wird geladen …' });
+  post({ type: 'status', state: 'loading', msg: 'Python wird geladen …', code: 'python.loading', owner: '' });
   let loadPyodide;
   try {
     ({ loadPyodide } = await import(`${INDEX_URL}pyodide.mjs`));
   } catch (e) {
-    post({ type: 'fatal', msg: 'Python konnte nicht geladen werden. Beim ersten Start braucht die App Internet; danach läuft sie offline.', detail: String(e) });
+    post({ type: 'fatal', msg: 'Python konnte nicht geladen werden. Beim ersten Start braucht die App Internet; danach läuft sie offline.', code: 'python.err.load', detail: String(e) });
     return;
   }
   try {
     pyodide = await loadPyodide({ indexURL: INDEX_URL, env: { HOME, PYTHONIOENCODING: 'utf-8' } });
   } catch (e) {
-    post({ type: 'fatal', msg: 'Python konnte nicht gestartet werden.', detail: String(e) });
+    post({ type: 'fatal', msg: 'Python konnte nicht gestartet werden.', code: 'python.err.load', detail: String(e) });
     return;
   }
   pyodide.setStdout(stdoutWriter);
@@ -141,6 +158,7 @@ async function boot(msg) {
   pyodide.setStdin({
     stdin: () => {
       if (!syncAvailable) {
+        if (owner === 'toollib') { post({ type: 'notify', data: { type: 'no-input' } }); return null; }
         errBuf += '\n[input() braucht den Hintergrunddienst der App. Bitte die App einmal neu laden.]\n';
         flushOut();
         return null;
@@ -162,7 +180,8 @@ async function boot(msg) {
     }
   } catch (e) { /* ohne Liste weiter */ }
 
-  // eigene Python-Bibliothek (tkinter-/Qt-Nachbau, Laufzeit)
+  // eigene Python-Bibliothek (tkinter-/Qt-Nachbau, Laufzeit) und Toollibs Snippet-Helfer
+  bundled = new Set(msg.bundled || []);
   try {
     const res = await fetch(msg.pyBundleURL);
     const bundle = await res.json();
@@ -171,23 +190,25 @@ async function boot(msg) {
       pyodide.FS.mkdirTree(path.slice(0, path.lastIndexOf('/')));
       pyodide.FS.writeFile(path, content);
     }
+    if (msg.snippetsURL) pyodide.FS.writeFile(`${LIB}/toollib_snippets.py`, await (await fetch(msg.snippetsURL)).text());
   } catch (e) {
-    post({ type: 'fatal', msg: 'Die Python-Hilfsdateien fehlen.', detail: String(e) });
+    post({ type: 'fatal', msg: 'Die Python-Hilfsdateien fehlen.', code: 'python.err.bundle', detail: String(e) });
     return;
   }
   pyodide.FS.mkdirTree(PROJECTS);
   pyodide.runPython(`import sys\nsys.path.insert(0, ${JSON.stringify(LIB)})\nimport pyide_runtime\npyide_runtime.setup()`);
   rt = pyodide.pyimport('pyide_runtime');
   gui = pyodide.pyimport('pyide_gui');
+  if (msg.snippetsURL) snippets = pyodide.pyimport('toollib_snippets');
   pyodide.runPython(`import pyide_gui\npyide_gui._S.screen = (${msg.screen[0] | 0}, ${msg.screen[1] | 0})`);
 
   // vom Nutzer installierte Pakete wiederherstellen
   if (msg.packages && msg.packages.length) {
-    post({ type: 'status', state: 'loading', msg: 'Pakete werden geladen …' });
+    post({ type: 'status', state: 'loading', msg: 'Pakete werden geladen …', code: 'python.loading', owner: '' });
     await installPackages(msg.packages, true);
   }
   readyResolve();
-  post({ type: 'status', state: 'ready', sync: syncAvailable, version: pyodide.version, python: pyodide.runPython('import sys; sys.version.split()[0]') });
+  post({ type: 'status', state: 'ready', sync: syncAvailable, version: pyodide.version, python: pyodide.runPython('import sys; sys.version.split()[0]'), owner: '' });
   loadTools();
 }
 
@@ -204,11 +225,11 @@ async function loadTools() {
   try { await pyodide.loadPackage(['micropip', 'jedi'], { messageCallback: () => {}, errorCallback: () => {} }); }
   catch (e) { /* offline beim ersten Start */ }
   toolsResolve();
-  post({ type: 'tools', jedi: hasModule('jedi') });
+  post({ type: 'tools', jedi: hasModule('jedi'), owner: '' });
   try {
     if (!hasModule('pyflakes')) await installTool('pyflakes');
   } catch (e) { /* Pruefung ohne pyflakes: nur Syntaxfehler */ }
-  post({ type: 'tools', jedi: hasModule('jedi'), pyflakes: hasModule('pyflakes'), relint: true });
+  post({ type: 'tools', jedi: hasModule('jedi'), pyflakes: hasModule('pyflakes'), relint: true, owner: '' });
 }
 
 function hasModule(name) {
@@ -290,15 +311,15 @@ async function installPackages(names, quiet) {
     try {
       if (lockPackages[bare] || lockPackages[bare.replace(/-/g, '_')]) {
         await pyodide.loadPackage([bare], {
-          messageCallback: m => { if (!quiet) post({ type: 'progress', msg: m }); },
-          errorCallback: m => { if (!quiet) post({ type: 'progress', msg: m }); },
+          messageCallback: m => { if (!quiet) post({ type: 'progress', msg: m, owner: 'kobra' }); },
+          errorCallback: m => { if (!quiet) post({ type: 'progress', msg: m, owner: 'kobra' }); },
         });
       } else {
         if (!micropip) {
           await pyodide.loadPackage('micropip', { messageCallback: () => {} });
           micropip = pyodide.pyimport('micropip');
         }
-        if (!quiet) post({ type: 'progress', msg: `Installiere ${name} von PyPI …` });
+        if (!quiet) post({ type: 'progress', msg: `Installiere ${name} von PyPI …`, owner: 'kobra' });
         await micropip.install(name);
       }
       results.push({ name, ok: true });
@@ -358,9 +379,19 @@ async function loadImportsFor(project, entry) {
   }
 }
 
+// Ein neuer Lauf des anderen: dessen Fenster oder Animation endet (es gibt nur ein Python)
+function takeOver(next) {
+  if (guiAlive && guiOwner !== next) {
+    post({ type: 'gui-ended', owner: guiOwner });
+    post({ type: 'status', state: 'ready', owner: guiOwner });
+  }
+  owner = next;
+}
+
 async function doRun(msg) {
   await ready;
   stopIdle();
+  takeOver('kobra');
   running = true;
   guiAlive = false;
   post({ type: 'status', state: 'running' });
@@ -377,9 +408,74 @@ async function doRun(msg) {
   syncBackFiles();
   running = false;
   guiAlive = !!result.gui;
+  guiOwner = 'kobra';
   post({ type: 'run-done', id: msg.id, result });
   post({ type: 'status', state: guiAlive ? 'gui' : 'ready' });
   if (guiAlive) startIdle();
+}
+
+// --------------------------------------------------- Toollibs Snippets (aus app/services/python-worker.js)
+// spec: { name, code, deps: [[name, code], ...], check }. main.py in einem frischen Ordner ist genau der gezeigte
+// Code (bearbeitet oder der Check); die nötigen Definitionen bietet toollib_snippets.py vorher an.
+async function loadSnippetImports() {
+  let imports = [];
+  try { imports = JSON.parse(snippets.needed_imports()); } catch (e) { imports = []; }
+  const missing = [];
+  const notShipped = [];
+  for (const imp of imports) {
+    const pkg = importToPackage[imp];
+    if (!pkg || pyodide.loadedPackages[pkg]) continue;
+    if (bundled.has(pkg)) { if (!missing.includes(pkg)) missing.push(pkg); } else if (!notShipped.includes(pkg)) notShipped.push(pkg);
+  }
+  if (notShipped.length) post({ type: 'notify', data: { type: 'not-bundled', packages: notShipped } });
+  if (!missing.length) return;
+  post({ type: 'progress', code: 'python.loadingPackages', vars: { names: missing.join(', ') } });
+  const failed = [];
+  await pyodide.loadPackage(missing, { messageCallback: () => {}, errorCallback: (m) => failed.push(m) }).catch((e) => failed.push(String(e)));
+  if (failed.length) post({ type: 'notify', data: { type: 'package-failed', packages: missing.filter((p) => !pyodide.loadedPackages[p]), detail: failed[0] } });
+  post({ type: 'progress', code: null });
+}
+
+async function doRunSpec(msg) {
+  await ready;
+  stopIdle();
+  takeOver('toollib');
+  running = true;
+  guiAlive = false;
+  post({ type: 'status', state: 'running' });
+  let result = { gui: false, exit: 1 };
+  try {
+    pyodide.FS.chdir(HOME);   // der letzte Lauf ließ Python im Ordner, dann ließe er sich nicht entfernen
+    try { removeTree(TOOLLIB_RUN); } catch (e) { /* noch nicht da */ }
+    pyodide.FS.mkdirTree(TOOLLIB_RUN);
+    snippets.prepare(JSON.stringify(msg.spec), TOOLLIB_RUN);
+    const autos = JSON.parse(snippets.auto_imports());
+    if (autos.length) post({ type: 'notify', data: { type: 'auto-imports', lines: autos } });
+    await loadSnippetImports();
+    if (snippets.define()) result = JSON.parse(rt.run_file(TOOLLIB_RUN, 'main.py', '[]'));
+  } catch (e) {
+    errBuf += `${e?.message || (e?.errno ? `file system error ${e.errno}` : e)}\n`;
+  }
+  flushOut();
+  running = false;
+  guiAlive = !!result.gui;
+  guiOwner = 'toollib';
+  post({ type: 'run-done', id: msg.id, result });
+  post({ type: 'status', state: guiAlive ? 'live' : 'ready' });
+  if (guiAlive) startIdle();
+}
+
+// Stopp, während eine Animation von Toollib läuft: alle offenen Abbildungen schließen, Python bleibt bereit.
+function stopLive() {
+  if (running || !pyodide) return;
+  owner = guiOwner;
+  try {
+    pyodide.runPython('import pyide_mpl\nfor _f in list(pyide_mpl._live.values()):\n    pyide_mpl.close_figure(_f)\ndel _f');
+  } catch (e) { /* nichts offen */ }
+  flushOut();
+  const alive = checkGuiAlive();
+  if (!alive) stopIdle();
+  post({ type: 'live-stopped', alive });
 }
 
 // Ereignisschleife, wenn das Skript fertig ist, aber Fenster offen sind
@@ -403,6 +499,7 @@ async function idleLoop() {
   idleLooping = true;
   try {
     while (guiAlive && !running) {
+      owner = guiOwner;
       let delay = -1;
       try { delay = gui.process_idle(); } catch (e) { /* weiter */ }
       flushOut();
@@ -429,20 +526,22 @@ function checkGuiAlive() {
   try { alive = rt.gui_alive(); } catch (e) { alive = false; }
   if (!alive && guiAlive) {
     guiAlive = false;
-    syncBackFiles();
-    post({ type: 'status', state: 'ready' });
-    post({ type: 'gui-ended' });
+    if (guiOwner === 'kobra') syncBackFiles();
+    post({ type: 'status', state: 'ready', owner: guiOwner });
+    post({ type: 'gui-ended', owner: guiOwner });
   }
   return alive;
 }
 
 function dispatchEvents(json) {
+  if (!running) owner = guiOwner;
   try { gui.dispatch(json); } catch (e) { errBuf += String(e) + '\n'; }
   flushOut();
 }
 
 function scheduleFallbackTick() {
   if (fallbackTimer) clearTimeout(fallbackTimer);
+  if (!running) owner = guiOwner;
   let delay = -1;
   try { delay = gui.process_idle(); } catch (e) { /* egal */ }
   flushOut();
@@ -475,7 +574,7 @@ async function handleLsp(msg) {
     if (!hasModuleCached('jedi')) { post({ type: 'result', id: msg.id, ok: true, value: msg.method === 'complete' ? [] : null }); return; }
   }
   if (msg.method === 'format' && !hasModuleCached('black')) {
-    post({ type: 'progress', msg: 'Lade Formatierer (black) …' });
+    post({ type: 'progress', msg: 'Lade Formatierer (black) …', owner: 'kobra' });
     try {
       await installTool('black');
       moduleCache.black = true;
@@ -507,9 +606,12 @@ self.onmessage = async (ev) => {
     case 'init': boot(msg); break;
     case 'sync-files': await ready; writeProjectFiles(msg); break;
     case 'run': doRun(msg); break;
+    case 'run-spec': doRunSpec(msg); break;
+    case 'stop-live': stopLive(); break;
     case 'repl': {
       await ready;
       if (running) { post({ type: 'result', id: msg.id, ok: false, error: 'busy' }); break; }
+      takeOver('kobra');
       currentProject = msg.project || currentProject;
       try {
         if (msg.project) pyodide.runPython(`import os\nos.chdir(${JSON.stringify(projDir(msg.project))})`);
@@ -522,7 +624,7 @@ self.onmessage = async (ev) => {
       flushOut();
       syncBackFiles();
       post({ type: 'result', id: msg.id, ok: true });
-      if (!guiAlive && rt.gui_alive()) { guiAlive = true; post({ type: 'status', state: 'gui' }); startIdle(); }
+      if (!guiAlive && rt.gui_alive()) { guiAlive = true; guiOwner = 'kobra'; post({ type: 'status', state: 'gui' }); startIdle(); }
       break;
     }
     case 'vars': {

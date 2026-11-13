@@ -1241,10 +1241,31 @@ export function setActive(on) {
   }
 }
 
-// Wunsch von außen, etwa „In Kobra verwalten“ in Toollibs Einstellungen: kobra.open = "settings"
+// Wunsch von außen: „In Kobra verwalten“ in Toollibs Einstellungen (kobra.open = "settings") oder „In Kobra
+// ausführen“ bei einem Snippet mit Fenstern (kobra.open = { run: { name, code } }, seit 0.23.0).
 function openRequested() {
   const want = loadPref('open', '');
   if (!want || !editor) return;
   savePref('open', '');
   if (want === 'settings') openSettings('git');
+  else if (want && typeof want === 'object' && want.run) runFromToollib(want.run).catch((e) => toast(String(e.message || e), 'error'));
+}
+
+// Ein Snippet aus Toollib: als Datei im Projekt „Spickzettel“ ablegen, öffnen und ausführen.
+const SNIPPET_PROJECT = 'Spickzettel';
+async function runFromToollib({ name, code }) {
+  const file = `${String(name || 'snippet').replace(/[^\w.-]+/g, '_').replace(/^\.+/, '').slice(0, 60) || 'snippet'}.py`;
+  const dir = store.projectPath(SNIPPET_PROJECT);
+  if (!(await store.exists(dir))) {
+    await store.createProject(SNIPPET_PROJECT, 'leer');
+    await store.writeFile(`${dir}/README.md`, '# Spickzettel\n\nSnippets aus Toollib, die Fenster öffnen (tkinter, Qt), landen hier und laufen in Kobra.\n');
+  }
+  await store.writeFile(`${dir}/${file}`, String(code || ''));
+  if (state.project !== SNIPPET_PROJECT) await openProject(SNIPPET_PROJECT);
+  else { await refreshTree(); syncProjectToWorker(false); }
+  await openFile(file);
+  // Python lädt vielleicht noch: warten; die Dateien des Projekts müssen drin sein, dann wie mit ▶
+  for (let i = 0; i < 600 && state.runnerState === 'loading'; i++) await new Promise((r) => setTimeout(r, 100));
+  await syncProjectToWorker(true);
+  await runCurrent([], file);
 }

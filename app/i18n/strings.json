@@ -307,7 +307,8 @@
   "run.checkFailed": { "en": "Check failed", "de": "Check fehlgeschlagen" },
   "run.checkFailedEdited": { "en": "Check failed · with your changes (↺ brings back the node’s version)", "de": "Check fehlgeschlagen · mit deinen Änderungen (↺ holt die Fassung des Knotens zurück)" },
   "run.markVerified": { "en": "Mark as checked", "de": "Als geprüft markieren" },
-  "run.guiLater": { "en": "Opens a window (tkinter or Qt). That runs here once Kobra moves in; until then use Kobra.", "de": "Öffnet ein Fenster (tkinter oder Qt). Das läuft hier erst nach Kobras Umzug, bis dahin in Kobra." },
+  "run.guiKobra": { "en": "Opens a window (tkinter or Qt), so it runs in Kobra.", "de": "Öffnet ein Fenster (tkinter oder Qt) und läuft darum in Kobra." },
+  "run.inKobra": { "en": "Run in Kobra", "de": "In Kobra ausführen" },
   "run.terminal": { "en": "A command for the terminal: copy it and run it there.", "de": "Ein Befehl fürs Terminal: kopieren und dort ausführen." },
   "run.desktopOnly": { "en": "Needs Python on your computer: threads and processes don’t run in the browser.", "de": "Braucht Python auf deinem Rechner: Threads und Prozesse laufen im Browser nicht." },
   "run.state.loading": { "en": "Python is loading", "de": "Python lädt" },
@@ -361,7 +362,7 @@
   "python.syncLost": { "en": "input() lost its connection.", "de": "input() hat die Verbindung verloren." },
   "python.stopped": { "en": "Stopped · Python restarts next time", "de": "Gestoppt · Python startet beim nächsten Mal neu" },
   "python.liveStopped": { "en": "Animation stopped", "de": "Animation gestoppt" },
-  "python.guiLater": { "en": "Windows (tkinter, Qt) come later, with Kobra.", "de": "Fenster (tkinter, Qt) kommen später, mit Kobra." },
+  "python.guiLater": { "en": "This opens a window (tkinter, Qt). Windows run in Kobra: copy the code into a file there.", "de": "Das öffnet ein Fenster (tkinter, Qt). Fenster laufen in Kobra: den Code dort in eine Datei kopieren." },
   "python.desktopOnly": { "en": "Threads don’t run in the browser. Run this with Python on your computer.", "de": "Threads laufen im Browser nicht. Führe das mit Python auf deinem Rechner aus." },
 
   "type.snippet": { "en": "Snippet", "de": "Snippet" },
