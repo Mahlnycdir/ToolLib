@@ -1,6 +1,7 @@
 // GUI-Emulator: zeichnet tkinter- und Qt-Fenster aus den Operationen des Python-Workers.
 import { h, esc, toast } from './ui.js';
 import { icon } from './icons.js';
+import { overlayHost } from './markup.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const PT = 1.2;            // Tk-Punkte -> CSS-Pixel
@@ -1670,7 +1671,7 @@ export class GuiManager {
       const close = () => back.remove();
       back.addEventListener('click', (e) => { if (e.target === back) { close(); resolve(null); } });
       back.append(box);
-      document.body.append(back);
+      overlayHost().append(back);
       const r = anchorEl?.getBoundingClientRect();
       let left = r ? r.left : (x ?? 40);
       let top = r ? r.bottom + 4 : (y ?? 80);
@@ -2284,7 +2285,7 @@ export class GuiManager {
       }
       box.append(body, actions);
       back.append(box);
-      document.body.append(back);
+      overlayHost().append(back);
       requestAnimationFrame(() => back.classList.add('show'));
     });
   }

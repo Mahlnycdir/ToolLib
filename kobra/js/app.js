@@ -1,4 +1,7 @@
 // Kobra – Python-IDE fuer das iPhone. Hauptsteuerung.
+// Seit 0.22.0 ein Werkzeug in Toollib: app/shell/kobra-view.js legt die Wurzel einmal an (markup.js) und ruft
+// mountKobra(root); beim Wechsel zu einem anderen Werkzeug bleibt Kobra stehen (Dateien, Konsole, laufendes Python)
+// und ist nur ausgeblendet. Tasten wirken nur, solange Kobra zu sehen ist.
 import { h, esc, toast, modal, promptDialog, confirmDialog, actionSheet, openSheet, tapKeepFocus, debounce,
   loadPref, savePref, shareOrDownload, pickFiles, formatBytes, closeTopModal } from './ui.js';
 import { icon } from './icons.js';
@@ -13,7 +16,9 @@ import { SNIPPET_GROUPS } from './snippets.js';
 import { renderSpickzettel } from './spickzettel.js';
 
 const VERSION = '1.0.0';
-const $ = (sel) => document.querySelector(sel);
+let root = null;       // Kobras Wurzel in Toollibs Arbeitsfläche
+let active = false;    // gerade zu sehen
+const $ = (sel) => root?.querySelector(sel) || document.querySelector(sel);
 
 const state = {
   project: null,
@@ -40,11 +45,13 @@ const gitService = new GitService();
 const isWide = () => window.matchMedia('(min-width: 900px)').matches;
 
 // ============================================================== Start
-async function main() {
+async function main(host) {
+  root = host;
   buildShell();
   applyTheme();
   setupViewport();
-  setupServiceWorker();
+  // Toollib hat den Service Worker schon angemeldet; Hell und Dunkel kommen von Toollib
+  new MutationObserver(() => applyTheme()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   store.requestPersist();
 
   consoleView = new ConsoleView($('#console-body'), {
@@ -106,13 +113,11 @@ async function main() {
   const pick = list.find(p => p.name === last) ? last : list[0]?.name;
   await openProject(pick);
   showView(loadPref('view', 'code'));
-  // aus Toollibs Einstellungen: „In Kobra verwalten“
-  if (location.hash === '#settings') { history.replaceState(null, '', location.pathname); openSettings('git'); }
+  openRequested();
 
   await waitForController(4000);
   runner.start({ packages: PackagePanel.wanted(), version: VERSION });
   syncProjectToWorker(true);
-  installHint();
 }
 
 async function waitForController(ms) {
@@ -124,40 +129,7 @@ async function waitForController(ms) {
   ]);
 }
 
-function setupServiceWorker() {
-  // In Toollib: Toollib's service worker (../sw.js) serves Kobra, also the channel for input() and windows.
-  return;
-  navigator.serviceWorker.register('./sw.js').then((reg) => {
-    reg.addEventListener('updatefound', () => {
-      const nw = reg.installing;
-      nw?.addEventListener('statechange', () => {
-        if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdateBanner(reg);
-      });
-    });
-    if (reg.waiting && navigator.serviceWorker.controller) showUpdateBanner(reg);
-  }).catch(() => { /* ohne Offline-Modus weiter */ });
-}
 
-function showUpdateBanner(reg) {
-  const b = $('#update-banner');
-  b.hidden = false;
-  b.querySelector('button').onclick = async () => {
-    await saveAll(false);
-    reg.waiting?.postMessage({ type: 'skip-waiting' });
-    navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true });
-    setTimeout(() => location.reload(), 1500);
-  };
-}
-
-function installHint() {
-  const standalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
-  if (standalone || loadPref('hideInstallHint', false)) return;
-  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  if (!ios) return;
-  const hint = $('#install-hint');
-  hint.hidden = false;
-  hint.querySelector('.close').onclick = () => { hint.hidden = true; savePref('hideInstallHint', true); };
-}
 
 // ============================================================ Grundgeruest
 function buildShell() {
@@ -195,6 +167,7 @@ function buildShell() {
   window.addEventListener('pagehide', () => { saveAll(false).then(() => store.flush()); });
   document.addEventListener('visibilitychange', () => { if (document.hidden) saveAll(false).then(() => store.flush()); });
   window.addEventListener('keydown', (e) => {
+    if (!active) return;
     if (e.key === 'Escape' && closeTopModal()) e.preventDefault();
     if (e.key.toLowerCase() === 'j' && (e.metaKey || e.ctrlKey) && !e.altKey) { e.preventDefault(); openSnippets(); }
   });
@@ -203,7 +176,7 @@ function buildShell() {
 }
 
 function showView(view) {
-  const app = $('#app');
+  const app = root;
   if (isWide() && ['files', 'packages', 'git'].includes(view)) {
     state.side = view;
     app.dataset.side = view;
@@ -217,7 +190,7 @@ function showView(view) {
   }
   if (!app.dataset.side) app.dataset.side = 'files';
   savePref('view', state.view);
-  for (const b of document.querySelectorAll('.nav-btn')) {
+  for (const b of root.querySelectorAll('.nav-btn')) {
     const v = b.dataset.view;
     b.classList.toggle('on', isWide() ? v === state.side : v === view);
   }
@@ -229,19 +202,13 @@ function showView(view) {
 }
 
 // --------------------------------------------------------- Theme / Viewport
+// Hell oder dunkel bestimmt Toollib (Einstellungen › Aussehen); Kobra folgt (0.22.0).
 function isDark() {
-  if (settings.theme === 'dark') return true;
-  if (settings.theme === 'light') return false;
-  // „Wie das System“: erst Toollibs Wahl (Einstellungen › Aussehen), dann das Gerät (0.20.0)
-  try { const a = JSON.parse(localStorage.getItem('toollib.appearance') || 'null'); if (a === 'dark' || a === 'light') return a === 'dark'; } catch (e) { /* keine Wahl */ }
-  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  return document.documentElement.dataset.theme === 'dark';
 }
 
 function applyTheme() {
-  const dark = isDark();
-  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#121418' : '#f6f5f1');
-  editor?.configure({ dark });
+  editor?.configure({ dark: isDark() });
 }
 
 function setupViewport() {
@@ -260,7 +227,7 @@ function setupViewport() {
   vv?.addEventListener('scroll', sync);
   window.addEventListener('resize', sync);
   // iOS: Seite nicht verschieben
-  window.addEventListener('scroll', () => { if (window.scrollY && !document.body.classList.contains('kb-open')) window.scrollTo(0, 0); });
+  window.addEventListener('scroll', () => { if (active && window.scrollY && !document.body.classList.contains('kb-open')) window.scrollTo(0, 0); });
 }
 
 // ============================================================== Projekte
@@ -788,7 +755,7 @@ async function closeTab(path, skipSave) {
 const autosave = debounce(() => saveFile(state.active), 700);
 
 function onDocChange(path) {
-  const tab = document.querySelector(`.tab[data-path="${CSS.escape(path || '')}"]`);
+  const tab = root.querySelector(`.tab[data-path="${CSS.escape(path || '')}"]`);
   tab?.classList.add('dirty');
   if (settings.autosave) autosave();
 }
@@ -799,7 +766,7 @@ async function saveFile(path) {
   try {
     await store.writeFile(`${projectDir()}/${path}`, content);
     editor.markSaved(path, content);
-    document.querySelector(`.tab[data-path="${CSS.escape(path)}"]`)?.classList.remove('dirty');
+    root.querySelector(`.tab[data-path="${CSS.escape(path)}"]`)?.classList.remove('dirty');
     runner?.syncFiles(state.project, [{ path, data: content }]);
   } catch (e) {
     toast(`Speichern fehlgeschlagen: ${e.message}`, 'error');
@@ -1200,7 +1167,6 @@ async function openSettings(section) {
     for (const [v, l] of opts) el.append(h('option', { value: v, text: l, selected: v === value || null }));
     return el;
   };
-  const theme = select('set-theme', settings.theme, [['auto', 'Wie Toollib'], ['dark', 'Dunkel'], ['light', 'Hell']]);
   const size = h('input', { type: 'range', min: '11', max: '22', step: '1', value: String(settings.fontSize), id: 'set-size' });
   const sizeVal = h('span', { class: 'set-val', text: `${settings.fontSize} px` });
   const wrap = h('input', { type: 'checkbox', checked: settings.wrap || null, id: 'set-wrap' });
@@ -1210,7 +1176,6 @@ async function openSettings(section) {
 
   const body = h('div', { class: 'settings' },
     h('section', { class: 'card' }, h('h3', { text: 'Darstellung' }),
-      field('Farbschema', theme),
       h('label', { class: 'set-field' }, h('span', { class: 'set-label', text: 'Schriftgröße im Editor' }), h('div', { class: 'row-input' }, size, sizeVal)),
       h('label', { class: 'set-switch' }, wrap, h('span', { text: 'Lange Zeilen umbrechen' })),
     ),
@@ -1235,7 +1200,6 @@ async function openSettings(section) {
   const sheet = openSheet('Einstellungen', body, {
     full: true,
     onClose: () => {
-      settings.theme = theme.value; savePref('theme', settings.theme);
       settings.fontSize = +size.value; savePref('fontSize', settings.fontSize);
       settings.wrap = wrap.checked; savePref('wrap', settings.wrap);
       settings.autosave = autos.checked; savePref('autosave', settings.autosave);
@@ -1245,12 +1209,42 @@ async function openSettings(section) {
       editor.configure({ size: settings.fontSize, wrap: settings.wrap });
     },
   });
-  theme.addEventListener('change', () => { settings.theme = theme.value; applyTheme(); });
   if (section === 'git') setTimeout(() => body.querySelector('#settings-git')?.scrollIntoView({ block: 'start' }), 100);
   return sheet;
 }
 
-main().catch((e) => {
-  console.error(e);
-  document.body.append(h('pre', { class: 'fatal', text: `Kobra konnte nicht starten:\n${e.stack || e}` }));
-});
+// ================================================================== in Toollib (0.22.0)
+let started = null;
+
+// Einmal starten; danach nur zeigen und ausblenden.
+export function mountKobra(host) {
+  if (!started) {
+    started = main(host).catch((e) => {
+      console.error(e);
+      host.append(h('pre', { class: 'fatal', text: `Kobra konnte nicht starten:\n${e.stack || e}` }));
+    });
+  }
+  return started;
+}
+
+// Toollib zeigt Kobra (true) oder wechselt zu einem anderen Werkzeug (false).
+export function setActive(on) {
+  active = !!on;
+  if (!root) return;
+  if (active) {
+    applyTheme();
+    showView(state.view || 'code');
+    openRequested();
+  } else {
+    saveAll(false).then(() => store.flush());
+    gui?.hide?.();
+  }
+}
+
+// Wunsch von außen, etwa „In Kobra verwalten“ in Toollibs Einstellungen: kobra.open = "settings"
+function openRequested() {
+  const want = loadPref('open', '');
+  if (!want || !editor) return;
+  savePref('open', '');
+  if (want === 'settings') openSettings('git');
+}

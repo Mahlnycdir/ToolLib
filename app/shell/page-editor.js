@@ -4,7 +4,7 @@
 // Since 0.17.0 the text is written in md-editor.js (colours, completion, shorthand, lists that continue); the bar has
 // task, [@source], image and the formula palette too, every button shows its keys, and a page can carry images,
 // ```plot blocks and Python plots.
-import { h, debounce, loadPref, savePref, copyText, toast, pickFiles } from '../services/ui.js';
+import { h, debounce, loadPref, savePref, copyText, toast, pickFiles, keepScroll } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { getLang, t } from '../i18n/i18n.js';
 import { renderMarkdown, exportMarkdown } from './markdown.js';
@@ -196,7 +196,8 @@ export function mountEditor(opts) {
   const bar = h('div', { class: 'pe-bar', role: 'toolbar', 'aria-label': t('editor.tools') });
   const modes = h('div', { class: 'segmented pe-modes', role: 'group' });
   const host = h('div', { class: 'pe-text' });
-  const preview = h('div', { class: 'pe-preview rd-inner' });
+  // switching between writing and preview on the phone keeps the place in the preview (0.22.0)
+  const preview = keepScroll(h('div', { class: 'pe-preview rd-inner' }));
   const wrapEl = h('div', { class: 'pe-panes' }, h('div', { class: 'pe-write' }, host), preview);
   el.append(h('div', { class: 'pe-head' }, title, helpsBox), h('div', { class: 'pe-tools' }, bar, modes, status), wrapEl);
 

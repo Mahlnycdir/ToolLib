@@ -442,7 +442,7 @@ function kobraCard() {
   // 0.20.0: more accounts and your repositories live in Kobra; here only how many
   const count = (k) => { try { const v = JSON.parse(localStorage.getItem(`kobra.git.${k}`) || '[]'); return Array.isArray(v) ? v.length : 0; } catch { return 0; } };
   box.append(h('p', { class: 'muted small', id: 'kobra-more', text: t('settings.kobra.more', { accounts: count('accounts') + 1, repos: count('repos') }) }),
-    h('a', { class: 'btn small', href: 'kobra/#settings', text: t('settings.kobra.open') }));
+    h('a', { class: 'btn small', href: '#/m/kobra', text: t('settings.kobra.open'), onclick: () => { try { localStorage.setItem('kobra.open', JSON.stringify('settings')); } catch { /* ohne Speicher */ } } }));
   return box;
 }
 // A password field with a button to show it.

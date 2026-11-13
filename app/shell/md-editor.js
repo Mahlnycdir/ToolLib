@@ -422,6 +422,21 @@ export function createEditor(host, opts = {}) {
       const pos = api.lineStart(n);
       view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: 'start', yMargin: 40 }) });
     },
+    // Where you are in the text (0.22.0): the line at the top of the view, how far it stood from the top, the cursor.
+    // toPlace() puts it back, so a page opens again where you left it.
+    place() {
+      const at = view.scrollDOM.getBoundingClientRect().top - view.documentTop;
+      let block = view.lineBlockAtHeight(Math.max(0, at));
+      // the first line that starts in view, so it can be put back at the same distance below the top
+      if (block.top < at - 1 && block.to < view.state.doc.length) block = view.lineBlockAt(block.to + 1);
+      return { pos: block.from, dy: Math.max(0, Math.round(block.top - at)), caret: view.state.selection.main.head };
+    },
+    toPlace(p) {
+      if (!p || !view.dom.isConnected) return;
+      const len = view.state.doc.length;
+      // the editor's own scrolling, so it also holds when the editor was hidden a moment ago (a pane on the phone)
+      view.dispatch({ selection: { anchor: Math.min(p.caret ?? 0, len) }, effects: EditorView.scrollIntoView(Math.min(p.pos, len), { y: 'start', yMargin: Math.max(0, p.dy || 0) }) });
+    },
     complete: () => startCompletion(view),
     inMath: () => inMathAt(view.state.doc.toString(), view.state.selection.main.head),
     setLists(on) { view.dispatch({ effects: compartments.lists.reconfigure(on ? listKeys() : []) }); },

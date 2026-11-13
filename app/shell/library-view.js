@@ -3,7 +3,7 @@
 // the sources of the page. On the iPhone the three are tabs. The order lives in the library node, the text in the
 // page nodes (services/library-store.js); everything is saved by itself and synced like other nodes.
 import { mark } from '../services/trail.js';
-import { h, toast, debounce, loadPref, savePref, promptDialog, confirmDialog, actionSheet, copyText } from '../services/ui.js';
+import { h, toast, debounce, loadPref, savePref, promptDialog, confirmDialog, actionSheet, copyText, keepScroll } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { getLang, t } from '../i18n/i18n.js';
 import { allNodes, indexState, nodeByPath, nodeBySlug, onIndexChange } from '../services/search.js';
@@ -42,6 +42,9 @@ export function mountLibrary(host, opts) {
   const mid = h('section', { class: 'lb-page', 'aria-label': t('library.pageArea') });
   const side = h('aside', { class: 'lb-side', 'aria-label': t('library.side') });
   root.append(bar, tabs, h('div', { class: 'lb-body' }, toc, mid, side));
+  // on the phone only one pane shows at a time; the contents and the side keep their place meanwhile (0.22.0)
+  keepScroll(toc);
+  keepScroll(side);
   // while you type on the iPhone the bar and the page head step aside, so the keyboard leaves room for the text
   // On the phone head and bar step aside while you write, from the first key on, not when you tap (0.17.0): a
   // layout that moves at the tap put the cursor somewhere else and needed a second tap.
@@ -270,9 +273,34 @@ export function mountLibrary(host, opts) {
   }
 
   // ---------------------------------------------------------------- the page
+  // Every page remembers where you were in it (0.22.0): the line at the top, the cursor, how far the preview was
+  // scrolled. Opening it again goes back there. Kept on the device for the last 40 pages.
+  const places = new Map((() => { const v = loadPref('library.places', []); return Array.isArray(v) ? v : []; })());
+  // (the page the editor shows; state.page may already be the next one)
+  let edPath = '';
+  function rememberPlace() {
+    const ed = state.editor;
+    if (!ed || !edPath) return;
+    try {
+      const pv = ed.el.querySelector('.pe-preview');
+      places.delete(edPath);
+      places.set(edPath, { ...ed.editor.place(), pv: pv ? Math.round(pv.scrollTop) : 0 });
+      savePref('library.places', [...places.entries()].slice(-40));
+    } catch (e) { console.warn(e); }
+  }
+  function goToPlace(ed, path) {
+    const p = places.get(path);
+    if (!p) return;
+    ed.editor.toPlace(p);
+    const pv = ed.el.querySelector('.pe-preview');
+    if (pv && p.pv) requestAnimationFrame(() => { pv.scrollTop = p.pv; });
+  }
+
   function closePage() {
+    rememberPlace();
     state.editor?.destroy();
     state.editor = null;
+    edPath = '';
     state.page = null;
     state.heads = [];
     savePref('library.open', { path: opts.path, page: '' });
@@ -289,16 +317,19 @@ export function mountLibrary(host, opts) {
     mark('write', { path, lib: opts.path, title: page.title || '' });
     const tg = loadPref('library.target', null);
     if (!tg || tg.path !== path) savePref('library.target', { path, at: page.body.length });
+    // on the phone the page pane shows first, so the editor is drawn visible and can go back to where you were
+    if (narrow()) setPane('page');
     drawMid();
     drawToc();
     drawBar();
-    if (narrow()) setPane('page');
     drawSide();
   }
 
   function drawMid() {
+    rememberPlace();
     state.editor?.destroy();
     state.editor = null;
+    edPath = '';
     if (!state.page) {
       const has = state.lib.chapters.some((c) => c.pages.length) || state.lib.loose.length;
       const first = h('button', { type: 'button', class: 'btn primary', onclick: () => newPage(0) }, iconEl('plus'), h('span', { text: t('library.page.first') }));
@@ -318,6 +349,8 @@ export function mountLibrary(host, opts) {
     state.editor = ed;
     state.heads = ed.headings();
     mid.replaceChildren(ed.el);
+    edPath = state.page.path;
+    goToPlace(ed, edPath);
     ed.setStatus(state.page.body || state.page.text ? 'saved' : '');
   }
 
@@ -621,6 +654,7 @@ export function mountLibrary(host, opts) {
     destroy() {
       destroyed = true;
       flush();
+      rememberPlace();
       state.editor?.destroy();
       document.removeEventListener('visibilitychange', onHide);
       window.removeEventListener('pagehide', flush);

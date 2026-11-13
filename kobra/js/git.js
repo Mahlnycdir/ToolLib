@@ -5,6 +5,7 @@ import { git, http, Diff } from '../vendor/vendor.js';
 import { fs, projectPath, readText, exists, isTextFile, flush, rmrf } from './storage.js';
 import { h, toast, promptDialog, confirmDialog, openSheet, actionSheet, loadPref, savePref, modal, esc } from './ui.js';
 import { icon } from './icons.js';
+import { overlayHost } from './markup.js';
 import { MAIN, accounts, account, accountLabel, accountForUrl, tokenFor, authorOf, rememberRepo, repoEntry } from './accounts.js';
 
 const dec = new TextDecoder();
@@ -574,7 +575,7 @@ export class GitPanel {
 
 function toastProgress(label) {
   const el = h('div', { class: 'progress-toast' }, h('span', { class: 'spinner' }), h('span', { text: label }));
-  document.body.append(el);
+  overlayHost().append(el);
   const text = el.lastChild;
   return {
     update: (p) => { if (p?.phase) text.textContent = `${label} ${p.phase}${p.total ? ` ${Math.round((p.loaded / p.total) * 100)} %` : ''}`; },

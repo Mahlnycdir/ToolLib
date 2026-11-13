@@ -308,7 +308,14 @@ dl.keys dd { margin: 0; }
   }
   .kb-open .cmd { padding-bottom: 8px; }
   .cmd-kbd { display: none; }
-  .cmd-results { top: auto; bottom: calc(100% + 6px); left: 12px; right: 12px; max-height: 55vh; }
+  /* The list grows upwards from the bar. With the keyboard open on the iPhone, vh still counts the whole screen; the
+     list then reached above the top of the page, where no scrolling gets to (0.22.0). Now it stays inside the visible
+     area (--app-h follows the visual viewport, --cmd-h is the height of the bar) and does not pull the page along. */
+  .cmd-results {
+    top: auto; bottom: calc(100% + 6px); left: 12px; right: 12px;
+    max-height: min(55vh, calc(var(--app-h, 100vh) - var(--cmd-h, 72px) - max(12px, env(safe-area-inset-top)) - 12px));
+    overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  }
   .rail {
     position: fixed; z-index: 40; top: 0; bottom: 0; left: 0;
     width: min(280px, 82vw);
@@ -1567,9 +1574,11 @@ body.dragging-now, body.dragging-now * { cursor: grabbing !important; -webkit-us
 .set-table { font-size: 13.5px; }
 .set-table td { padding: 3px 10px 3px 0; vertical-align: top; }
 .cmd-list { display: grid; gap: 8px; margin-top: 10px; }
-.cmd-row { display: grid; grid-template-columns: 110px minmax(0, 1fr) 130px auto auto; gap: 8px; align-items: center; }
-.cmd-row .field { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; }
-.cmd-row select.field { font-family: inherit; }
+/* Settings › commands for the helper. Only inside .cmd-list: the same class name also marks the rows of the command
+   bar, and this grid squeezed their text behind a 110 px icon column (fixed in 0.22.0). */
+.cmd-list .cmd-row { display: grid; grid-template-columns: 110px minmax(0, 1fr) 130px auto auto; gap: 8px; align-items: center; }
+.cmd-list .cmd-row .field { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; }
+.cmd-list .cmd-row select.field { font-family: inherit; }
 .cmd-auto { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .keys-area + .keys-area { margin-top: 6px; }
 .keys-rows { list-style: none; margin: 0; padding: 0; display: grid; }
@@ -1586,9 +1595,9 @@ body.dragging-now, body.dragging-now * { cursor: grabbing !important; -webkit-us
   .set-links::-webkit-scrollbar { display: none; }
   .set-link { flex: none; padding: 6px 12px; border: 1px solid var(--border); background: var(--panel); border-radius: 999px; font-size: 14px; }
   .set-link .icon { display: none; }
-  .cmd-row { grid-template-columns: 90px minmax(0, 1fr) auto; }
-  .cmd-row .cmd-where { grid-column: 1 / 2; }
-  .cmd-row .cmd-auto { grid-column: 2 / 3; }
+  .cmd-list .cmd-row { grid-template-columns: 90px minmax(0, 1fr) auto; }
+  .cmd-list .cmd-row .cmd-where { grid-column: 1 / 2; }
+  .cmd-list .cmd-row .cmd-auto { grid-column: 2 / 3; }
   .keys-row { grid-template-columns: minmax(0, 1fr) auto; }
   .keys-btns { grid-column: 1 / -1; justify-content: flex-end; }
 }
@@ -1900,3 +1909,12 @@ body.dragging-now, body.dragging-now * { cursor: grabbing !important; -webkit-us
   .kl-pad { padding-bottom: env(safe-area-inset-bottom, 0px); }
 }
 @media (prefers-reduced-motion: reduce) { .kl-library { animation: none; } .kl-sw i, .kl-switch input, .kl-switch input::after { transition: none; } }
+
+/* ======================================================= Kobra in Toollib (0.22.0) */
+.main[data-view="kobra"] { padding: 0; overflow: hidden; }
+.main[data-view="kobra"] > * { max-width: none; }
+@media (max-width: 759px) {
+  /* Tastatur offen im Code: Kobras Zusatztasten sitzen über der Tastatur, die Befehlszeile macht Platz (ihre Zeile
+     ist dann leer und null hoch). Tippst du in der Befehlszeile selbst, bleibt sie natürlich da. */
+  .app.kb-open[data-kobra="1"] .cmd:not(:focus-within) { display: none; }
+}

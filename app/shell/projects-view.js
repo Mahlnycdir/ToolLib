@@ -127,12 +127,11 @@ export async function renderProject(main, path, ctx) {
   if (!p) { box.append(h('h1', { class: 'view-title', text: t('node.notFound') })); return; }
   touchProject(path);
   paintProject(box, p.slug);
+  // drawn again after a change; the shell keeps the row you were at (0.22.0)
   const redraw = async () => {
     if (!isCurrent()) return;
-    const top = main.scrollTop;
     main.replaceChildren();
     await renderProject(main, path, ctx);
-    main.scrollTop = top;
   };
   const d = nodeByPath(path) || { links: p.links, slug: p.slug, path };
   const inFocus = focusPath() === path;

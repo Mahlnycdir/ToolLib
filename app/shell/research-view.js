@@ -4,7 +4,7 @@
 // collect; a run through a website and the PDF inbox of the Mac are one entry each. On the iPhone the list and what
 // you picked take turns. "Read" turns the whole window into the reader; "Own window" opens it alone (?solo=1).
 import { matches, keyTitle } from '../services/keys.js';
-import { h, toast, copyText, loadPref, savePref, promptDialog, confirmDialog, modal, actionSheet } from '../services/ui.js';
+import { h, toast, copyText, loadPref, savePref, promptDialog, confirmDialog, modal, actionSheet, keepScroll } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
 import { SOURCES, sourceById } from '../services/research-sources.js';
@@ -140,7 +140,8 @@ export function renderResearch(main) {
   main.dataset.view = 'research';
   const root = h('div', { class: 'rs', dataset: { pane: st.pane, mode: st.read ? 'read' : '' } });
   const top = h('header', { class: 'rs-top' });
-  const mid = h('section', { class: 'rs-results', 'aria-label': t('research.results') });
+  // on the phone the list is hidden while you look at one work; back in the list you are where you were (0.22.0)
+  const mid = keepScroll(h('section', { class: 'rs-results', 'aria-label': t('research.results') }));
   const right = h('section', { class: 'rs-detail', 'aria-label': t('research.details') });
   const readerHost = h('div', { class: 'rs-reader' });
   root.append(top, mid, right, readerHost);

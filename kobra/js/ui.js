@@ -1,5 +1,6 @@
 // Kleine UI-Hilfen: Elemente, Dialoge, Hinweise, Aktionsblaetter.
 import { icon } from './icons.js';
+import { overlayHost } from './markup.js';
 
 export function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
@@ -40,8 +41,8 @@ export function tapKeepFocus(el, fn) {
 
 let toastTimer = null;
 export function toast(msg, kind = 'info', ms = 2600) {
-  let el = document.getElementById('toast');
-  if (!el) { el = h('div', { id: 'toast', role: 'status' }); document.body.append(el); }
+  let el = document.getElementById('kobra-toast');
+  if (!el) { el = h('div', { id: 'kobra-toast', role: 'status' }); overlayHost().append(el); }
   el.className = `toast show ${kind}`;
   el.innerHTML = `${icon(kind === 'error' ? 'warn' : kind === 'ok' ? 'check' : 'info')}<span></span>`;
   el.querySelector('span').textContent = msg;
@@ -81,7 +82,7 @@ export function modal({ title, body, actions = [{ label: 'OK', value: true, kind
     if (actions.length) box.append(bar);
     backdrop.append(box);
     backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(dismissValue); });
-    document.body.append(backdrop);
+    overlayHost().append(backdrop);
     stack.push(close);
     requestAnimationFrame(() => backdrop.classList.add('show'));
     onOpen?.(content, close);
@@ -162,7 +163,7 @@ export function actionSheet(title, items) {
     sheet.append(h('button', { class: 'sheet-item cancel', type: 'button', text: 'Abbrechen', onclick: () => close(null) }));
     backdrop.append(sheet);
     backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(null); });
-    document.body.append(backdrop);
+    overlayHost().append(backdrop);
     stack.push(close);
     requestAnimationFrame(() => backdrop.classList.add('show'));
   });
@@ -192,7 +193,7 @@ export function openSheet(title, content, { onClose, full = false, actions } = {
   };
   closeBtn.addEventListener('click', close);
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
-  document.body.append(backdrop);
+  overlayHost().append(backdrop);
   stack.push(close);
   requestAnimationFrame(() => backdrop.classList.add('show'));
   return { close, body, sheet };
@@ -217,7 +218,7 @@ export function savePref(key, value) {
 export function downloadBlob(blob, name) {
   const url = URL.createObjectURL(blob);
   const a = h('a', { href: url, download: name });
-  document.body.append(a);
+  overlayHost().append(a);
   a.click();
   setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 2000);
 }
@@ -236,7 +237,7 @@ export function pickFiles({ accept = '', multiple = true, directory = false } = 
     const input = h('input', { type: 'file', accept, multiple: multiple || null, style: { display: 'none' } });
     if (directory) input.setAttribute('webkitdirectory', '');
     input.addEventListener('change', () => { resolve([...input.files]); input.remove(); });
-    document.body.append(input);
+    overlayHost().append(input);
     input.click();
   });
 }

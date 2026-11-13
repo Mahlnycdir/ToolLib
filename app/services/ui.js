@@ -267,3 +267,12 @@ export function pickFiles({ accept = '', multiple = true, directory = false } = 
     input.click();
   });
 }
+
+// A box that scrolls and is hidden now and then (a pane on the phone): when it shows again it is where you left it.
+// Browsers forget the place of a box that was display:none (0.22.0).
+export function keepScroll(el) {
+  let y = 0;
+  el.addEventListener('scroll', () => { if (el.clientHeight) y = el.scrollTop; }, { passive: true });
+  if (window.ResizeObserver) new ResizeObserver(() => { if (el.clientHeight && y && Math.abs(el.scrollTop - y) > 1) el.scrollTop = y; }).observe(el);
+  return el;
+}

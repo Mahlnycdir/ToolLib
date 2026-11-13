@@ -103,13 +103,12 @@ async function takeOver(path, which, code) {
 // ------------------------------------------------------------------ node view
 export async function renderNode(main, path, ctx) {
   const { isCurrent, go, onSync } = ctx;
-  // Draws the view again after a change, at the same scroll position.
+  // Draws the view again after a change. The shell keeps the row you were at (0.22.0; the plain distance it used to
+  // set back here did not hold on the iPhone while parts above came later).
   const redraw = async () => {
     if (!isCurrent()) return;
-    const top = main.scrollTop;
     main.replaceChildren();
     await renderNode(main, path, ctx);
-    main.scrollTop = top;
   };
   main.dataset.view = 'node';
   const box = h('article', { class: 'node' });

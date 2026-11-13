@@ -24,7 +24,7 @@ export const MODULES = [
   { id: 'scraper', icon: 'globe', accent: 'blue', types: ['clip', 'research'] },                    // research window (0.14.0)
   { id: 'formulary', icon: 'vars', accent: 'rose', types: ['formula', 'convention', 'definition', 'theorem', 'term', 'topic'] },   // stage 3 (0.12.0)
   { id: 'cheatsheet', icon: 'book', accent: 'sky', types: ['snippet', 'recipe'] },
-  { id: 'kobra', icon: 'code', accent: 'yellow', href: 'kobra/', types: [] },   // Kobra as its own page (0.11.0)
+  { id: 'kobra', icon: 'code', accent: 'yellow', types: [] },   // Kobra, since 0.22.0 a view inside Toollib (before: its own page kobra/)
   { id: 'parts', icon: 'chip', accent: 'green', planned: true, types: ['part', 'device'] },
   { id: 'pins', icon: 'board', accent: 'sky', planned: true, types: ['rule', 'pin_map'] },
   { id: 'kladde', icon: 'edit', accent: 'orange', types: [] },   // handwritten notes (0.21.0); they are notes, so projects show them too

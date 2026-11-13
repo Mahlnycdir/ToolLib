@@ -264,7 +264,7 @@ export class Runner {
   start(opts = {}) {
     this.lastOpts = opts;
     this.token = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    const base = new URL('./', location.href);
+    const base = new URL('../', import.meta.url);   // kobra/, auch wenn Kobra in Toollibs Seite läuft (0.22.0)
     this.worker = new Worker(new URL('worker.js', base), { type: 'module', name: 'python' });
     this.worker.onmessage = (e) => this.onMessage(e.data);
     this.worker.onerror = (e) => {

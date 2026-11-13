@@ -1,7 +1,7 @@
 // The reader (0.14.1): a work's text in the middle, its outline on the left, your highlights and notes on the right.
 // On the iPhone the three are tabs. It opens inside the research window (research-view.js). What it reads comes from
 // services/reader.js; a work you kept keeps the text and your highlights in its clip, so both are there offline.
-import { h, toast, copyText, debounce, loadPref, modal, savePref } from '../services/ui.js';
+import { h, toast, copyText, debounce, loadPref, modal, savePref, keepScroll } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { getLang, t } from '../i18n/i18n.js';
 import { renderMarkdown } from './markdown.js';
@@ -67,11 +67,12 @@ export function mountReader(host, opts) {
   const tabs = h('div', { class: 'rd-tabs segmented', role: 'tablist' });
   const notices = h('div', { class: 'rd-notices' });
   const status = h('div', { class: 'rd-status', 'aria-live': 'polite' });
-  const outlineEl = h('nav', { class: 'rd-outline', 'aria-label': t('reader.outline') });
+  // the outline and the highlights keep their place while the text shows on the phone (0.22.0); the text has its own
+  const outlineEl = keepScroll(h('nav', { class: 'rd-outline', 'aria-label': t('reader.outline') }));
   const textEl = h('article', { class: 'rd-text' });
   const inner = h('div', { class: 'rd-inner' });
   textEl.append(inner);
-  const marksEl = h('aside', { class: 'rd-marks', 'aria-label': t('reader.marks') });
+  const marksEl = keepScroll(h('aside', { class: 'rd-marks', 'aria-label': t('reader.marks') }));
   root.append(bar, selbar, tabs, notices, status, h('div', { class: 'rd-body' }, outlineEl, textEl, marksEl));
   host.append(root);
 

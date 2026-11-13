@@ -36,7 +36,7 @@ export async function renderSpickzettel(search, list, insert) {
       const code = runParts(await getNode(d.path)).code;
       if (code) insert(code);
     });
-    const open = h('a', { class: 'snippet-open small', href: `../#/n/${d.path.split('/').map(encodeURIComponent).join('/')}`, text: 'im Spickzettel', title: 'Erklärung, Beispiel und Stolperfallen in Toollib' });
+    const open = h('a', { class: 'snippet-open small', href: `#/n/${d.path.split('/').map(encodeURIComponent).join('/')}`, text: 'im Spickzettel', title: 'Erklärung, Beispiel und Stolperfallen in Toollib' });
     return h('div', { class: 'snippet-row' }, b, open);
   };
   const render = () => {

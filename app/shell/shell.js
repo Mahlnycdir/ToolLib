@@ -8,6 +8,7 @@ import { icon } from '../services/icons.js';
 import { t, getLang, setLang, onLangChange } from '../i18n/i18n.js';
 import { ACCENTS, READY, moduleById, paintAccent, setAccent } from './modules.js';
 import { renderKladde } from './kladde-view.js';
+import { renderKobra } from './kobra-view.js';
 import { formatTime, renderModule, renderSettings } from './views.js';
 import { applyUpdate, checkForUpdate, onPwaChange, pwaState } from '../services/pwa.js';
 import { isConfigured, onSyncChange, phaseText, refreshPending, syncKnowledge, syncState } from '../services/sync.js';
@@ -44,6 +45,7 @@ const VIEWS = {
   formulary: (main, mod) => renderFormulary(main, mod),
   scraper: (main, mod) => renderResearch(main, mod),
   kladde: (main, mod, ctx) => renderKladde(main, mod, ctx),
+  kobra: (main) => renderKobra(main),
 };
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -91,16 +93,29 @@ export function startShell(root) {
   }
 
   // Every history entry remembers how far its view was scrolled, so Back returns to the same place (e.g. in the
-  // cheatsheet); a new entry starts at the top. The entry gets an id in history.state the first time it is shown.
-  // The places are kept on the device too (0.14.1.2): the iPhone drops the app while you are in another app and opens
-  // it again on the same page; Back still returns to where you were.
+  // cheatsheet). The entry gets an id in history.state the first time it is shown. The places are kept on the device
+  // too (0.14.1.2): the iPhone drops the app while you are in another app and opens it again on the same page; Back
+  // still returns to where you were.
+  //
+  // Since 0.22.0 a place is the row at the top of the view (a link into the knowledge, or an element with data-anchor)
+  // and how far below the top it stood, not just a distance. The iPhone does not hold the place on its own when parts
+  // above it come later or a view is drawn again, so the shell puts that row back:
+  //  · on Back, and also on a new visit of the same view (Start, a tool, a project, a node), so you stay where you were;
+  //  · when a view draws itself again in place (a project after you tick or pick something);
+  // each time for a few seconds while the content still changes, until you touch, scroll or type yourself, or the view
+  // moves somewhere on purpose (a section you asked for).
   const POS_KEY = 'toollib.scroll';
-  const positions = new Map((() => { try { return JSON.parse(sessionStorage.getItem(POS_KEY) || localStorage.getItem(POS_KEY) || '[]'); } catch { return []; } })());
+  const HASH_KEY = 'toollib.scroll.views';
+  const readList = (k) => { try { return JSON.parse(sessionStorage.getItem(k) || localStorage.getItem(k) || '[]'); } catch { return []; } };
+  const positions = new Map(readList(POS_KEY));
+  const byHash = new Map(readList(HASH_KEY));
   const keepPositions = () => {
-    const list = [...positions.entries()].slice(-40);
-    try { const v = JSON.stringify(list); sessionStorage.setItem(POS_KEY, v); localStorage.setItem(POS_KEY, v); } catch { /* keeps working without */ }
+    for (const [k, map, n] of [[POS_KEY, positions, 40], [HASH_KEY, byHash, 60]]) {
+      try { const v = JSON.stringify([...map.entries()].slice(-n)); sessionStorage.setItem(k, v); localStorage.setItem(k, v); } catch { /* keeps working without */ }
+    }
   };
   let shownEntry = null;
+  let shownHash = '';
   let entrySeq = Date.now();
   function entryId() {
     let id = history.state?.toollibEntry;
@@ -110,35 +125,130 @@ export function startShell(root) {
     }
     return id;
   }
+
+  const ANCHORS = 'a[href^="#/"], [data-anchor]';
+  const keyOf = (el) => el.getAttribute('data-anchor') || el.getAttribute('href');
+  // a row in a part that stays put while you scroll (a sticky side panel or menu) does not mark the place
+  const stays = (el) => { for (let x = el; x && x !== main; x = x.parentElement) { if (/sticky|fixed/.test(getComputedStyle(x).position)) return true; } return false; };
+  const sameKey = (key) => [...main.querySelectorAll(ANCHORS)].filter((el) => keyOf(el) === key);
+  // The place now: a row found by looking at a few points near the top of the view.
+  function placeNow() {
+    const y = main.scrollTop;
+    if (y <= 0) return { y: 0 };
+    const box = main.getBoundingClientRect();
+    for (const dy of [12, 48, 96, 160, 240, 340]) {
+      if (dy > box.height - 8) break;
+      for (const fx of [0.5, 0.25, 0.75]) {
+        const hit = document.elementFromPoint(box.left + box.width * fx, box.top + dy);
+        const el = hit && main.contains(hit) ? hit.closest(ANCHORS) : null;
+        if (!el || !main.contains(el) || stays(el)) continue;
+        const key = keyOf(el);
+        const n = sameKey(key).indexOf(el);
+        return { y, key, n: Math.max(n, 0), dy: Math.round(el.getBoundingClientRect().top - box.top) };
+      }
+    }
+    return { y };
+  }
+  // Puts the row back where it stood; without it (gone, or an old entry) the plain distance from the top.
+  let lastSet = -1;
+  function putBack(want) {
+    // the same link can stand twice (a pinned card above, the card in its section): take the one nearest to where the
+    // row stood, so a copy that appeared above does not pull the view up
+    let el = null;
+    if (want.key) {
+      const top = main.getBoundingClientRect().top - main.scrollTop;
+      const at = want.y + want.dy;
+      let best = Infinity;
+      sameKey(want.key).forEach((x, i) => {
+        const d = Math.abs(x.getBoundingClientRect().top - top - at) + (i === want.n ? 0 : 0.5);
+        if (d < best) { best = d; el = x; }
+      });
+    }
+    if (el) {
+      const shift = el.getBoundingClientRect().top - main.getBoundingClientRect().top - want.dy;
+      if (Math.abs(shift) >= 1) main.scrollTop += shift;
+    } else main.scrollTop = want.y;
+    lastSet = main.scrollTop;
+  }
+
+  // the place you are at, kept up to date while you scroll (for a view that draws itself again)
+  let lastPlace = { y: 0 };
+  let placeFrame = 0;
+  let keeping = null;
+  main.addEventListener('scroll', () => {
+    if (keeping) {
+      // the view moved somewhere on purpose (not us, and not because the content got shorter): let it
+      const max = main.scrollHeight - main.clientHeight;
+      if (Math.abs(main.scrollTop - lastSet) > 2 && main.scrollTop < max - 1) keeping.stop('view');
+      return;
+    }
+    if (!placeFrame) placeFrame = requestAnimationFrame(() => { placeFrame = 0; if (!keeping) lastPlace = placeNow(); });
+  }, { passive: true });
+
+  function keepPlace(want, token, ms = 5000) {
+    keeping?.stop('again');
+    if (token !== renderToken) return null;
+    if (!want || (!want.y && !want.key)) { main.scrollTop = 0; lastPlace = { y: 0 }; return null; }
+    const until = Date.now() + ms;
+    let timer = 0;
+    let frame = 0;
+    const k = { why: '', stop: null, want };
+    const watch = new MutationObserver(() => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; again(); }); });
+    const user = () => k.stop('user');
+    k.stop = (why) => {
+      if (keeping !== k) return;
+      keeping = null;
+      k.why = why;
+      clearTimeout(timer); cancelAnimationFrame(frame); watch.disconnect();
+      for (const e of ['touchstart', 'wheel', 'keydown', 'pointerdown']) main.removeEventListener(e, user);
+      lastPlace = placeNow();
+    };
+    keeping = k;
+    for (const e of ['touchstart', 'wheel', 'keydown', 'pointerdown']) main.addEventListener(e, user, { passive: true });
+    watch.observe(main, { childList: true, subtree: true });
+    function again() {
+      if (keeping !== k) return;
+      if (token !== renderToken || Date.now() > until) { k.stop('done'); return; }
+      putBack(want);
+    }
+    const tick = () => { again(); if (keeping === k) timer = setTimeout(tick, 150); };
+    putBack(want);
+    timer = setTimeout(tick, 150);
+    return k;
+  }
+
   function savePosition() {
     if (shownEntry === null) return;
+    // still putting a place back (the content is coming): that place, not the half-drawn view
+    const place = keeping ? keeping.want : placeNow();
     positions.delete(shownEntry);   // newest last, so the oldest go first
-    positions.set(shownEntry, main.scrollTop);
+    positions.set(shownEntry, place);
+    if (shownHash) { byHash.delete(shownHash); byHash.set(shownHash, place); }
     keepPositions();
   }
   const leaving = () => { if (document.visibilityState === 'hidden') savePosition(); };
   document.addEventListener('visibilitychange', leaving);
   window.addEventListener('pagehide', savePosition);
-  // The content may still come (the index after a start, a long node): try again while it grows, until you scroll.
-  let stopRestore = () => {};
-  const restoreScroll = (entry, token) => {
-    stopRestore();
-    if (token !== renderToken) return;
-    const y = positions.get(entry) || 0;
-    main.scrollTop = y;
-    if (!y || Math.abs(main.scrollTop - y) < 2) return;
-    const until = Date.now() + 5000;
-    let timer = 0;
-    const stop = () => { clearTimeout(timer); for (const e of ['touchstart', 'wheel', 'keydown', 'pointerdown']) main.removeEventListener(e, stop); };
-    stopRestore = stop;
-    for (const e of ['touchstart', 'wheel', 'keydown', 'pointerdown']) main.addEventListener(e, stop, { passive: true });
-    const again = () => {
-      if (token !== renderToken || Date.now() > until) { stop(); return; }
-      main.scrollTop = y;
-      if (Math.abs(main.scrollTop - y) < 2) stop(); else timer = setTimeout(again, 120);
-    };
-    timer = setTimeout(again, 120);
+
+  // where an entry starts: its own place (Back), else the last place in the same view (a new visit)
+  const startPlace = (entry, hash) => {
+    const own = positions.get(entry);
+    const saved = own !== undefined ? own : byHash.get(hash);
+    return typeof saved === 'number' ? { y: saved } : saved || { y: 0 };
   };
+  let restoring = null;
+  const restoreScroll = (entry, token, { again = false } = {}) => {
+    // a second try once a node is drawn, unless you or the view already took over
+    if (again && (!restoring || restoring.token !== token || (restoring.k && restoring.k.why && restoring.k.why !== 'done'))) return;
+    const k = keepPlace(startPlace(entry, shownHash), token);
+    restoring = { token, k };
+  };
+  // a view that draws itself again in place (main emptied outside a route change): keep the row you were at
+  let rendering = false;
+  new MutationObserver((recs) => {
+    if (rendering || keeping || !recs.some((r) => r.removedNodes.length)) return;
+    if (lastPlace.y > 0) keepPlace(lastPlace, renderToken, 3000);
+  }).observe(main, { childList: true });
 
   let renderToken = 0;
   function render() {
@@ -148,6 +258,9 @@ export function startShell(root) {
     savePosition();
     const entry = entryId();
     shownEntry = entry;
+    // only these views come back to their last place on a new visit; settings, writing and forms start fresh
+    shownHash = ['home', 'module', 'node'].includes(route.kind) ? location.hash || '#/home' : '';
+    rendering = true;
     // a view that holds unsaved work (the library) hands it over before it goes (0.15.1)
     if (main.cleanup) { const done = main.cleanup; main.cleanup = null; try { done(); } catch (e) { console.warn(e); } }
     main.replaceChildren();
@@ -161,11 +274,13 @@ export function startShell(root) {
     else if (route.kind === 'source') renderSource(main, route.path, { go, isCurrent: () => token === renderToken });
     else if (route.kind === 'form') renderSnippetForm(main, { mode: route.mode, path: route.path, go, isCurrent: () => token === renderToken });
     else if (route.kind === 'node') {
-      renderAnyNode(route.path, { isCurrent: () => token === renderToken, go, onSync: runSync }).then(() => restoreScroll(entry, token));
+      renderAnyNode(route.path, { isCurrent: () => token === renderToken, go, onSync: runSync }).then(() => restoreScroll(entry, token, { again: true }));
     } else renderStart(main, { go, onSync: runSync, onSetup: () => go('#/settings/sync'), focusCommand: () => input.focus() });
     app.dataset.route = route.kind;
     renderRail(route);
     restoreScroll(entry, token);
+    // the observer reports after this task; the content drawn so far is part of the route change, not a redraw
+    queueMicrotask(() => { rendering = false; });
   }
 
   // A project and a note have views of their own; every other node shows in the node view. What you open is
@@ -433,7 +548,16 @@ export function startShell(root) {
     input.setAttribute('aria-activedescendant', shown.length ? `cmd-opt-${selected}` : '');
     app.classList.add('cmd-open');
     input.setAttribute('aria-expanded', 'true');
-    results.querySelector('.cmd-row.sel')?.scrollIntoView({ block: 'nearest' });
+    keepInList(results.querySelector('.cmd-row.sel'));
+  }
+
+  // Scrolls only the list so the chosen row is seen. scrollIntoView also moved the page on the iPhone (0.22.0).
+  function keepInList(row) {
+    if (!row) return;
+    const r = row.getBoundingClientRect();
+    const box = results.getBoundingClientRect();
+    if (r.top < box.top + 6) results.scrollTop -= box.top + 6 - r.top;
+    else if (r.bottom > box.bottom - 6) results.scrollTop += r.bottom - (box.bottom - 6);
   }
 
   function hideResults() {
@@ -481,6 +605,8 @@ export function startShell(root) {
   document.addEventListener('keydown', (e) => {
     const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
     if (e.altKey && !e.metaKey && !e.ctrlKey && /^Digit[1-9]$/.test(e.code)) {
+      // On a Mac, Option+digit types signs ([ ] | \ { } on a German keyboard). While you type, the sign wins over the jump.
+      if (typing && !/^[1-9]$/.test(e.key)) return;
       const j = jumps()[Number(e.code.slice(5)) - 1];
       if (j) { e.preventDefault(); hideResults(); input.blur(); j.run(); }
     }
@@ -606,6 +732,10 @@ export function startShell(root) {
   vv?.addEventListener('resize', fitViewport);
   window.addEventListener('resize', fitViewport);
   fitViewport();
+  // the height of the command bar, so its list fits above it on the phone (0.22.0)
+  const cmdHeight = () => document.documentElement.style.setProperty('--cmd-h', `${Math.round(cmd.offsetHeight)}px`);
+  if (window.ResizeObserver) new ResizeObserver(cmdHeight).observe(cmd);
+  cmdHeight();
 
   // Another window (the research window) changed nodes: take them into the index here too.
   onAnnounce(async (msg) => {
