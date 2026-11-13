@@ -78,6 +78,8 @@ kbd {
 .app {
   display: grid;
   height: var(--app-h, 100dvh);
+  position: relative;
+  top: var(--vv-top, 0px);   /* follows the visible area while the keyboard is open (0.22.1) */
   grid-template-columns: var(--rail-w) minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas: "rail cmd" "rail main" "rail status";

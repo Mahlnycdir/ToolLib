@@ -722,16 +722,24 @@ export function startShell(root) {
   // ---------------------------------------------------------------- viewport
   // On the iPhone the keyboard shrinks the visible area; the shell follows the visual viewport.
   const vv = window.visualViewport;
+  // With the keyboard open the iPhone may also slide the visible area down to show the cursor; the app slides with it
+  // (--vv-top), so the bar above the keyboard sits right on it (0.22.1; Kobra on its own page did the same).
   function fitViewport() {
     const height = vv ? vv.height : window.innerHeight;
-    document.documentElement.style.setProperty('--app-h', `${Math.round(height)}px`);
+    const root = document.documentElement;
+    root.style.setProperty('--app-h', `${Math.round(height)}px`);
     const keyboard = vv ? window.innerHeight - vv.height > 140 : false;
     app.classList.toggle('kb-open', keyboard);
+    root.style.setProperty('--vv-top', `${keyboard && vv ? Math.max(0, Math.round(vv.pageTop)) : 0}px`);
     if (window.scrollY && !keyboard) window.scrollTo(0, 0);
   }
   vv?.addEventListener('resize', fitViewport);
+  vv?.addEventListener('scroll', fitViewport);
   window.addEventListener('resize', fitViewport);
   fitViewport();
+  // Toollib is an app, not a page: no zooming with two fingers (iPhone; the Kladde did this for itself already).
+  // Zooming in by itself when a small text field gets the focus is off through maximum-scale=1 in index.html.
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
   // the height of the command bar, so its list fits above it on the phone (0.22.0)
   const cmdHeight = () => document.documentElement.style.setProperty('--cmd-h', `${Math.round(cmd.offsetHeight)}px`);
   if (window.ResizeObserver) new ResizeObserver(cmdHeight).observe(cmd);
