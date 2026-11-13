@@ -1,6 +1,7 @@
 // Kleine UI-Hilfen: Elemente, Dialoge, Hinweise, Aktionsblaetter.
 import { icon } from './icons.js';
 import { overlayHost } from './markup.js';
+import { t as tr } from '../../app/i18n/i18n.js';
 
 export function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
@@ -105,7 +106,7 @@ export function promptDialog(title, { label = '', value = '', placeholder = '', 
     title,
     body,
     actions: [
-      { label: 'Abbrechen', value: null },
+      { label: tr('kobra.cancel'), value: null },
       { label: okLabel, kind: 'primary', value: () => {
         const v = input.value;
         const problem = validate?.(v);
@@ -125,7 +126,7 @@ export function promptDialog(title, { label = '', value = '', placeholder = '', 
   });
 }
 
-export function confirmDialog(title, message, { okLabel = 'OK', danger = false, cancelLabel = 'Abbrechen' } = {}) {
+export function confirmDialog(title, message, { okLabel = 'OK', danger = false, cancelLabel = tr('kobra.cancel') } = {}) {
   return modal({
     title,
     body: h('p', { text: message }),
@@ -160,7 +161,7 @@ export function actionSheet(title, items) {
       b.addEventListener('click', () => close(it.value));
       sheet.append(b);
     }
-    sheet.append(h('button', { class: 'sheet-item cancel', type: 'button', text: 'Abbrechen', onclick: () => close(null) }));
+    sheet.append(h('button', { class: 'sheet-item cancel', type: 'button', text: tr('kobra.cancel'), onclick: () => close(null) }));
     backdrop.append(sheet);
     backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(null); });
     overlayHost().append(backdrop);
@@ -176,7 +177,7 @@ export function openSheet(title, content, { onClose, full = false, actions } = {
   const head = h('div', { class: 'panel-sheet-head' });
   head.append(h('div', { class: 'panel-sheet-title', text: title }));
   if (actions) head.append(actions);
-  const closeBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Schließen', html: icon('close') });
+  const closeBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': tr('kobra.close'), html: icon('close') });
   head.append(closeBtn);
   const body = h('div', { class: 'panel-sheet-body' });
   body.append(content);

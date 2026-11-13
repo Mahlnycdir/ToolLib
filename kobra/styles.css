@@ -727,3 +727,70 @@ body.editing .kobra-scope .keybar { display: flex; }
   .kobra-root[data-embedded] .nav-btn.on { box-shadow: inset 0 -2px 0 var(--accent); }
   .kobra-root[data-embedded] .badge-dot { top: 7px; left: auto; right: 6px; }
 }
+
+/* ------------------------------------------------------------- 0.24.0: wie Toollib */
+/* Toollibs Seitenregeln (app/shell/styles.css) greifen auch in Kobra, wo die Klassen gleich heißen: .btn, .field,
+   .console-out, .settings, .panel-sheet … Was Kobra dort nicht selbst setzt, wird hier zurückgesetzt; danach bekommen
+   Kobras Bausteine Toollibs Maße. Kobras Gelb bleibt die Farbe des Werkzeugs. */
+
+/* Zurücksetzen, was von Toollib durchsickert */
+.kobra-scope .btn { height: auto; }
+.kobra-scope .field { height: auto; }
+.kobra-scope .console { border-top: 0; }
+.kobra-scope .console-out { max-height: none; }
+.kobra-scope .console-out:empty { display: block; }                 /* sonst springt die Eingabezeile nach oben */
+.kobra-scope .console-progress { display: block; border-bottom: 0; }
+.kobra-scope .console-progress[hidden] { display: none; }
+.kobra-scope .settings { display: block; }                          /* Toollibs Einstellungsseite hat zwei Spalten */
+.kobra-scope .project-list { display: flex; flex-direction: column; gap: 2px; }
+.kobra-scope .panel-sheet { padding: 0; }
+.kobra-scope .panel-sheet-title { padding: 10px 0; }
+
+/* Knöpfe: weiß mit Rand, Höhe wächst mit dem Text */
+.kobra-scope .btn { min-height: 40px; padding: 8px 14px; background: var(--panel); font-weight: 400; line-height: 1.25; text-align: center; }
+.kobra-scope .btn:hover { background: var(--panel-2); }
+.kobra-scope .btn.primary:hover { background: var(--accent); filter: brightness(.97); }
+.kobra-scope .btn.danger:hover { background: var(--danger); filter: brightness(.95); }
+.kobra-scope .btn.ghost:hover { background: var(--panel-2); }
+.kobra-scope .btn.small { min-height: 34px; padding: 4px 12px; font-size: 14px; border-radius: 9px; }
+
+/* Karten und Felder */
+.kobra-scope .card { padding: 16px; }
+.kobra-scope .card h3 { font-size: 16px; }
+.kobra-scope .field-label, .kobra-scope .set-label { font-size: 14px; }
+.kobra-scope .field-label { margin: 10px 0 6px; }
+.kobra-scope .field-hint, .kobra-scope .set-hint { font-size: 13px; }
+.kobra-scope .field-error { font-size: 14px; }
+
+/* Dialoge: wie Toollibs modal() */
+.kobra-scope .modal-backdrop, .kobra-scope .sheet-backdrop { background: rgba(15, 31, 61, 0.32); }
+.kobra-scope .modal { width: min(440px, 100%); padding: 20px; }
+.kobra-scope .modal.wide { width: min(720px, 100%); }
+.kobra-scope .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 12px; }
+.kobra-scope .modal-actions { margin-top: 18px; }
+
+/* Blätter schweben mit Abstand zum Rand und sind ringsum rund, wie Toollibs actionSheet() und openSheet() */
+.kobra-scope .sheet-backdrop {
+  padding: 16px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+.kobra-scope .action-sheet { border-radius: 16px; padding: 8px; box-shadow: var(--shadow); max-height: 100%; }
+.kobra-scope .sheet-title { font-size: inherit; font-weight: 600; color: var(--fg); text-align: left; padding: 10px 12px; }
+.kobra-scope .sheet-item { min-height: 48px; padding: 0 12px; gap: 10px; }
+.kobra-scope .sheet-item:hover { background: var(--panel-2); }
+.kobra-scope .sheet-item.cancel { justify-content: flex-start; font-weight: 400; margin-top: 0; background: none; }
+.kobra-scope .sheet-item.cancel:hover { background: var(--panel-2); }
+.kobra-scope .panel-sheet { border-radius: 16px; box-shadow: var(--shadow); max-height: 100%; }
+.kobra-scope .panel-sheet.full { height: 100%; }
+.kobra-scope .panel-sheet-head { padding: 8px 8px 0 20px; border-bottom: 0; }
+.kobra-scope .panel-sheet-title { font-size: inherit; font-weight: 600; }
+.kobra-scope .panel-sheet-body { padding: 4px 20px 20px; }
+
+/* Meldungen unten wie in Toollib */
+.kobra-scope .toast {
+  top: auto; bottom: 96px; transform: translate(-50%, 20px); max-width: calc(100vw - 32px);
+  padding: 10px 14px; background: var(--fg); color: var(--bg);
+}
+.kobra-scope .toast.show { transform: translate(-50%, 0); }
+.kobra-scope .toast.error .ic, .kobra-scope .toast.ok .ic { color: inherit; }
+.kobra-scope .progress-toast { bottom: 96px; border-radius: 12px; padding: 10px 14px; background: var(--fg); color: var(--bg); }
+@media (min-width: 760px) { .kobra-scope .toast, .kobra-scope .progress-toast { bottom: 48px; } }

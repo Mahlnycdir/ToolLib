@@ -1,5 +1,6 @@
 // Dateisystem auf dem Geraet (IndexedDB via LightningFS) und Projektverwaltung.
 import { LightningFS, JSZip } from '../vendor/vendor.js';
+import { t as tr, getLang } from '../../app/i18n/i18n.js';
 
 export const fs = new LightningFS('kobra');
 export const pfs = fs.promises;
@@ -139,55 +140,73 @@ export async function listProjects() {
 }
 
 export const validName = (name) => {
-  if (!name || !name.trim()) return 'Bitte einen Namen eingeben.';
-  if (/[\\:*?"<>|]/.test(name)) return 'Diese Zeichen sind nicht erlaubt: \\ : * ? " < > |';
-  if (name.startsWith('.') && name !== '.gitignore' && name !== '.env') return 'Der Name darf nicht mit einem Punkt beginnen.';
+  if (!name || !name.trim()) return tr('kobra.name.empty');
+  if (/[\\:*?"<>|]/.test(name)) return tr('kobra.name.chars');
+  if (name.startsWith('.') && name !== '.gitignore' && name !== '.env') return tr('kobra.name.dot');
   return null;
 };
 
-export const TEMPLATES = {
-  leer: { label: 'Leeres Projekt', files: { 'main.py': '' } },
+// Vorlagen für neue Projekte. Seit 0.24.0 auf Englisch oder Deutsch, je nach Toollibs Sprache beim Anlegen.
+const TEMPLATE_FILES = {
+ de: {
   hallo: {
-    label: 'Hallo Welt',
-    files: {
       'main.py': `"""Mein erstes Programm."""\n\n\ndef begruessung(name: str) -> str:\n    return f"Hallo, {name}!"\n\n\nif __name__ == "__main__":\n    name = input("Wie heißt du? ")\n    print(begruessung(name))\n`,
-    },
   },
   tkinter: {
-    label: 'tkinter-App',
-    files: {
       'main.py': `import tkinter as tk\nfrom tkinter import ttk, messagebox\n\n\nclass App(tk.Tk):\n    def __init__(self):\n        super().__init__()\n        self.title("Zähler")\n        self.geometry("320x200")\n        self.anzahl = tk.IntVar(value=0)\n\n        ttk.Label(self, text="Klicks:", font=("Helvetica", 14)).pack(pady=(20, 4))\n        ttk.Label(self, textvariable=self.anzahl, font=("Helvetica", 32, "bold")).pack()\n\n        leiste = ttk.Frame(self)\n        leiste.pack(pady=16)\n        ttk.Button(leiste, text="+1", command=self.plus).pack(side="left", padx=6)\n        ttk.Button(leiste, text="Zurücksetzen", command=self.reset).pack(side="left", padx=6)\n\n    def plus(self):\n        self.anzahl.set(self.anzahl.get() + 1)\n\n    def reset(self):\n        if messagebox.askyesno("Zurücksetzen", "Zähler wirklich auf 0 setzen?"):\n            self.anzahl.set(0)\n\n\nif __name__ == "__main__":\n    App().mainloop()\n`,
-    },
   },
   pyqt: {
-    label: 'PyQt-App',
-    files: {
       'main.py': `import sys\nfrom PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,\n                             QLabel, QLineEdit, QPushButton, QListWidget)\n\n\nclass Fenster(QWidget):\n    def __init__(self):\n        super().__init__()\n        self.setWindowTitle("Aufgaben")\n        self.resize(340, 380)\n        self.eingabe = QLineEdit(placeholderText="Neue Aufgabe …")\n        self.eingabe.returnPressed.connect(self.hinzufuegen)\n        knopf = QPushButton("Hinzufügen", clicked=self.hinzufuegen)\n        self.liste = QListWidget()\n        self.liste.itemDoubleClicked.connect(lambda it: self.liste.takeItem(self.liste.row(it)))\n        zeile = QHBoxLayout()\n        zeile.addWidget(self.eingabe)\n        zeile.addWidget(knopf)\n        layout = QVBoxLayout(self)\n        layout.addLayout(zeile)\n        layout.addWidget(self.liste)\n        layout.addWidget(QLabel("Doppeltippen entfernt eine Aufgabe."))\n\n    def hinzufuegen(self):\n        text = self.eingabe.text().strip()\n        if text:\n            self.liste.addItem(text)\n            self.eingabe.clear()\n\n\nif __name__ == "__main__":\n    app = QApplication(sys.argv)\n    fenster = Fenster()\n    fenster.show()\n    sys.exit(app.exec())\n`,
-    },
   },
   wissenschaft: {
-    label: 'Wissenschaft (numpy + matplotlib)',
-    files: {
       'main.py': `"""Gedämpfter harmonischer Oszillator: x'' + 2γx' + ω²x = 0"""\nimport numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.integrate import solve_ivp\n\nomega, gamma = 2.0, 0.15\n\n\ndef rhs(t, y):\n    x, v = y\n    return [v, -2 * gamma * v - omega**2 * x]\n\n\nt = np.linspace(0, 20, 800)\nloesung = solve_ivp(rhs, (t[0], t[-1]), [1.0, 0.0], t_eval=t)\n\nfig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 6))\nax1.plot(loesung.t, loesung.y[0], label="x(t)")\nax1.plot(t, np.exp(-gamma * t), "--", label="Einhüllende")\nax1.set_xlabel("t")\nax1.legend()\nax2.plot(loesung.y[0], loesung.y[1], color="tab:orange")\nax2.set_xlabel("x")\nax2.set_ylabel("v")\nax2.set_title("Phasenraum")\nfig.tight_layout()\nplt.show()\n`,
       'README.md': '# Oszillator\n\nLöst die Bewegungsgleichung numerisch und zeichnet Zeitverlauf und Phasenraum.\n',
-    },
   },
   module: {
-    label: 'Mehrere Module',
-    files: {
       'main.py': `from geometrie.formen import Kreis, Rechteck\nfrom hilfen import tabelle\n\nformen = [Kreis(1.5), Rechteck(2, 3), Kreis(0.5)]\nprint(tabelle(formen))\n`,
       'hilfen.py': `def tabelle(formen):\n    zeilen = [f"{'Form':<12}{'Fläche':>10}"]\n    for f in formen:\n        zeilen.append(f"{f.name:<12}{f.flaeche():>10.2f}")\n    return "\\n".join(zeilen)\n`,
       'geometrie/__init__.py': '',
       'geometrie/formen.py': `import math\nfrom dataclasses import dataclass\n\n\n@dataclass\nclass Kreis:\n    r: float\n    name: str = "Kreis"\n\n    def flaeche(self) -> float:\n        return math.pi * self.r ** 2\n\n\n@dataclass\nclass Rechteck:\n    a: float\n    b: float\n    name: str = "Rechteck"\n\n    def flaeche(self) -> float:\n        return self.a * self.b\n`,
-    },
   },
+ },
+ en: {
+  hallo: {
+      'main.py': `"""My first program."""\n\n\ndef greeting(name: str) -> str:\n    return f"Hello, {name}!"\n\n\nif __name__ == "__main__":\n    name = input("What is your name? ")\n    print(greeting(name))\n`,
+  },
+  tkinter: {
+      'main.py': `import tkinter as tk\nfrom tkinter import ttk, messagebox\n\n\nclass App(tk.Tk):\n    def __init__(self):\n        super().__init__()\n        self.title("Counter")\n        self.geometry("320x200")\n        self.count = tk.IntVar(value=0)\n\n        ttk.Label(self, text="Clicks:", font=("Helvetica", 14)).pack(pady=(20, 4))\n        ttk.Label(self, textvariable=self.count, font=("Helvetica", 32, "bold")).pack()\n\n        bar = ttk.Frame(self)\n        bar.pack(pady=16)\n        ttk.Button(bar, text="+1", command=self.plus).pack(side="left", padx=6)\n        ttk.Button(bar, text="Reset", command=self.reset).pack(side="left", padx=6)\n\n    def plus(self):\n        self.count.set(self.count.get() + 1)\n\n    def reset(self):\n        if messagebox.askyesno("Reset", "Really set the counter to 0?"):\n            self.count.set(0)\n\n\nif __name__ == "__main__":\n    App().mainloop()\n`,
+  },
+  pyqt: {
+      'main.py': `import sys\nfrom PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,\n                             QLabel, QLineEdit, QPushButton, QListWidget)\n\n\nclass Window(QWidget):\n    def __init__(self):\n        super().__init__()\n        self.setWindowTitle("Tasks")\n        self.resize(340, 380)\n        self.entry = QLineEdit(placeholderText="New task …")\n        self.entry.returnPressed.connect(self.add)\n        button = QPushButton("Add", clicked=self.add)\n        self.tasks = QListWidget()\n        self.tasks.itemDoubleClicked.connect(lambda it: self.tasks.takeItem(self.tasks.row(it)))\n        row = QHBoxLayout()\n        row.addWidget(self.entry)\n        row.addWidget(button)\n        layout = QVBoxLayout(self)\n        layout.addLayout(row)\n        layout.addWidget(self.tasks)\n        layout.addWidget(QLabel("Double-tap removes a task."))\n\n    def add(self):\n        text = self.entry.text().strip()\n        if text:\n            self.tasks.addItem(text)\n            self.entry.clear()\n\n\nif __name__ == "__main__":\n    app = QApplication(sys.argv)\n    window = Window()\n    window.show()\n    sys.exit(app.exec())\n`,
+  },
+  wissenschaft: {
+      'main.py': `"""Damped harmonic oscillator: x'' + 2γx' + ω²x = 0"""\nimport numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.integrate import solve_ivp\n\nomega, gamma = 2.0, 0.15\n\n\ndef rhs(t, y):\n    x, v = y\n    return [v, -2 * gamma * v - omega**2 * x]\n\n\nt = np.linspace(0, 20, 800)\nsolution = solve_ivp(rhs, (t[0], t[-1]), [1.0, 0.0], t_eval=t)\n\nfig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 6))\nax1.plot(solution.t, solution.y[0], label="x(t)")\nax1.plot(t, np.exp(-gamma * t), "--", label="envelope")\nax1.set_xlabel("t")\nax1.legend()\nax2.plot(solution.y[0], solution.y[1], color="tab:orange")\nax2.set_xlabel("x")\nax2.set_ylabel("v")\nax2.set_title("Phase space")\nfig.tight_layout()\nplt.show()\n`,
+      'README.md': '# Oscillator\n\nSolves the equation of motion numerically and plots the motion over time and in phase space.\n',
+  },
+  module: {
+      'main.py': `from geometry.shapes import Circle, Rectangle\nfrom helpers import table\n\nshapes = [Circle(1.5), Rectangle(2, 3), Circle(0.5)]\nprint(table(shapes))\n`,
+      'helpers.py': `def table(shapes):\n    rows = [f"{'Shape':<12}{'Area':>10}"]\n    for s in shapes:\n        rows.append(f"{s.name:<12}{s.area():>10.2f}")\n    return "\\n".join(rows)\n`,
+      'geometry/__init__.py': '',
+      'geometry/shapes.py': `import math\nfrom dataclasses import dataclass\n\n\n@dataclass\nclass Circle:\n    r: float\n    name: str = "Circle"\n\n    def area(self) -> float:\n        return math.pi * self.r ** 2\n\n\n@dataclass\nclass Rectangle:\n    a: float\n    b: float\n    name: str = "Rectangle"\n\n    def area(self) -> float:\n        return self.a * self.b\n`,
+  },
+ },
+};
+const templateFiles = (key) => ({ ...TEMPLATE_FILES[getLang() === 'de' ? 'de' : 'en'][key] });
+const template = (labelKey, key) => ({ get label() { return tr(labelKey); }, get files() { return key ? templateFiles(key) : { 'main.py': '' }; } });
+export const TEMPLATES = {
+  leer: template('kobra.tpl.empty'),
+  hallo: template('kobra.tpl.hello', 'hallo'),
+  tkinter: template('kobra.tpl.tkinter', 'tkinter'),
+  pyqt: template('kobra.tpl.pyqt', 'pyqt'),
+  wissenschaft: template('kobra.tpl.science', 'wissenschaft'),
+  module: template('kobra.tpl.modules', 'module'),
 };
 
 const GITIGNORE = '__pycache__/\n*.pyc\n.DS_Store\n';
 
 export async function createProject(name, template = 'hallo') {
   const dir = projectPath(name);
-  if (await exists(dir)) throw new Error('Ein Projekt mit diesem Namen gibt es schon.');
+  if (await exists(dir)) throw new Error(tr('kobra.project.exists'));
   await mkdirp(dir);
   const t = TEMPLATES[template] || TEMPLATES.leer;
   for (const [p, content] of Object.entries(t.files)) await writeFile(`${dir}/${p}`, content, { noFlush: true });
@@ -201,13 +220,13 @@ export async function deleteProject(name) {
 
 export async function renameProject(oldName, newName) {
   const dst = projectPath(newName);
-  if (await exists(dst)) throw new Error('Ein Projekt mit diesem Namen gibt es schon.');
+  if (await exists(dst)) throw new Error(tr('kobra.project.exists'));
   await move(projectPath(oldName), dst);
 }
 
 export async function duplicateProject(name, newName) {
   const dst = projectPath(newName);
-  if (await exists(dst)) throw new Error('Ein Projekt mit diesem Namen gibt es schon.');
+  if (await exists(dst)) throw new Error(tr('kobra.project.exists'));
   await copyTree(projectPath(name), dst, { skipGit: true });
 }
 
@@ -225,7 +244,7 @@ export async function exportZip(name) {
 export async function importZip(file, nameHint) {
   const zip = await JSZip.loadAsync(file);
   const entries = Object.values(zip.files).filter(e => !e.dir && !e.name.startsWith('__MACOSX/') && !e.name.endsWith('.DS_Store'));
-  if (!entries.length) throw new Error('Das ZIP-Archiv ist leer.');
+  if (!entries.length) throw new Error(tr('kobra.zip.empty'));
   // gemeinsamen Oberordner entfernen
   const first = entries[0].name.split('/');
   let prefix = '';

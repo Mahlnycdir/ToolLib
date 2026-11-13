@@ -2,6 +2,7 @@
 import { h, loadPref } from './ui.js';
 import { icon } from './icons.js';
 import { onWorker, postWorker, restartWorker, startWorker, workerAlive, workerReady, workerToken } from '../../app/services/python-host.js';
+import { t as tr, getLang } from '../../app/i18n/i18n.js';
 
 const MAX_CONSOLE_CHARS = 400000;
 
@@ -19,8 +20,8 @@ export class ConsoleView {
     this.lastBlock = null;
     this.replHistory = [];
     this.replPos = 0;
-    const replInput = h('textarea', { class: 'repl-input', rows: '1', placeholder: 'Python-Befehl eingeben …', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'send' });
-    const replBtn = h('button', { class: 'icon-btn accent', type: 'button', 'aria-label': 'Ausführen', html: icon('enter') });
+    const replInput = h('textarea', { class: 'repl-input', rows: '1', placeholder: tr('kobra.console.replPlaceholder'), autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'send' });
+    const replBtn = h('button', { class: 'icon-btn accent', type: 'button', 'aria-label': tr('kobra.run'), html: icon('enter') });
     this.repl = h('div', { class: 'repl-row' }, h('span', { class: 'repl-prompt', text: '>>>' }), replInput, replBtn);
     this.replInput = replInput;
     const submit = () => {
@@ -144,7 +145,7 @@ export class ConsoleView {
   runHeader(file) {
     this.lastBlock = null;
     const d = new Date();
-    const time = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const time = d.toLocaleTimeString(getLang() === 'de' ? 'de-DE' : 'en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     this.out.append(h('div', { class: 'con-run' }, h('span', { text: `▶ ${file}` }), h('span', { class: 'muted', text: time })));
     this.scroll(true);
   }
@@ -153,7 +154,7 @@ export class ConsoleView {
     this.lastBlock = null;
     const ok = result.exit === 0;
     const secs = ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
-    const text = result.gui ? `Programm läuft im Fenster weiter (${secs})` : ok ? `Fertig nach ${secs}` : `Beendet mit Fehler (Code ${result.exit}) nach ${secs}`;
+    const text = result.gui ? tr('kobra.console.windowGoesOn', { secs }) : ok ? tr('kobra.console.doneAfter', { secs }) : tr('kobra.console.failedAfter', { exit: result.exit, secs });
     this.out.append(h('div', { class: `con-end ${ok ? 'ok' : 'bad'}`, text }));
     this.scroll(true);
   }
@@ -165,7 +166,7 @@ export class ConsoleView {
   }
 
   missingModule(mod, pkg) {
-    const row = this.info(`Das Modul „${mod}“ ist nicht installiert.`, 'warn');
+    const row = this.info(tr('kobra.console.missingModule', { mod }), 'warn');
     const b = h('button', { class: 'btn small primary', type: 'button', text: `${pkg} installieren` });
     b.addEventListener('click', () => { b.disabled = true; this.onInstall?.(pkg); });
     row.append(b);
@@ -176,9 +177,9 @@ export class ConsoleView {
     this.cancelInput();
     return new Promise((resolve) => {
       this.stick = true;
-      const field = h('input', { class: 'stdin-field', type: 'text', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'send', 'aria-label': 'Eingabe für das Programm' });
-      const send = h('button', { class: 'btn small primary', type: 'button', text: 'Senden' });
-      const eof = h('button', { class: 'btn small', type: 'button', text: 'Ende (EOF)', title: 'Eingabe beenden' });
+      const field = h('input', { class: 'stdin-field', type: 'text', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'send', 'aria-label': tr('kobra.console.input') });
+      const send = h('button', { class: 'btn small primary', type: 'button', text: tr('kobra.console.send') });
+      const eof = h('button', { class: 'btn small', type: 'button', text: tr('kobra.console.eof'), title: tr('kobra.console.eofHint') });
       const row = h('div', { class: 'stdin-row' }, field, send, eof);
       this.inputRow = row;
       this.lastBlock = null;
@@ -213,10 +214,10 @@ export class ConsoleView {
     }
     this.stick = this.atBottom();
     this.lastBlock = null;
-    const img = h('img', { src, alt: title || 'Abbildung', width: w, height: hgt });
+    const img = h('img', { src, alt: title || tr('kobra.console.figure'), width: w, height: hgt });
     const fig = h('figure', { class: 'con-figure' }, img);
     const bar = h('div', { class: 'fig-bar' });
-    const save = h('button', { class: 'icon-btn small', type: 'button', 'aria-label': 'Bild sichern', html: icon('download') });
+    const save = h('button', { class: 'icon-btn small', type: 'button', 'aria-label': tr('kobra.console.saveImage'), html: icon('download') });
     save.addEventListener('click', async () => {
       const blob = await (await fetch(img.src)).blob();
       const { shareOrDownload } = await import('./ui.js');
@@ -224,7 +225,7 @@ export class ConsoleView {
     });
     bar.append(save);
     if (key && onClose) {
-      const close = h('button', { class: 'icon-btn small', type: 'button', 'aria-label': 'Abbildung schließen', html: icon('close') });
+      const close = h('button', { class: 'icon-btn small', type: 'button', 'aria-label': tr('kobra.console.closeFigure'), html: icon('close') });
       close.addEventListener('click', () => onClose(key));
       bar.append(close);
     }
@@ -265,7 +266,7 @@ export class Runner {
   start(opts = {}) {
     this.lastOpts = opts;
     if (!this.offWorker) this.offWorker = onWorker((m) => this.onHostMessage(m));
-    if (!workerReady()) this.setState('loading', 'Python wird geladen …');
+    if (!workerReady()) this.setState('loading', tr('kobra.python.loading'));
     startWorker();
   }
 
@@ -276,7 +277,7 @@ export class Runner {
     if (m.type === 'restart') { if (m.by !== 'kobra') this.afterRestart(); return; }
     if (m.type === 'worker-error') {
       this.setState('error');
-      this.console.info(`Python-Worker meldet einen Fehler: ${m.message || 'unbekannt'}`, 'warn');
+      this.console.info(tr('kobra.python.workerError', { v: m.message || tr('kobra.unknown') }), 'warn');
       return;
     }
     if (m.owner && m.owner !== 'kobra') return;
@@ -289,7 +290,7 @@ export class Runner {
     this.pending.clear();
     this.console.cancelInput();
     this.gui.reset();
-    this.setState('loading', 'Python wird geladen …');
+    this.setState('loading', tr('kobra.python.loading'));
     this.onRestart?.();
   }
 
@@ -343,7 +344,7 @@ export class Runner {
   }
 
   stop() {
-    this.console.info('Programm gestoppt.', 'warn');
+    this.console.info(tr('kobra.console.stopped'), 'warn');
     this.restart(this.lastOpts);
   }
 
@@ -433,7 +434,7 @@ export class Runner {
       case 'sync-req': this.onSyncRequest(msg.id, msg.kind, msg.payload); break;
       case 'sync-lost':
         this.sync = false;
-        this.console.info('Der Hintergrunddienst antwortet nicht. input() und Dialoge funktionieren erst nach einem Neuladen der App wieder.', 'warn');
+        this.console.info(tr('kobra.python.syncLost'), 'warn');
         break;
       case 'notify':
         if (msg.data.type === 'missing-module') this.console.missingModule(msg.data.module, msg.data.package);
@@ -454,7 +455,7 @@ export class Runner {
         const p = this.pending.get(msg.id);
         if (!p) break;
         this.pending.delete(msg.id);
-        if (msg.ok) p.resolve(msg.value); else p.reject(new Error(msg.error || 'Fehler'));
+        if (msg.ok) p.resolve(msg.value); else p.reject(new Error(msg.error || tr('kobra.error')));
         break;
       }
       default: break;

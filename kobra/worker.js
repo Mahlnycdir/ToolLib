@@ -32,6 +32,9 @@ let owner = 'kobra';       // wem der laufende oder letzte Lauf gehört
 let guiOwner = 'kobra';    // wem die offenen Fenster und Animationen gehören
 let snippets = null;      // toollib_snippets (Toollibs Snippets mit ihren Definitionen)
 let bundled = new Set();  // Pakete, die Toollib in vendor/pyodide mitliefert
+// Texte kommen mit init von der Seite (0.24.0, Englisch oder Deutsch wie Toollib); T('key', { name }) setzt sie ein
+let TEXTS = {};
+const T = (key, vars = {}) => String(TEXTS[key] || key).replace(/\{(\w+)\}/g, (_, k) => (k in vars ? vars[k] : ''));
 const TOOLLIB_RUN = `${HOME}/.toollib-run`;   // Arbeitsordner der Snippets, außerhalb von Kobras Projekten
 
 // Nachrichten eines Laufs bekommen ihren owner; "result", "files" gehören immer Kobra; wer owner selbst setzt
@@ -137,19 +140,20 @@ const jsModule = {
 async function boot(msg) {
   token = msg.token;
   syncBase = msg.syncBase;
+  TEXTS = msg.texts || {};
   if (msg.indexURL) INDEX_URL = msg.indexURL;
-  post({ type: 'status', state: 'loading', msg: 'Python wird geladen …', code: 'python.loading', owner: '' });
+  post({ type: 'status', state: 'loading', msg: T('loading'), code: 'python.loading', owner: '' });
   let loadPyodide;
   try {
     ({ loadPyodide } = await import(`${INDEX_URL}pyodide.mjs`));
   } catch (e) {
-    post({ type: 'fatal', msg: 'Python konnte nicht geladen werden. Beim ersten Start braucht die App Internet; danach läuft sie offline.', code: 'python.err.load', detail: String(e) });
+    post({ type: 'fatal', msg: T('loadFailed'), code: 'python.err.load', detail: String(e) });
     return;
   }
   try {
     pyodide = await loadPyodide({ indexURL: INDEX_URL, env: { HOME, PYTHONIOENCODING: 'utf-8' } });
   } catch (e) {
-    post({ type: 'fatal', msg: 'Python konnte nicht gestartet werden.', code: 'python.err.load', detail: String(e) });
+    post({ type: 'fatal', msg: T('startFailed'), code: 'python.err.load', detail: String(e) });
     return;
   }
   pyodide.setStdout(stdoutWriter);
@@ -159,7 +163,7 @@ async function boot(msg) {
     stdin: () => {
       if (!syncAvailable) {
         if (owner === 'toollib') { post({ type: 'notify', data: { type: 'no-input' } }); return null; }
-        errBuf += '\n[input() braucht den Hintergrunddienst der App. Bitte die App einmal neu laden.]\n';
+        errBuf += `\n[${T('inputNeedsSync')}]\n`;
         flushOut();
         return null;
       }
@@ -192,7 +196,7 @@ async function boot(msg) {
     }
     if (msg.snippetsURL) pyodide.FS.writeFile(`${LIB}/toollib_snippets.py`, await (await fetch(msg.snippetsURL)).text());
   } catch (e) {
-    post({ type: 'fatal', msg: 'Die Python-Hilfsdateien fehlen.', code: 'python.err.bundle', detail: String(e) });
+    post({ type: 'fatal', msg: T('helpersMissing'), code: 'python.err.bundle', detail: String(e) });
     return;
   }
   pyodide.FS.mkdirTree(PROJECTS);
@@ -204,7 +208,7 @@ async function boot(msg) {
 
   // vom Nutzer installierte Pakete wiederherstellen
   if (msg.packages && msg.packages.length) {
-    post({ type: 'status', state: 'loading', msg: 'Pakete werden geladen …', code: 'python.loading', owner: '' });
+    post({ type: 'status', state: 'loading', msg: T('packagesLoading'), code: 'python.loading', owner: '' });
     await installPackages(msg.packages, true);
   }
   readyResolve();
@@ -319,7 +323,7 @@ async function installPackages(names, quiet) {
           await pyodide.loadPackage('micropip', { messageCallback: () => {} });
           micropip = pyodide.pyimport('micropip');
         }
-        if (!quiet) post({ type: 'progress', msg: `Installiere ${name} von PyPI …`, owner: 'kobra' });
+        if (!quiet) post({ type: 'progress', msg: T('installing', { name }), owner: 'kobra' });
         await micropip.install(name);
       }
       results.push({ name, ok: true });
@@ -333,13 +337,13 @@ async function installPackages(names, quiet) {
 
 function explainPipError(name, msg) {
   if (/Can't find a pure Python 3 wheel|No matching distribution|wheel for/i.test(msg)) {
-    return `„${name}“ enthält kompilierten Code und ist nicht für den Browser gebaut. Nur reine Python-Pakete und die vorkompilierten Pyodide-Pakete lassen sich installieren.`;
+    return T('compiled', { name });
   }
   if (/No known package|404|Not Found|Can't fetch metadata/i.test(msg)) {
-    return `Kein Paket namens „${name}“ auf PyPI gefunden. Schreibweise prüfen.`;
+    return T('noSuchPackage', { name });
   }
   if (/NetworkError|Failed to fetch|Load failed/i.test(msg)) {
-    return 'Keine Internetverbindung. Pakete lassen sich nur online installieren.';
+    return T('offline');
   }
   const last = msg.trim().split('\n').pop();
   return last.length > 300 ? last.slice(0, 300) + '…' : last;
@@ -368,14 +372,14 @@ async function loadImportsFor(project, entry) {
     if (pkg && !pyodide.loadedPackages[pkg] && !missing.includes(pkg)) missing.push(pkg);
   }
   if (!missing.length) return;
-  post({ type: 'progress', msg: `Lade ${missing.join(', ')} …` });
+  post({ type: 'progress', msg: T('loadingPkgs', { names: missing.join(', ') }) });
   const failed = [];
   await pyodide.loadPackage(missing, {
     messageCallback: m => post({ type: 'progress', msg: m }),
     errorCallback: m => { failed.push(m); },
   }).catch(e => failed.push(String(e)));
   if (failed.length) {
-    post({ type: 'stderr', text: `Einige Pakete konnten nicht geladen werden (${missing.filter(p => !pyodide.loadedPackages[p]).join(', ')}). Beim ersten Laden ist Internet nötig.\n` });
+    post({ type: 'stderr', text: `${T('someFailed', { names: missing.filter(p => !pyodide.loadedPackages[p]).join(', ') })}\n` });
   }
 }
 
@@ -574,12 +578,12 @@ async function handleLsp(msg) {
     if (!hasModuleCached('jedi')) { post({ type: 'result', id: msg.id, ok: true, value: msg.method === 'complete' ? [] : null }); return; }
   }
   if (msg.method === 'format' && !hasModuleCached('black')) {
-    post({ type: 'progress', msg: 'Lade Formatierer (black) …', owner: 'kobra' });
+    post({ type: 'progress', msg: T('formatterLoading'), owner: 'kobra' });
     try {
       await installTool('black');
       moduleCache.black = true;
     } catch (e) {
-      post({ type: 'result', id: msg.id, ok: false, error: 'Der Formatierer konnte nicht geladen werden (Internet nötig).' });
+      post({ type: 'result', id: msg.id, ok: false, error: T('formatterFailed') });
       return;
     }
   }
