@@ -5,6 +5,7 @@
 // dem das Repository auf GitHub gehört, sonst das erste. Ein Token geht nur an den Rechner seines Kontos
 // (github.com, wenn nichts anderes eingetragen ist) und nie an eine andere Adresse.
 import { loadPref, savePref } from './ui.js';
+import { t as tr } from '../../app/i18n/i18n.js';
 
 export const MAIN = 'main';
 const ID = /^[a-z0-9-]{1,40}$/;
@@ -46,7 +47,7 @@ export function account(id) { return accounts().find((a) => a.id === id) || null
 // What an account is called on a button: its label, else its GitHub name, else its name for commits.
 export function accountLabel(a) {
   if (!a) return '';
-  return a.label || (a.login ? `@${a.login}` : '') || a.name || (a.id === MAIN ? 'Erstes Konto' : 'Konto');
+  return a.label || (a.login ? `@${a.login}` : '') || a.name || (a.id === MAIN ? tr('kobra.acc.first') : tr('kobra.acc.account'));
 }
 
 export function saveAccount(a) {
@@ -56,11 +57,11 @@ export function saveAccount(a) {
     savePref('git.host', acc.host === 'github.com' ? '' : acc.host);
     return acc;
   }
-  if (!ID.test(acc.id)) throw new Error('Ungültiges Konto');
+  if (!ID.test(acc.id)) throw new Error(tr('kobra.acc.invalid'));
   const list = extraAccounts();
   const i = list.findIndex((x) => x.id === acc.id);
   if (i >= 0) list[i] = acc;
-  else if (list.length >= MAX_ACCOUNTS) throw new Error(`Höchstens ${MAX_ACCOUNTS + 1} Konten`);
+  else if (list.length >= MAX_ACCOUNTS) throw new Error(tr('kobra.acc.max', { v: MAX_ACCOUNTS + 1 }));
   else list.push(acc);
   savePref('git.accounts', list);
   return acc;
@@ -163,21 +164,21 @@ export function authorOf(acc) {
 
 // Token prüfen: fragt GitHub, wem es gehört (nur bei github.com; das Token geht an api.github.com und sonst nirgends hin).
 export async function checkToken(acc) {
-  if (!acc.token) return { ok: false, reason: 'Kein Token eingetragen.' };
-  if (acc.host !== 'github.com') return { ok: false, reason: 'Prüfen geht nur bei github.com.' };
+  if (!acc.token) return { ok: false, reason: tr('kobra.acc.noToken') };
+  if (acc.host !== 'github.com') return { ok: false, reason: tr('kobra.acc.githubOnly') };
   let res;
   try {
     res = await fetch('https://api.github.com/user', {
       headers: { Authorization: `Bearer ${acc.token}`, Accept: 'application/vnd.github+json' },
       cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer',
     });
-  } catch { return { ok: false, reason: 'GitHub ist nicht erreichbar.' }; }
-  if (res.status === 401) return { ok: false, reason: 'GitHub kennt dieses Token nicht (abgelaufen oder falsch).' };
-  if (!res.ok) return { ok: false, reason: `GitHub antwortet mit ${res.status}.` };
+  } catch { return { ok: false, reason: tr('kobra.acc.unreachable') }; }
+  if (res.status === 401) return { ok: false, reason: tr('kobra.acc.badToken') };
+  if (!res.ok) return { ok: false, reason: tr('kobra.acc.status', { status: res.status }) };
   let u;
-  try { u = await res.json(); } catch { return { ok: false, reason: 'Unerwartete Antwort von GitHub.' }; }
+  try { u = await res.json(); } catch { return { ok: false, reason: tr('kobra.acc.unexpected') }; }
   const login = str(u?.login, 60);
-  if (!/^[A-Za-z0-9-]{1,39}$/.test(login)) return { ok: false, reason: 'Unerwartete Antwort von GitHub.' };
+  if (!/^[A-Za-z0-9-]{1,39}$/.test(login)) return { ok: false, reason: tr('kobra.acc.unexpected') };
   const id = Number.isInteger(u.id) && u.id > 0 ? u.id : null;
   return { ok: true, login, name: str(u.name), email: id ? `${id}+${login}@users.noreply.github.com` : `${login}@users.noreply.github.com` };
 }

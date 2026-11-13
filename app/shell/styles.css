@@ -1923,3 +1923,9 @@ body.dragging-now, body.dragging-now * { cursor: grabbing !important; -webkit-us
      ist dann leer und null hoch). Tippst du in der Befehlszeile selbst, bleibt sie natürlich da. */
   .app.kb-open[data-kobra="1"] .cmd:not(:focus-within) { display: none; }
 }
+
+/* The code repository of a project (0.24.0) */
+.project-repo { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.project-repo > .icon { color: var(--muted); }
+.project-repo a { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; overflow-wrap: anywhere; }
+.project-repo .project-repo-open { margin-left: auto; }

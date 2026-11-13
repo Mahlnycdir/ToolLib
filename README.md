@@ -131,6 +131,20 @@ Der Rahmen ist um eine Arbeitsweise gebaut: sammeln, festhalten, anwenden, und z
   - Die App kennzeichnet ihre Anfragen (`targetAddressSpace`), fragt die Erlaubnis ab (`loopback-network`, `local-network`) und erklärt im Verbindungstest, wo man sie erteilt.
   - Der Knopf „Im neuen Tab prüfen“ öffnet `…/ping`: Eine Antwort mit „error“ heißt, Helfer und Zertifikat sind in Ordnung.
 
+## Kobra fertig: Projekte, Englisch und Deutsch, Aussehen (0.24.0)
+
+- **Kobra und Projekte:** Ein Projekt in Toollib kann ein Code-Repository verknüpfen (Menü des Projekts › „Code-Repository verknüpfen …“).
+  - Zur Wahl stehen die Repositorys aus Kobras Konten oder eine eigene Adresse (nur https).
+  - Im Projekt steht es dann mit „In Kobra öffnen“: Kobra öffnet das Projekt, das zu diesem Repository gehört, oder bietet das Klonen an.
+- **Aus Kobra in den Spickzettel:** Mehr › „Als Snippet in Toollib“ nimmt die Auswahl (ohne Auswahl die ganze Datei) als Entwurf für ein neues Snippet.
+- **Englisch und Deutsch:** Alle Texte von Kobra stehen in `app/i18n/strings.json` und folgen Toollibs Sprache.
+  - Ein Wechsel gilt sofort, ohne Neuladen; Code, Konsole und ein laufendes Programm bleiben.
+  - Neue Projekte aus Vorlagen, das Willkommensprojekt („First steps“ / „Erste Schritte“) und Kobras eigene Bausteine kommen in der gewählten Sprache. Bestehende Projekte bleiben, wie sie sind.
+  - Das Projekt für Snippets mit Fenstern heißt auf Englisch „Snippets“; ein „Spickzettel“ aus 0.23.0 wird weiter benutzt.
+- **Aussehen wie Toollib:** Knöpfe, Karten, Felder, Dialoge, Blätter und Meldungen haben Toollibs Maße. Blätter schweben mit Abstand zum Rand, Meldungen erscheinen unten. Kobras Gelb bleibt.
+  - Behoben: Toollibs Seitenregeln griffen in Kobra, wo Klassen gleich heißen (`.settings`, `.btn`, `.console-out` …). Die Einstellungen standen in zwei ungleichen Spalten, Knöpfe mit langem Text schnitten ab, und bei leerer Konsole sprang die Eingabezeile nach oben.
+- **Das alte Repository `Kobra`** hat oben in der README einen Hinweis: Kobra lebt jetzt in Toollib, Projekte sind im selben Browser schon da (gleiche Adresse, gleicher Speicher), der Git-Proxy funktioniert weiter.
+
 ## Schreiben am iPhone geht wieder (0.23.1)
 
 - **Der Editor behält seine Höhe:** Beim ersten Tipp in den Text schrieb CodeMirror seine Klassen neu und warf dabei `md-editor` hinaus. Der Editor wuchs dann auf die Länge des ganzen Texts, sein eigenes Scrollen endete, der Rahmen schnitt ihn ab: Scrollen ging nicht mehr, und alle Zeilen wurden auf einmal gezeichnet (es hing). Betraf jede Seite, Quelltext und Notiz mit diesem Editor, auch am Desktop. Die Klassen kommen jetzt über CodeMirror selbst (`EditorView.editorAttributes`).
@@ -284,7 +298,7 @@ Kobra (die Python-IDE) liegt seit 0.11.0 in `kobra/` und ist seit 0.22.0 eine An
 - Bausteine: der Knopf neben „Start“ oder ⌘/Strg+J. Sie kommen aus dem Spickzettel (das Wissen auf diesem Gerät, nach Sync); die Suche versteht Probleme in eigenen Worten wie die Befehlszeile. Ein Tipp fügt den Code an der Schreibmarke ein, Tab springt durch die Platzhalter, „im Spickzettel“ öffnet Erklärung, Beispiel und Stolperfallen. Ohne abgeglichenes Wissen zeigt Kobra seine eigenen Bausteine.
 - Python kommt aus `vendor/pyodide` (dafür jetzt auch micropip und jedi), Toollibs Service Worker liefert Kobra auch offline aus und trägt den Kanal für `input()` und Fenster (seit 0.23.0 `__toollib__/`, derselbe wie für die Snippets). Pakete außerhalb von `vendor/pyodide` lädt pip aus dem Netz.
 - Projekte: Git › Klonen mit dem Konto, dem das Repository gehört, oder einem gewählten (seit 0.20.0 mehrere Konten, Einstellungen in Kobra). Die Projekte liegen im Speicher dieser Adresse; eine installierte App auf dem iPhone hat ihren eigenen Speicher.
-- Seit 0.23.0 teilen Kobra und der Spickzettel ein Python. Noch nicht angeglichen (geplant): Kobras Texte sind deutsch und fest im Code; eigene Dienste für Speicher, Git und Einstellungen.
+- Seit 0.23.0 teilen Kobra und der Spickzettel ein Python, seit 0.24.0 auch Sprache und Aussehen. Eigen bleiben Kobras Speicher (die Projekte im Browser-Speicher „kobra“), Git und Kobras Einstellungen; so bleiben bestehende Projekte, wie sie sind.
 
 ## Formelsammlung
 

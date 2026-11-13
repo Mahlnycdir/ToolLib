@@ -2,6 +2,7 @@
 import { h, esc, toast } from './ui.js';
 import { icon } from './icons.js';
 import { overlayHost } from './markup.js';
+import { t as tr } from '../../app/i18n/i18n.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const PT = 1.2;            // Tk-Punkte -> CSS-Pixel
@@ -156,7 +157,8 @@ export function keyInfo(e) {
 const tclStr = (v) => (v === true ? '1' : v === false ? '0' : typeof v === 'number' && Number.isInteger(v) ? String(v) : String(v ?? ''));
 const anc = (a) => { const v = String(a || '').toLowerCase(); return v === 'center' ? '' : v; };
 
-const MSG_LABELS = { ok: 'OK', cancel: 'Abbrechen', yes: 'Ja', no: 'Nein', retry: 'Wiederholen', abort: 'Abbrechen', ignore: 'Ignorieren' };
+// Beschriftungen beim Gebrauch holen, damit ein Sprachwechsel in Toollib gilt (0.24.0)
+const msgLabel = (k) => ({ ok: 'OK', cancel: tr('kobra.cancel'), yes: tr('kobra.yes'), no: tr('kobra.no'), retry: tr('kobra.gui.retry'), abort: tr('kobra.cancel'), ignore: tr('kobra.gui.ignore') }[k]);
 
 // ================================================================ GuiManager
 export class GuiManager {
@@ -182,16 +184,16 @@ export class GuiManager {
       b.addEventListener('click', fn);
       return b;
     };
-    this.keypadBtn = btn('dpad', 'Pfeiltasten', () => this.toggleKeypad());
-    this.kbdBtn = btn('keyboardDown', 'Tastatur', () => this.focusKeyCatcher());
-    this.zoomBtn = btn('zoom', 'Zoom: anpassen / 100 %', () => { this.zoomFit = !this.zoomFit; this.zoomBtn.classList.toggle('on', !this.zoomFit); this.scheduleLayout(); });
-    const minBtn = btn('minimize', 'Ausblenden', () => this.hide());
-    const stopBtn = btn('stop', 'Programm stoppen', () => this.onStop?.());
+    this.keypadBtn = btn('dpad', tr('kobra.gui.arrows'), () => this.toggleKeypad());
+    this.kbdBtn = btn('keyboardDown', tr('kobra.gui.keyboard'), () => this.focusKeyCatcher());
+    this.zoomBtn = btn('zoom', tr('kobra.gui.zoom'), () => { this.zoomFit = !this.zoomFit; this.zoomBtn.classList.toggle('on', !this.zoomFit); this.scheduleLayout(); });
+    const minBtn = btn('minimize', tr('kobra.gui.hide'), () => this.hide());
+    const stopBtn = btn('stop', tr('kobra.gui.stop'), () => this.onStop?.());
     stopBtn.classList.add('danger');
-    const closeBtn = btn('close', 'Fenster schließen', () => this.closeActive());
+    const closeBtn = btn('close', tr('kobra.gui.closeWindow'), () => this.closeActive());
     this.bar = h('div', { class: 'gui-bar' }, this.tabsEl, h('div', { class: 'gui-bar-actions' }, this.keypadBtn, this.kbdBtn, this.zoomBtn, minBtn, stopBtn, closeBtn));
     this.stage = h('div', { class: 'gui-stage' });
-    this.keyCatcher = h('input', { class: 'key-catcher', type: 'text', autocapitalize: 'off', autocorrect: 'off', 'aria-label': 'Tastatureingabe für das Programm' });
+    this.keyCatcher = h('input', { class: 'key-catcher', type: 'text', autocapitalize: 'off', autocorrect: 'off', 'aria-label': tr('kobra.gui.keyInput') });
     this.keyCatcher.addEventListener('keydown', (e) => { this.routeKey(e, 'key'); if (e.key.length > 1) e.preventDefault(); });
     this.keyCatcher.addEventListener('keyup', (e) => this.routeKey(e, 'keyup'));
     this.keyCatcher.addEventListener('input', () => { this.keyCatcher.value = ''; });
@@ -201,7 +203,7 @@ export class GuiManager {
 
   buildKeypad() {
     const pad = h('div', { class: 'gui-keypad', hidden: true });
-    const keys = [['Up', '↑'], ['Left', '←'], ['Down', '↓'], ['Right', '→'], ['space', 'Leer'], ['Return', '⏎'], ['Escape', 'Esc']];
+    const keys = [['Up', '↑'], ['Left', '←'], ['Down', '↓'], ['Right', '→'], ['space', tr('kobra.gui.space')], ['Return', '⏎'], ['Escape', 'Esc']];
     for (const [sym, label] of keys) {
       const b = h('button', { class: `kp kp-${sym}`, type: 'button', text: label });
       const fire = (t) => this.routeKeysym(sym, t);
@@ -278,7 +280,7 @@ export class GuiManager {
     this.tabsEl.textContent = '';
     const list = [...this.windows.values()].filter(w => !w.withdrawn);
     for (const w of list) {
-      const b = h('button', { class: `gui-tab${w.id === this.active ? ' on' : ''}`, type: 'button', text: w.title || 'Fenster' });
+      const b = h('button', { class: `gui-tab${w.id === this.active ? ' on' : ''}`, type: 'button', text: w.title || tr('kobra.gui.window') });
       b.addEventListener('click', () => { this.active = w.id; this.renderTabs(); this.scheduleLayout(); });
       this.tabsEl.append(b);
     }
@@ -324,7 +326,7 @@ export class GuiManager {
   // ------------------------------------------------------------ Operationen
   apply(ops) {
     for (const op of ops) {
-      try { this.applyOp(op); } catch (e) { console.warn('GUI-Operation fehlgeschlagen', op, e); }
+      try { this.applyOp(op); } catch (e) { console.warn(tr('kobra.gui.opFailed'), op, e); }
     }
     this.scheduleLayout();
   }
@@ -509,7 +511,7 @@ export class GuiManager {
           el.append(h('div', { class: 'spin-btns' }, up, down));
         }
         if (cls === 'Combobox') {
-          const sel = h('select', { class: 'combo-select', tabindex: '-1', 'aria-label': 'Auswahl' });
+          const sel = h('select', { class: 'combo-select', tabindex: '-1', 'aria-label': tr('kobra.gui.choice') });
           node.selectEl = sel;
           sel.addEventListener('focus', () => this.sendEvent({ k: 'post', w: node.wid }));
           sel.addEventListener('change', () => {
@@ -2256,8 +2258,8 @@ export class GuiManager {
         if (p.message) body.append(h('p', { class: 'dlg-msg', text: p.message }));
         if (p.detail) body.append(h('p', { class: 'dlg-detail', text: p.detail }));
         const btns = p.buttons || ['ok'];
-        const codes = btns.every(b => MSG_LABELS[b]);
-        btns.forEach((b, i) => btn(codes ? MSG_LABELS[b] : b, b, i === 0));
+        const codes = btns.every(b => msgLabel(b));
+        btns.forEach((b, i) => btn(codes ? msgLabel(b) : b, b, i === 0));
       } else if (p.type === 'input') {
         if (p.prompt) body.append(h('label', { class: 'field-label', text: p.prompt }));
         let field;
@@ -2270,15 +2272,15 @@ export class GuiManager {
           if (p.kind === 'int' || p.kind === 'float') field.setAttribute('inputmode', p.kind === 'int' ? 'numeric' : 'decimal');
         }
         body.append(field);
-        if (p.min != null || p.max != null) body.append(h('div', { class: 'field-hint', text: `Bereich: ${p.min ?? '−∞'} bis ${p.max ?? '∞'}` }));
-        btn('Abbrechen', null, false);
+        if (p.min != null || p.max != null) body.append(h('div', { class: 'field-hint', text: tr('kobra.gui.range', { v: p.min ?? '−∞', v2: p.max ?? '∞' }) }));
+        btn(tr('kobra.cancel'), null, false);
         btn('OK', () => field.value.replace(',', p.kind === 'float' ? '.' : ','), true);
         field.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); done(p.kind === 'float' ? field.value.replace(',', '.') : field.value); } });
         setTimeout(() => field.focus(), 60);
       } else if (p.type === 'color') {
         const field = h('input', { type: 'color', class: 'color-field', value: tkColor(p.initial) && /^#[0-9a-f]{6}$/i.test(tkColor(p.initial)) ? tkColor(p.initial) : '#3366cc' });
         body.append(field);
-        btn('Abbrechen', null, false);
+        btn(tr('kobra.cancel'), null, false);
         btn('OK', () => field.value, true);
       } else if (p.type === 'file') {
         this.fileDialog(p, body, btn, done);
@@ -2295,7 +2297,7 @@ export class GuiManager {
     const pats = (p.filetypes || []).flatMap(([, ps]) => ps).filter(x => x && x !== '*' && x !== '*.*');
     const match = (path) => !pats.length || pats.some(pt => new RegExp('^' + pt.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i').test(path.split('/').pop()));
     if (p.mode === 'save') {
-      body.append(h('label', { class: 'field-label', text: 'Dateiname im Projekt' }));
+      body.append(h('label', { class: 'field-label', text: tr('kobra.gui.fileName') }));
       let name = p.initialfile || '';
       if (!name && p.defaultextension) name = `neu${p.defaultextension}`;
       const field = h('input', { class: 'field', type: 'text', value: name, autocapitalize: 'off', autocorrect: 'off' });
@@ -2306,9 +2308,9 @@ export class GuiManager {
         b.addEventListener('click', () => { field.value = f.path; });
         list.append(b);
       }
-      if (list.children.length) body.append(h('div', { class: 'field-hint', text: 'Vorhandene Dateien:' }), list);
-      btn('Abbrechen', null, false);
-      btn('Sichern', () => {
+      if (list.children.length) body.append(h('div', { class: 'field-hint', text: tr('kobra.gui.existing') }), list);
+      btn(tr('kobra.cancel'), null, false);
+      btn(tr('kobra.save'), () => {
         let v = field.value.trim();
         if (!v) return null;
         if (p.defaultextension && !/\.[^/]+$/.test(v)) v += p.defaultextension;
@@ -2319,7 +2321,7 @@ export class GuiManager {
     }
     if (p.mode === 'dir') {
       const dirs = files.filter(f => f.type === 'dir');
-      body.append(h('div', { class: 'field-hint', text: 'Ordner im Projekt wählen' }));
+      body.append(h('div', { class: 'field-hint', text: tr('kobra.gui.pickFolder') }));
       const list = h('div', { class: 'file-pick' });
       const rootBtn = h('button', { class: 'file-pick-item', type: 'button', text: '(Projektordner)' });
       rootBtn.addEventListener('click', () => done('.'));
@@ -2330,13 +2332,13 @@ export class GuiManager {
         list.append(b);
       }
       body.append(list);
-      btn('Abbrechen', null, false);
+      btn(tr('kobra.cancel'), null, false);
       return;
     }
     const multi = p.mode === 'openmany';
     const chosen = new Set();
     const shown = files.filter(f => f.type === 'file' && match(f.path));
-    if (!shown.length) body.append(h('p', { class: 'dlg-detail', text: 'Keine passenden Dateien im Projekt. Dateien lassen sich im Dateien-Bereich importieren.' }));
+    if (!shown.length) body.append(h('p', { class: 'dlg-detail', text: tr('kobra.gui.noFiles') }));
     const list = h('div', { class: 'file-pick' });
     for (const f of shown) {
       const b = h('button', { class: 'file-pick-item', type: 'button', text: f.path });
@@ -2348,8 +2350,8 @@ export class GuiManager {
       list.append(b);
     }
     body.append(list);
-    btn('Abbrechen', null, false);
-    if (multi) btn('Öffnen', () => [...chosen], true);
+    btn(tr('kobra.cancel'), null, false);
+    if (multi) btn(tr('kobra.open'), () => [...chosen], true);
   }
 
   // ==================================================================== Qt

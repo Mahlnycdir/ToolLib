@@ -7,6 +7,7 @@ import { h, toast, promptDialog, confirmDialog, openSheet, actionSheet, loadPref
 import { icon } from './icons.js';
 import { overlayHost } from './markup.js';
 import { MAIN, accounts, account, accountLabel, accountForUrl, tokenFor, authorOf, rememberRepo, repoEntry } from './accounts.js';
+import { t as tr, getLang } from '../../app/i18n/i18n.js';
 
 const dec = new TextDecoder();
 
@@ -26,7 +27,7 @@ function authOpts(url, acc) {
   if (proxy) o.corsProxy = proxy.replace(/\/+$/, '');
   const token = tokenFor(acc, url);
   o.onAuth = () => (token ? { username: 'x-access-token', password: token } : { cancel: true });
-  o.onAuthFailure = () => { toast(`GitHub hat die Anmeldung von „${accountLabel(acc)}“ abgelehnt. Token in den Einstellungen prüfen.`, 'error', 5000); return { cancel: true }; };
+  o.onAuthFailure = () => { toast(tr('kobra.git.authRefused', { v: accountLabel(acc) }), 'error', 5000); return { cancel: true }; };
   return o;
 }
 
@@ -34,14 +35,14 @@ export function explainGitError(e) {
   const m = String(e?.message || e);
   if (/Failed to fetch|NetworkError|Load failed|CORS/i.test(m)) {
     return gitSettings().proxy
-      ? 'Keine Verbindung zum Git-Proxy. Internet und Proxy-Adresse in den Einstellungen prüfen.'
-      : 'GitHub erlaubt Browsern keinen direkten Git-Zugriff. Bitte in den Einstellungen eine Proxy-Adresse eintragen (Anleitung in der README).';
+      ? tr('kobra.git.noProxy')
+      : tr('kobra.git.needProxy');
   }
-  if (/UserCanceled|operation was canceled/i.test(m)) return 'GitHub hat die Anmeldung abgelehnt. Gehört das Repository zum gewählten Konto, und darf dessen Token hineinschreiben?';
-  if (/401|403|HttpError.*40[13]/.test(m)) return 'Zugriff verweigert. Ist das GitHub-Token gültig und hat es Schreibrechte für dieses Repository?';
-  if (/404/.test(m)) return 'Repository nicht gefunden. Adresse prüfen (und ob es privat ist).';
-  if (/MergeConflict|conflict/i.test(m)) return 'Konflikt beim Zusammenführen: Dieselben Zeilen wurden hier und auf GitHub geändert.';
-  if (/PushRejected|not a simple fast-forward/i.test(m)) return 'Auf GitHub gibt es neuere Commits. Erst „Holen“, dann erneut hochladen.';
+  if (/UserCanceled|operation was canceled/i.test(m)) return tr('kobra.git.refused');
+  if (/401|403|HttpError.*40[13]/.test(m)) return tr('kobra.git.denied');
+  if (/404/.test(m)) return tr('kobra.git.notFound');
+  if (/MergeConflict|conflict/i.test(m)) return tr('kobra.git.conflict');
+  if (/PushRejected|not a simple fast-forward/i.test(m)) return tr('kobra.git.behind');
   return m.split('\n')[0];
 }
 
@@ -79,7 +80,7 @@ export class GitService {
     const dir = this.dir(project);
     await git.init({ fs, dir, defaultBranch: 'main' });
     await this.addAll(project);
-    await git.commit({ fs, dir, message: 'Erster Stand', author: authorOf(await this.accountOf(project)) });
+    await git.commit({ fs, dir, message: tr('kobra.git.firstCommit'), author: authorOf(await this.accountOf(project)) });
   }
 
   async status(project) {
@@ -226,7 +227,7 @@ export class GitService {
     const ref = await git.currentBranch({ fs, dir });
     const url = await this.originUrl(project);
     const res = await git.push({ fs, http, dir, remote: 'origin', ref, onProgress, ...authOpts(url, await this.accountOf(project)) });
-    if (res && res.ok === false) throw new Error(res.error || 'Hochladen abgelehnt');
+    if (res && res.ok === false) throw new Error(res.error || tr('kobra.git.pushRejected'));
     return res;
   }
 
@@ -268,7 +269,7 @@ export function renderDiff(oldText, newText) {
         const tail = pi === parts.length - 1 ? [] : lines.slice(-CONTEXT);
         for (const l of head) box.append(diffLine(' ', oldNo++, newNo++, l));
         const skipped = lines.length - head.length - tail.length;
-        box.append(h('div', { class: 'diff-skip', text: `… ${skipped} unveränderte Zeilen …` }));
+        box.append(h('div', { class: 'diff-skip', text: tr('kobra.git.unchangedLines', { skipped }) }));
         oldNo += skipped; newNo += skipped;
         for (const l of tail) box.append(diffLine(' ', oldNo++, newNo++, l));
       } else {
@@ -280,7 +281,7 @@ export function renderDiff(oldText, newText) {
       for (const l of lines) box.append(diffLine('+', '', newNo++, l));
     }
   }
-  if (!box.children.length) box.append(h('div', { class: 'diff-skip', text: 'Keine Unterschiede.' }));
+  if (!box.children.length) box.append(h('div', { class: 'diff-skip', text: tr('kobra.git.noDiff') }));
   return box;
 }
 
@@ -305,20 +306,20 @@ export class GitPanel {
     const project = this.getProject();
     this.root.textContent = '';
     if (!project) {
-      this.root.append(h('p', { class: 'empty', text: 'Kein Projekt geöffnet.' }));
+      this.root.append(h('p', { class: 'empty', text: tr('kobra.git.noProject') }));
       return;
     }
     if (!(await this.svc.isRepo(project))) {
-      const initBtn = h('button', { class: 'btn primary', type: 'button', html: `${icon('git')}<span>Versionskontrolle einrichten</span>` });
+      const initBtn = h('button', { class: 'btn primary', type: 'button', html: `${icon('git')}<span>${esc(tr('kobra.git.initBtn'))}</span>` });
       initBtn.addEventListener('click', () => this.guard(async () => {
         await this.svc.init(project);
-        toast('Git eingerichtet, erster Stand gespeichert', 'ok');
+        toast(tr('kobra.git.initDone'), 'ok');
       }));
-      const cloneBtn = h('button', { class: 'btn', type: 'button', html: `${icon('cloudDown')}<span>Repository von GitHub klonen</span>` });
+      const cloneBtn = h('button', { class: 'btn', type: 'button', html: `${icon('cloudDown')}<span>${esc(tr('kobra.git.cloneBtn'))}</span>` });
       cloneBtn.addEventListener('click', () => this.cloneDialog());
       this.root.append(h('section', { class: 'card' },
-        h('h3', { text: `„${project}“ ist noch nicht versioniert` }),
-        h('p', { class: 'hint', text: 'Git speichert jeden Stand deines Projekts als Commit. So kannst du Änderungen vergleichen, zurücknehmen und das Projekt mit GitHub abgleichen.' }),
+        h('h3', { text: tr('kobra.git.notVersioned', { project }) }),
+        h('p', { class: 'hint', text: tr('kobra.git.explain') }),
         h('div', { class: 'btn-col' }, initBtn, cloneBtn)));
       return;
     }
@@ -326,29 +327,29 @@ export class GitPanel {
       this.svc.status(project), this.svc.branches(project), this.svc.remotes(project), this.svc.log(project, 40),
     ]);
     // Branch-Zeile
-    const branchBtn = h('button', { class: 'btn small', type: 'button', html: `${icon('branch')}<span>${esc(br.current || '(losgelöst)')}</span>` });
+    const branchBtn = h('button', { class: 'btn small', type: 'button', html: `${icon('branch')}<span>${esc(br.current || tr('kobra.git.detached'))}</span>` });
     branchBtn.addEventListener('click', () => this.branchMenu(br));
     const origin = remotes.find(r => r.remote === 'origin');
     const head = h('section', { class: 'card git-head' },
-      h('div', { class: 'card-head' }, h('h3', { text: 'Zweig' }), branchBtn));
+      h('div', { class: 'card-head' }, h('h3', { text: tr('kobra.git.branch') }), branchBtn));
     // Remote
     if (origin) {
       const ahead = await this.svc.ahead(project);
-      const pushBtn = h('button', { class: 'btn small primary', type: 'button', html: `${icon('cloudUp')}<span>Hochladen${ahead ? ` (${ahead})` : ''}</span>` });
-      const pullBtn = h('button', { class: 'btn small', type: 'button', html: `${icon('cloudDown')}<span>Holen</span>` });
+      const pushBtn = h('button', { class: 'btn small primary', type: 'button', html: `${icon('cloudUp')}<span>${esc(tr('kobra.git.push'))}${ahead ? ` (${ahead})` : ''}</span>` });
+      const pullBtn = h('button', { class: 'btn small', type: 'button', html: `${icon('cloudDown')}<span>${esc(tr('kobra.git.pull'))}</span>` });
       pushBtn.addEventListener('click', () => this.remoteOp('push'));
       pullBtn.addEventListener('click', () => this.remoteOp('pull'));
       const urlBtn = h('button', { class: 'link-btn', type: 'button', text: origin.url.replace(/^https:\/\//, '') });
       urlBtn.addEventListener('click', () => this.remoteDialog(origin.url));
       head.append(h('div', { class: 'remote-row' }, h('span', { class: 'muted', html: icon('link') }), urlBtn), h('div', { class: 'btn-row' }, pullBtn, pushBtn));
     } else {
-      const addRemote = h('button', { class: 'btn small', type: 'button', html: `${icon('link')}<span>Mit GitHub verbinden</span>` });
+      const addRemote = h('button', { class: 'btn small', type: 'button', html: `${icon('link')}<span>${esc(tr('kobra.git.connect'))}</span>` });
       addRemote.addEventListener('click', () => this.remoteDialog(''));
       head.append(addRemote);
     }
     // Konto: mit wem dieses Projekt committet und hochlädt
     const acc = await this.svc.accountOf(project);
-    const accBtn = h('button', { class: 'link-btn git-account', type: 'button', id: 'git-account', title: 'Konto für dieses Projekt wählen' });
+    const accBtn = h('button', { class: 'link-btn git-account', type: 'button', id: 'git-account', title: tr('kobra.git.pickAccount') });
     accBtn.append(h('span', { text: accountLabel(acc) }), acc.email ? h('span', { class: 'muted', text: `· ${acc.email}` }) : '');
     accBtn.addEventListener('click', () => this.accountMenu(project, acc));
     head.append(h('div', { class: 'remote-row' }, h('span', { class: 'muted', html: icon('user') }), accBtn));
@@ -357,46 +358,46 @@ export class GitPanel {
     // Aenderungen
     const changes = h('section', { class: 'card' });
     const selected = new Set(status.map(s => s.file));
-    changes.append(h('div', { class: 'card-head' }, h('h3', { text: status.length ? `Änderungen (${status.length})` : 'Keine Änderungen' })));
+    changes.append(h('div', { class: 'card-head' }, h('h3', { text: status.length ? tr('kobra.git.changes', { n: status.length }) : tr('kobra.git.noChanges') })));
     for (const s of status) {
-      const cb = h('input', { type: 'checkbox', checked: true, 'aria-label': `${s.file} in Commit aufnehmen` });
+      const cb = h('input', { type: 'checkbox', checked: true, 'aria-label': tr('kobra.git.include', { file: s.file }) });
       cb.addEventListener('change', () => { if (cb.checked) selected.add(s.file); else selected.delete(s.file); });
       const name = h('button', { class: 'change-name', type: 'button', text: s.file });
       name.addEventListener('click', () => this.showDiff(project, s));
-      const badge = h('span', { class: `badge k-${s.kind === '?' ? 'U' : s.kind}`, text: { M: 'geändert', A: 'neu', D: 'gelöscht', '?': 'neu' }[s.kind] });
-      const undo = h('button', { class: 'icon-btn small', type: 'button', 'aria-label': 'Änderung verwerfen', title: 'Änderung verwerfen', html: icon('undo') });
+      const badge = h('span', { class: `badge k-${s.kind === '?' ? 'U' : s.kind}`, text: { M: tr('kobra.git.modified'), A: 'neu', D: tr('kobra.git.deleted'), '?': 'neu' }[s.kind] });
+      const undo = h('button', { class: 'icon-btn small', type: 'button', 'aria-label': tr('kobra.git.discard'), title: tr('kobra.git.discard'), html: icon('undo') });
       undo.addEventListener('click', async () => {
-        if (!(await confirmDialog('Änderung verwerfen', `Alle Änderungen an „${s.file}“ seit dem letzten Commit verwerfen?`, { okLabel: 'Verwerfen', danger: true }))) return;
+        if (!(await confirmDialog(tr('kobra.git.discard'), tr('kobra.git.discardConfirm', { file: s.file }), { okLabel: tr('kobra.git.discardOk'), danger: true }))) return;
         await this.guard(async () => { await this.svc.discard(project, s.file); this.onFilesChanged?.([s.file]); });
       });
       changes.append(h('div', { class: 'change-row' }, cb, name, badge, undo));
     }
     if (status.length) {
-      const msg = h('textarea', { class: 'field commit-msg', rows: '2', placeholder: 'Was hast du geändert? (Commit-Nachricht)', id: 'commit-msg' });
+      const msg = h('textarea', { class: 'field commit-msg', rows: '2', placeholder: tr('kobra.git.message'), id: 'commit-msg' });
       const commitBtn = h('button', { class: 'btn primary', type: 'button', html: `${icon('check')}<span>Commit</span>` });
       commitBtn.addEventListener('click', () => this.guard(async () => {
         const text = msg.value.trim();
-        if (!text) { toast('Bitte eine kurze Nachricht eingeben.', 'error'); msg.focus(); throw new Error(''); }
-        if (!selected.size) { toast('Keine Datei ausgewählt.', 'error'); throw new Error(''); }
-        if (!acc.name) toast(`Tipp: Name und E-Mail für „${accountLabel(acc)}“ in den Einstellungen eintragen.`);
+        if (!text) { toast(tr('kobra.git.needMessage'), 'error'); msg.focus(); throw new Error(''); }
+        if (!selected.size) { toast(tr('kobra.git.noFile'), 'error'); throw new Error(''); }
+        if (!acc.name) toast(tr('kobra.git.tipIdentity', { v: accountLabel(acc) }));
         await this.svc.commit(project, text, [...selected]);
-        toast('Commit gespeichert', 'ok');
+        toast(tr('kobra.git.committed'), 'ok');
       }));
       changes.append(msg, commitBtn);
     }
     this.root.append(changes);
 
     // Verlauf
-    const hist = h('section', { class: 'card' }, h('h3', { text: 'Verlauf' }));
+    const hist = h('section', { class: 'card' }, h('h3', { text: tr('kobra.git.history') }));
     for (const c of log) {
       const d = new Date(c.commit.author.timestamp * 1000);
       const row = h('button', { class: 'commit-row', type: 'button' },
         h('span', { class: 'commit-msg-text', text: c.commit.message.split('\n')[0] }),
-        h('span', { class: 'commit-meta', text: `${c.oid.slice(0, 7)} · ${c.commit.author.name} · ${d.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}` }));
+        h('span', { class: 'commit-meta', text: `${c.oid.slice(0, 7)} · ${c.commit.author.name} · ${d.toLocaleString(getLang() === 'de' ? 'de-DE' : 'en-GB', { dateStyle: 'short', timeStyle: 'short' })}` }));
       row.addEventListener('click', () => this.showCommit(project, c));
       hist.append(row);
     }
-    if (!log.length) hist.append(h('p', { class: 'empty', text: 'Noch keine Commits.' }));
+    if (!log.length) hist.append(h('p', { class: 'empty', text: tr('kobra.git.noCommits') }));
     this.root.append(hist);
   }
 
@@ -412,7 +413,7 @@ export class GitPanel {
     const before = await this.svc.headContent(project, s.file);
     let after = null;
     if (s.work !== 0) {
-      if (!isTextFile(s.file)) { toast('Binärdatei – kein Textvergleich möglich.'); return; }
+      if (!isTextFile(s.file)) { toast(tr('kobra.git.binary')); return; }
       after = await readText(`${dir}/${s.file}`);
     }
     openSheet(s.file, renderDiff(before || '', after || ''), { full: true });
@@ -422,7 +423,7 @@ export class GitPanel {
     const files = await this.svc.changedInCommit(project, c);
     const body = h('div', { class: 'commit-detail' });
     const d = new Date(c.commit.author.timestamp * 1000);
-    body.append(h('p', { class: 'commit-full', text: c.commit.message }), h('p', { class: 'muted', text: `${c.oid} · ${c.commit.author.name} <${c.commit.author.email}> · ${d.toLocaleString('de-DE')}` }));
+    body.append(h('p', { class: 'commit-full', text: c.commit.message }), h('p', { class: 'muted', text: `${c.oid} · ${c.commit.author.name} <${c.commit.author.email}> · ${d.toLocaleString(getLang() === 'de' ? 'de-DE' : 'en-GB')}` }));
     for (const f of files) {
       const row = h('div', { class: 'change-row' });
       const name = h('button', { class: 'change-name', type: 'button', text: f.file });
@@ -432,17 +433,17 @@ export class GitPanel {
         const after = await this.svc.contentAt(project, c.oid, f.file);
         openSheet(`${f.file} @ ${c.oid.slice(0, 7)}`, renderDiff(before || '', after || ''), { full: true });
       });
-      const restore = h('button', { class: 'icon-btn small', type: 'button', title: 'Datei auf diesen Stand zurücksetzen', 'aria-label': 'Datei auf diesen Stand zurücksetzen', html: icon('history') });
+      const restore = h('button', { class: 'icon-btn small', type: 'button', title: tr('kobra.git.restoreFile'), 'aria-label': tr('kobra.git.restoreFile'), html: icon('history') });
       restore.addEventListener('click', async () => {
-        if (f.kind === 'D') { toast('Die Datei wurde in diesem Commit gelöscht.'); return; }
-        if (!(await confirmDialog('Datei zurücksetzen', `„${f.file}“ auf den Stand von ${c.oid.slice(0, 7)} setzen? Nicht committete Änderungen daran gehen verloren.`, { okLabel: 'Zurücksetzen', danger: true }))) return;
+        if (f.kind === 'D') { toast(tr('kobra.git.deletedInCommit')); return; }
+        if (!(await confirmDialog(tr('kobra.git.restoreTitle'), tr('kobra.git.restoreConfirm', { file: f.file, v: c.oid.slice(0, 7) }), { okLabel: tr('kobra.git.restoreOk'), danger: true }))) return;
         try {
           await this.svc.restoreFile(project, c.oid, f.file);
           this.onFilesChanged?.([f.file]);
-          toast('Datei zurückgesetzt', 'ok');
+          toast(tr('kobra.git.restored'), 'ok');
         } catch (e) { toast(explainGitError(e), 'error'); }
       });
-      row.append(h('span', { class: `badge k-${f.kind}`, text: { M: 'geändert', A: 'neu', D: 'gelöscht' }[f.kind] }), name, restore);
+      row.append(h('span', { class: `badge k-${f.kind}`, text: { M: tr('kobra.git.modified'), A: 'neu', D: tr('kobra.git.deleted') }[f.kind] }), name, restore);
       body.append(row);
     }
     openSheet('Commit', body, { full: true });
@@ -451,43 +452,43 @@ export class GitPanel {
   async branchMenu(br) {
     const project = this.getProject();
     const items = br.list.map(b => ({ label: b, icon: b === br.current ? 'check' : 'branch', value: `co:${b}`, disabled: b === br.current }));
-    items.push('-', { label: 'Neuer Zweig …', icon: 'plus', value: 'new' });
+    items.push('-', { label: tr('kobra.git.newBranch'), icon: 'plus', value: 'new' });
     const others = br.list.filter(b => b !== br.current);
-    if (others.length) items.push({ label: 'Zweig hierher zusammenführen …', icon: 'git', value: 'merge' }, { label: 'Zweig löschen …', icon: 'trash', value: 'del', danger: true });
-    const v = await actionSheet('Zweige', items);
+    if (others.length) items.push({ label: tr('kobra.git.mergeBranch'), icon: 'git', value: 'merge' }, { label: tr('kobra.git.deleteBranch'), icon: 'trash', value: 'del', danger: true });
+    const v = await actionSheet(tr('kobra.git.branches'), items);
     if (!v) return;
     if (v.startsWith('co:')) {
       const status = await this.svc.status(project);
-      if (status.length && !(await confirmDialog('Zweig wechseln', 'Es gibt nicht committete Änderungen. Beim Wechsel können sie überschrieben werden. Trotzdem wechseln?', { okLabel: 'Wechseln', danger: true }))) return;
-      await this.guard(async () => { await this.svc.checkoutBranch(project, v.slice(3)); this.onFilesChanged?.(null); toast(`Zweig ${v.slice(3)}`, 'ok'); });
+      if (status.length && !(await confirmDialog(tr('kobra.git.switchBranch'), tr('kobra.git.switchConfirm'), { okLabel: tr('kobra.git.switchOk'), danger: true }))) return;
+      await this.guard(async () => { await this.svc.checkoutBranch(project, v.slice(3)); this.onFilesChanged?.(null); toast(tr('kobra.git.onBranch', { v: v.slice(3) }), 'ok'); });
     } else if (v === 'new') {
-      const name = await promptDialog('Neuer Zweig', { label: 'Name', placeholder: 'z. B. experiment', validate: (s) => /^[\w.\-/]+$/.test(s) ? null : 'Nur Buchstaben, Ziffern, - _ . /' });
+      const name = await promptDialog(tr('kobra.git.newBranchTitle'), { label: tr('kobra.name'), placeholder: tr('kobra.git.branchExample'), validate: (s) => /^[\w.\-/]+$/.test(s) ? null : tr('kobra.git.branchChars') });
       if (name) await this.guard(() => this.svc.createBranch(project, name));
     } else if (v === 'merge' || v === 'del') {
-      const pick = await actionSheet(v === 'merge' ? `In ${br.current} zusammenführen` : 'Zweig löschen', others.map(b => ({ label: b, value: b, icon: 'branch', danger: v === 'del' })));
+      const pick = await actionSheet(v === 'merge' ? tr('kobra.git.mergeInto', { current: br.current }) : tr('kobra.git.deleteBranchTitle'), others.map(b => ({ label: b, value: b, icon: 'branch', danger: v === 'del' })));
       if (!pick) return;
-      if (v === 'merge') await this.guard(async () => { await this.svc.merge(project, pick); this.onFilesChanged?.(null); toast(`${pick} zusammengeführt`, 'ok'); });
-      else if (await confirmDialog('Zweig löschen', `Zweig „${pick}“ löschen?`, { okLabel: 'Löschen', danger: true })) await this.guard(() => this.svc.deleteBranch(project, pick));
+      if (v === 'merge') await this.guard(async () => { await this.svc.merge(project, pick); this.onFilesChanged?.(null); toast(tr('kobra.git.merged', { pick }), 'ok'); });
+      else if (await confirmDialog(tr('kobra.git.deleteBranchTitle'), tr('kobra.git.deleteBranchConfirm', { pick }), { okLabel: tr('kobra.delete'), danger: true })) await this.guard(() => this.svc.deleteBranch(project, pick));
     }
   }
 
   async accountMenu(project, current) {
     const all = accounts();
-    const items = all.map((a) => ({ label: accountLabel(a), detail: [a.name, a.email].filter(Boolean).join(' · ') || (a.token ? '' : 'ohne Token'), value: a.id, icon: a.id === current.id ? 'check' : 'user' }));
-    items.push('-', { label: 'Konten verwalten …', value: '#settings', icon: 'settings' });
-    const v = await actionSheet(`Konto für „${project}“`, items);
+    const items = all.map((a) => ({ label: accountLabel(a), detail: [a.name, a.email].filter(Boolean).join(' · ') || (a.token ? '' : tr('kobra.git.noToken')), value: a.id, icon: a.id === current.id ? 'check' : 'user' }));
+    items.push('-', { label: tr('kobra.git.manageAccounts'), value: '#settings', icon: 'settings' });
+    const v = await actionSheet(tr('kobra.git.accountFor', { project }), items);
     if (!v) return;
     if (v === '#settings') { this.openSettings?.('git'); return; }
     await this.svc.setAccount(project, v);
-    toast(`„${project}“ committet jetzt als ${accountLabel(account(v))}`, 'ok');
+    toast(tr('kobra.git.nowCommitsAs', { project, v: accountLabel(account(v)) }), 'ok');
     this.refresh();
   }
 
   async remoteDialog(current) {
     const url = await promptDialog('GitHub-Repository', {
-      label: 'HTTPS-Adresse des Repositorys', value: current, placeholder: 'https://github.com/name/projekt.git',
-      hint: 'Lege das Repository vorher auf github.com an (leer, ohne README).',
-      validate: (s) => /^https:\/\/\S+$/.test(s.trim()) ? null : 'Bitte eine https://-Adresse eingeben.',
+      label: tr('kobra.git.remoteAddress'), value: current, placeholder: 'https://github.com/name/projekt.git',
+      hint: tr('kobra.git.remoteHint'),
+      validate: (s) => /^https:\/\/\S+$/.test(s.trim()) ? null : tr('kobra.git.needHttps'),
     });
     if (!url) return;
     await this.guard(() => this.svc.setRemote(this.getProject(), url.trim()));
@@ -501,27 +502,27 @@ export class GitPanel {
     if (!proxy || (kind === 'push' && !tokenFor(acc, url))) {
       const noToken = kind === 'push' && !tokenFor(acc, url);
       const go = await modal({
-        title: 'GitHub einrichten',
-        body: h('p', { text: noToken ? (acc.token ? `Das Token von „${accountLabel(acc)}“ gilt für ${acc.host}, dieses Repository liegt woanders. Wähle ein anderes Konto oder trage den Rechner beim Konto ein.` : `Zum Hochladen braucht „${accountLabel(acc)}“ ein GitHub-Token${proxy ? '' : ', und der Browser einen kleinen Git-Proxy'}. Beides trägst du in den Einstellungen ein.`) : 'Der Browser braucht einen kleinen Git-Proxy, um mit GitHub zu sprechen. Trage dessen Adresse in den Einstellungen ein.' }),
-        actions: [{ label: 'Abbrechen', value: false }, { label: 'Zu den Einstellungen', kind: 'primary', value: true }],
+        title: tr('kobra.git.setup'),
+        body: h('p', { text: noToken ? (acc.token ? tr('kobra.git.tokenOtherHost', { v: accountLabel(acc), host: acc.host }) : (proxy ? tr('kobra.git.tokenNeeded', { v: accountLabel(acc) }) : tr('kobra.git.tokenProxyNeeded', { v: accountLabel(acc) }))) : tr('kobra.git.proxyNeeded') }),
+        actions: [{ label: tr('kobra.cancel'), value: false }, { label: tr('kobra.git.toSettings'), kind: 'primary', value: true }],
       });
       if (go) this.openSettings?.('git');
       return;
     }
-    const prog = toastProgress(kind === 'push' ? `Lade als ${accountLabel(acc)} hoch …` : 'Hole Änderungen …');
+    const prog = toastProgress(kind === 'push' ? tr('kobra.git.uploadingAs', { v: accountLabel(acc) }) : tr('kobra.git.fetching'));
     await this.guard(async () => {
       try {
-        if (kind === 'push') { await this.svc.push(project, prog.update); toast('Auf GitHub hochgeladen', 'ok'); }
+        if (kind === 'push') { await this.svc.push(project, prog.update); toast(tr('kobra.git.uploaded'), 'ok'); }
         else {
           const st = await this.svc.status(project);
           if (st.some(x => x.kind !== '?')) {
             prog.done();
-            toast('Bitte zuerst committen, dann holen.', 'error', 4000);
+            toast(tr('kobra.git.commitFirst'), 'error', 4000);
             return;
           }
           await this.svc.pull(project, prog.update);
           this.onFilesChanged?.(null);
-          toast('Auf dem neuesten Stand', 'ok');
+          toast(tr('kobra.git.upToDate'), 'ok');
         }
       } finally { prog.done(); }
     });
@@ -532,9 +533,9 @@ export class GitPanel {
     const all = accounts();
     const urlIn = h('input', { class: 'field', type: 'url', value: url0, placeholder: 'https://github.com/name/projekt.git', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', id: 'clone-url' });
     const accIn = h('select', { class: 'field', id: 'clone-account' });
-    const auto = h('option', { value: '', text: 'Passend zum Besitzer' });
+    const auto = h('option', { value: '', text: tr('kobra.git.byOwner') });
     accIn.append(auto, ...all.map((a) => h('option', { value: a.id, text: accountLabel(a) })));
-    const guess = () => { const a = /^https:\/\/\S+$/.test(urlIn.value.trim()) ? accountForUrl(urlIn.value.trim()) : null; auto.textContent = a ? `Passend zum Besitzer (${accountLabel(a)})` : 'Passend zum Besitzer'; };
+    const guess = () => { const a = /^https:\/\/\S+$/.test(urlIn.value.trim()) ? accountForUrl(urlIn.value.trim()) : null; auto.textContent = a ? tr('kobra.git.byOwnerIs', { v: accountLabel(a) }) : tr('kobra.git.byOwner'); };
     urlIn.addEventListener('input', guess);
     const chosen = url0 && repoEntry(url0)?.account;
     if (chosen && all.some((a) => a.id === chosen)) accIn.value = chosen;
@@ -542,29 +543,29 @@ export class GitPanel {
     const err = h('div', { class: 'field-error' });
     const body = h('div', { class: 'form' },
       h('label', { class: 'field-label', for: 'clone-url', text: 'HTTPS-Adresse' }), urlIn,
-      all.length > 1 ? h('label', { class: 'field-label', for: 'clone-account', text: 'Konto' }) : null, all.length > 1 ? accIn : null, err);
+      all.length > 1 ? h('label', { class: 'field-label', for: 'clone-account', text: tr('kobra.acc.account') }) : null, all.length > 1 ? accIn : null, err);
     const res = await modal({
-      title: 'Repository klonen', body,
-      actions: [{ label: 'Abbrechen', value: null }, { label: 'Klonen', kind: 'primary', value: () => {
+      title: tr('kobra.git.cloneTitle'), body,
+      actions: [{ label: tr('kobra.cancel'), value: null }, { label: tr('kobra.git.clone'), kind: 'primary', value: () => {
         const u = urlIn.value.trim();
-        if (!/^https:\/\/\S+$/.test(u)) { err.textContent = 'Bitte eine https://-Adresse eingeben.'; return undefined; }
+        if (!/^https:\/\/\S+$/.test(u)) { err.textContent = tr('kobra.git.needHttps'); return undefined; }
         return { url: u, acc: accIn.value };
       } }],
       onOpen: () => setTimeout(() => (url0 ? accIn : urlIn).focus(), 60),
     });
     if (!res) return;
     if (!loadPref('git.proxy', '')) {
-      toast('Zum Klonen ist ein Git-Proxy nötig (Einstellungen).', 'error', 5000);
+      toast(tr('kobra.git.cloneNeedsProxy'), 'error', 5000);
       this.openSettings?.('git');
       return;
     }
     const base = (name0 || decodeURIComponent(res.url.replace(/\.git$/, '').split('/').pop() || 'Klon')).replace(/[\/\\:*?"<>|]/g, '-').slice(0, 60) || 'Klon';
     let name = base;
     for (let i = 2; await exists(projectPath(name)); i++) name = `${base} ${i}`;
-    const prog = toastProgress('Klone …');
+    const prog = toastProgress(tr('kobra.git.cloning'));
     try {
       await this.svc.clone(name, res.url, prog.update, res.acc);
-      toast(`Als Projekt „${name}“ geklont`, 'ok');
+      toast(tr('kobra.git.cloned', { name }), 'ok');
       this.onProjectsChanged?.(name);
     } catch (e) {
       await rmrf(projectPath(name)).catch(() => {});

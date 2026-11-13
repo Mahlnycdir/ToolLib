@@ -10,7 +10,7 @@ import { ACCENTS } from './modules.js';
 import { allNodes, indexState, nodeByPath, onIndexChange, searchNodes } from '../services/search.js';
 import {
   STATES, addToProject, deleteProject, focusPath, loadProject, projectNodes, projects, projectsWith, setFocus, setProjectField, touchProject, stationOf,
-  boardOf, parseSections,
+  boardOf, parseSections, repoLabel, repoUrl,
 } from '../services/projects.js';
 import { projectBody, sectionTitle, COLOUR_HEX } from './project-board.js';
 import { capture, deleteNote, inbox, loadNote, saveNote } from '../services/notes.js';
@@ -115,6 +115,50 @@ export function projectCard(d, { go, big = false } = {}) {
   return card;
 }
 
+// ------------------------------------------------------------------ the code of a project (0.24.0)
+// A project can know its code repository; Kobra keeps the list of yours (kobra.git.repos) and opens it.
+function kobraRepos() {
+  try {
+    const list = JSON.parse(localStorage.getItem('kobra.git.repos') || '[]');
+    return Array.isArray(list) ? list.filter((r) => r && repoUrl(r.url)) : [];
+  } catch { return []; }
+}
+
+// Asks which repository; true when the project changed.
+async function chooseRepo(path, current) {
+  const mine = kobraRepos();
+  const pick = await actionSheet(t('project.repo.pick'), [
+    ...mine.map((r) => ({ label: r.name || repoLabel(r.url), detail: repoLabel(r.url), value: r.url, icon: 'code' })),
+    ...(mine.length ? ['-'] : []),
+    { label: t('project.repo.address'), value: '@address', icon: 'link' },
+    ...(current ? [{ label: t('project.repo.remove'), value: '@remove', icon: 'close', danger: true }] : []),
+  ]);
+  if (!pick) return false;
+  let url = pick;
+  if (pick === '@remove') url = '';
+  else if (pick === '@address') {
+    const v = await promptDialog(t('project.repo.address'), {
+      value: current, placeholder: 'https://github.com/…/….git',
+      validate: (x) => (repoUrl(x) ? '' : t('project.repo.invalid')),
+    });
+    if (v == null) return false;
+    url = repoUrl(v);
+  }
+  if (url === current) return false;
+  return !!(await setProjectField(path, 'repo', url));
+}
+
+function repoRow(url, go) {
+  const open = h('button', { type: 'button', class: 'btn small primary project-repo-open' }, iconEl('code'), h('span', { text: t('project.repo.open') }));
+  open.addEventListener('click', () => {
+    const known = kobraRepos().find((r) => r.url === url);
+    localStorage.setItem('kobra.open', JSON.stringify({ project: { url, name: known?.name || repoLabel(url).split('/').pop() } }));
+    go('#/m/kobra');
+  });
+  return h('p', { class: 'project-repo' }, iconEl('code'), h('span', { class: 'muted', text: `${t('project.repo')} ` }),
+    h('a', { href: url, target: '_blank', rel: 'noopener noreferrer', text: repoLabel(url) }), open);
+}
+
 // ------------------------------------------------------------------ one project
 export async function renderProject(main, path, ctx) {
   const { isCurrent, go } = ctx;
@@ -149,11 +193,13 @@ export async function renderProject(main, path, ctx) {
   more.addEventListener('click', async () => {
     const pick = await actionSheet(p.title, [
       ...STATES.filter((s) => s !== p.state).map((s) => ({ label: t('project.setState', { state: stateLabel(s) }), value: `state:${s}`, icon: s === 'done' ? 'check' : s === 'paused' ? 'pause' : 'play' })),
-      { label: t('project.rename'), value: 'rename', icon: 'edit' }, '-',
+      { label: t('project.rename'), value: 'rename', icon: 'edit' },
+      { label: t(p.repo ? 'project.repo.change' : 'project.repo.link'), value: 'repo', icon: 'code' }, '-',
       { label: t('project.delete'), value: 'delete', icon: 'trash', danger: true },
     ]);
     if (!pick) return;
     if (pick === 'rename') { rename(); return; }
+    if (pick === 'repo') { if (await chooseRepo(path, p.repo)) redraw(); return; }
     if (pick.startsWith('state:')) { if (await setProjectField(path, 'state', pick.slice(6))) redraw(); return; }
     if (!(await confirmDialog(t('project.delete'), t('project.delete.confirm', { title: p.title, n: p.links.length }), { okLabel: t('project.delete'), danger: true }))) return;
     await deleteProject(path);
@@ -167,6 +213,7 @@ export async function renderProject(main, path, ctx) {
     if (v != null && v.trim() !== p.goal && await setProjectField(path, 'goal', v)) redraw();
   });
   box.append(goal);
+  if (p.repo) box.append(repoRow(p.repo, go));
   if (inFocus) box.append(h('p', { class: 'focus-note small' }, iconEl('target'), h('span', { text: t('project.focus.note') })));
 
   // the board (0.18.0): actions, widgets, sections with their cards

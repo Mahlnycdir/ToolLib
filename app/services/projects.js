@@ -136,8 +136,21 @@ export async function loadProject(path) {
   return {
     path, slug: node.slug, title: String(node.meta.title || node.slug), goal: String(node.meta.goal || ''),
     state: STATES.includes(node.meta.state) ? node.meta.state : 'active', links: asList(node.meta.links), steps, notes,
+    repo: repoUrl(node.meta.repo),
     ...boardParts(node.meta, text),
   };
+}
+
+// The code repository of a project (0.24.0): an https address of a Git repository, as Kobra clones it. Anything else
+// is left out, so the project view never links to something odd.
+export function repoUrl(v) {
+  const s = String(v ?? '').trim();
+  if (!/^https:\/\/[^\s"'<>]{3,300}$/.test(s)) return '';
+  try { return new URL(s).protocol === 'https:' ? s : ''; } catch { return ''; }
+}
+// "owner/name" for the eye; the address stays as it is
+export function repoLabel(url) {
+  try { return new URL(url).pathname.replace(/^\/+|\/+$/g, '').replace(/\.git$/i, '') || url; } catch { return url; }
 }
 
 // ------------------------------------------------------------------ the board (0.18.0)
@@ -366,6 +379,10 @@ export const setProjectField = (path, key, value) => change(path, (text) => {
   if (key === 'title') return v ? setField(text, 'title', q(v)) : null;
   if (key === 'goal') return v ? setField(text, 'goal', q(v), ['title']) : removeField(text, 'goal');
   if (key === 'state') return STATES.includes(v) ? setField(text, 'state', v, ['goal', 'title']) : null;
+  if (key === 'repo') {
+    if (!v) return removeField(text, 'repo');
+    return repoUrl(v) ? setField(text, 'repo', q(repoUrl(v)), ['state', 'goal', 'title']) : null;
+  }
   return null;
 });
 

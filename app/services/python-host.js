@@ -5,7 +5,12 @@
 // ("toollib" or "kobra"); each side takes its own and the ones without an owner (loading, ready, tools).
 // A restart (Stop in Kobra, a stuck program) is announced as { type: 'restart', by }, then Python loads again.
 
+import { t } from '../i18n/i18n.js';
+
 const PYODIDE = 'vendor/pyodide/';
+// texts the worker shows itself (Kobra's console and packages), in the language of the app
+const WORKER_TEXTS = ['loading', 'loadFailed', 'startFailed', 'inputNeedsSync', 'helpersMissing', 'packagesLoading', 'installing',
+  'compiled', 'noSuchPackage', 'offline', 'loadingPkgs', 'someFailed', 'formatterLoading', 'formatterFailed'];
 const base = () => new URL('./', document.baseURI);
 export const pyUrl = (name) => new URL(`${PYODIDE}${name}`, base()).href;
 
@@ -79,6 +84,7 @@ export function startWorker() {
       // packages you installed in Kobra (PyPI or Pyodide) come back with every start
       packages: readJson('kobra.packages', []),
       screen: [window.innerWidth, window.innerHeight],
+      texts: Object.fromEntries(WORKER_TEXTS.map((k) => [k, t(`kobra.worker.${k}`)])),
       useSync: !!navigator.serviceWorker?.controller && readJson('toollib.python.sync', true) !== false,
     });
     return ready;

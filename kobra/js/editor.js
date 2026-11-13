@@ -10,8 +10,9 @@ import {
   searchKeymap, highlightSelectionMatches, openSearchPanel, linter, lintGutter, lintKeymap, forceLinting,
   python, tags as t,
 } from '../vendor/vendor.js';
-import { KEYWORD_SNIPPETS, ALL_SNIPPETS, PY_KEYWORDS, PY_BUILTINS } from './snippets.js';
+import { KEYWORD_SNIPPETS, allSnippets, PY_KEYWORDS, PY_BUILTINS } from './snippets.js';
 import { esc } from './ui.js';
+import { t as i18n } from '../../app/i18n/i18n.js';
 
 // ---------------------------------------------------------------- Farben
 const darkHighlight = HighlightStyle.define([
@@ -101,7 +102,7 @@ function toCmSnippet(body) {
   });
 }
 
-export const snippetTemplate = (key) => toCmSnippet(ALL_SNIPPETS[key].body);
+export const snippetTemplate = (key) => toCmSnippet(allSnippets()[key].body);
 
 // ------------------------------------------------------------------ Editor
 export class CodeEditor {
@@ -196,6 +197,13 @@ export class CodeEditor {
     if (this.path === oldPath) this.path = newPath;
     if (this.states.has(oldPath)) { this.states.set(newPath, this.states.get(oldPath)); this.states.delete(oldPath); }
     if (this.saved.has(oldPath)) { this.saved.set(newPath, this.saved.get(oldPath)); this.saved.delete(oldPath); }
+  }
+
+  // der markierte Text (für „Als Snippet in Toollib“, 0.24.0); leer ohne Auswahl
+  selection() {
+    if (!this.view) return '';
+    const { from, to } = this.view.state.selection.main;
+    return from === to ? '' : this.view.state.sliceDoc(from, to);
   }
 
   content(path = this.path) {
@@ -354,8 +362,8 @@ export class CodeEditor {
       for (const [kw, keys] of Object.entries(KEYWORD_SNIPPETS)) {
         if (!kw.startsWith(prefix)) continue;
         for (const k of keys) {
-          const s = ALL_SNIPPETS[k];
-          options.push(snippetCompletion(toCmSnippet(s.body), { label: s.label, detail: s.detail || 'Baustein', type: 'snippet', boost: -5, section: { name: 'Bausteine', rank: 2 } }));
+          const s = allSnippets()[k];
+          options.push(snippetCompletion(toCmSnippet(s.body), { label: s.label, detail: s.detail || i18n('kobra.block'), type: 'snippet', boost: -5, section: { name: i18n('kobra.blocks'), rank: 2 } }));
         }
       }
     }
@@ -374,7 +382,7 @@ export class CodeEditor {
         options.push({
           label: c.n,
           type: TYPE_MAP[c.t] || 'variable',
-          detail: c.t === 'function' ? 'ƒ' : c.t === 'class' ? 'Klasse' : c.t === 'module' ? 'Modul' : c.t === 'keyword' ? '' : '',
+          detail: c.t === 'function' ? 'ƒ' : c.t === 'class' ? i18n('kobra.cls') : c.t === 'module' ? i18n('kobra.module') : c.t === 'keyword' ? '' : '',
           boost: isPrivate ? -20 : c.t === 'param' ? 5 : 0,
           info: () => this.completionInfo(c.i),
           apply: (c.t === 'function' || c.t === 'class') && ctx.state.sliceDoc(ctx.pos, ctx.pos + 1) !== '('
@@ -434,7 +442,7 @@ export class CodeEditor {
         to = m ? from + m[0].length : Math.min(from + 1, ln.to);
         if (to <= from) { from = ln.from; to = ln.to; }
       }
-      out.push({ from, to, severity: d.s === 'error' ? 'error' : 'warning', message: d.m, source: d.s === 'error' ? 'Fehler' : 'Hinweis' });
+      out.push({ from, to, severity: d.s === 'error' ? 'error' : 'warning', message: d.m, source: d.s === 'error' ? i18n('kobra.lint.error') : i18n('kobra.lint.hint') });
     }
     this.onDiagnostics?.(out.length, out);
     return out;
