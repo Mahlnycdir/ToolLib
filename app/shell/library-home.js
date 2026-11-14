@@ -28,13 +28,14 @@ export async function writingOf(projectPath, { create = false } = {}) {
 }
 
 // Opens the pages of a project (the page, or the one written last). Writing in a project puts it in focus.
-export async function openWriting(projectPath, { page = '', go } = {}) {
+// from: where "Back" leads (0.29.0: the library); without it Back goes to the project.
+export async function openWriting(projectPath, { page = '', go, from = '' } = {}) {
   try {
     const lib = await writingOf(projectPath, { create: true });
     if (!lib) return false;
     setFocus(projectPath);
     const open = loadPref('library.open', null);
-    savePref('library.open', { path: lib, page: page || (open?.path === lib ? open.page : '') || '', at: Date.now() });
+    savePref('library.open', { path: lib, page: page || (open?.path === lib ? open.page : '') || '', at: Date.now(), ...(from ? { from } : {}) });
     go('#/m/library');
     return true;
   } catch (e) {
@@ -68,12 +69,20 @@ export function renderWrite(main, { go }) {
   main.dataset.view = 'library-open';
   const host = h('div', { class: 'lib-host' });
   main.append(host);
-  const back = () => { const p = projectOfLibrary(open.path); savePref('library.open', null); go(p ? nodeHref(p.path) : '#/m/projects'); };
+  // back to where you came from (the library, 0.29.0), else to the project; only routes of the app count
+  const from = typeof open.from === 'string' && /^#\/m\/[a-z]+$/.test(open.from) ? open.from : '';
+  const back = () => { const p = projectOfLibrary(open.path); savePref('library.open', null); go(from || (p ? nodeHref(p.path) : '#/m/projects')); };
   const library = mountLibrary(host, {
     path: open.path, page: open.page || '',
     projectOf: () => projectOfLibrary(open.path),
+    go,   // 0.29.0: the "Project" tab beside the page leads to other views
     onBack: back,
-    onRead: (clipPath) => { library.flush(); savePref('research.read', clipPath); savePref('research.readFrom', '#/m/library'); go('#/m/scraper'); },
+    onRead: (clipPath) => {
+      library.flush();
+      // the reader comes back here, and Back from here still leads where it led before
+      if (from) savePref('library.open', { ...(loadPref('library.open', null) || { path: open.path, page: '' }), from });
+      savePref('research.read', clipPath); savePref('research.readFrom', '#/m/library'); go('#/m/scraper');
+    },
   });
   // leaving the view saves what was typed last
   main.cleanup = () => library.destroy();

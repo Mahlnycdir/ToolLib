@@ -168,13 +168,15 @@ const OWN = {
       else if (d?.type !== 'project' || d.path !== focus?.path) items.push({ type: d?.type || 'note', verb: d ? typeLabel(d.type) : '', title, run: () => go(nodeHref(e.path)) });
       if (items.length >= 5) break;
     }
-    if (!items.length) return h('div', { class: 'start-resume' }, h('p', { class: 'muted small', text: t('start.resume.none') }));
+    // 0.29.0: everything you read and write stands in the library
+    const shelf = h('a', { class: 'small resume-shelf', href: '#/m/shelf' }, iconEl('shelf'), h('span', { text: t('start.resume.shelf') }));
+    if (!items.length) return h('div', { class: 'start-resume' }, h('p', { class: 'muted small', text: t('start.resume.none') }), shelf);
     return h('div', { class: 'start-resume' }, h('ul', { class: 'resume-list' }, items.map((it) => {
       const tile = it.type ? typeTile(it.type, 'small') : iconEl(it.icon, 'tile small');
       if (it.accent) paintAccent(tile, it.accent);
       return h('li', {}, h('button', { type: 'button', class: 'resume-item', onclick: it.run }, tile,
         h('span', { class: 'resume-text' }, h('span', { class: 'resume-verb muted small', text: it.verb }), h('span', { class: 'resume-title', text: it.title }))));
-    })));
+    })), shelf);
   },
 
   // a quick note, and what waits in the inbox

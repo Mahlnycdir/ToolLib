@@ -13,6 +13,7 @@ import { formatTime, renderModule } from './views.js';
 import { renderSettings, PAGES } from './settings/index.js';   // 0.25.0: control centre and one page per topic
 import { linkFrom } from './link-ui.js';
 import { renderNet } from './net-view.js';
+import { renderShelf } from './shelf-view.js';
 import { appearance, onThemeChange, setAppearance, shownTheme } from '../services/theme.js';
 import { applyUpdate, checkForUpdate, onPwaChange, pwaState } from '../services/pwa.js';
 import { isConfigured, onSyncChange, phaseText, refreshPending, syncKnowledge, syncState } from '../services/sync.js';
@@ -50,6 +51,7 @@ const VIEWS = {
   scraper: (main, mod) => renderResearch(main, mod),
   kladde: (main, mod, ctx) => renderKladde(main, mod, ctx),
   kobra: (main) => renderKobra(main),
+  shelf: (main, mod, ctx) => renderShelf(main, mod, ctx),   // 0.29.0: the library to browse
   // 0.26.0: #/m/net/<slug> puts that node in the middle
   net: (main) => renderNet(main, { slug: (() => { try { return decodeURIComponent(location.hash.split('/')[3] || ''); } catch { return ''; } })() }),
 };

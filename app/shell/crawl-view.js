@@ -244,7 +244,8 @@ export function crawlPanel(folder) {
 // ------------------------------------------------------------------ the pages as a tree
 const closed = new Set();   // folders of the tree you closed, kept while the app is open
 
-export function pageTree(folder, clips, { selected = '', onPick, onRead } = {}) {
+// badge(d): an element shown beside the path of a page (0.29.0: the library shows how far you read it)
+export function pageTree(folder, clips, { selected = '', onPick, onRead, badge } = {}) {
   const scope = folder.crawl?.scope || '';
   const root = { name: '', dirs: new Map(), pages: [] };
   for (const d of clips) {
@@ -268,7 +269,8 @@ export function pageTree(folder, clips, { selected = '', onPick, onRead } = {}) 
       h('span', { class: 'cr-page-title', text: d.title }),
       h('span', { class: 'cr-page-path muted small' }, h('span', { text: name || '/' }),
         d.kind === 'document' ? h('span', { class: 'rs-tag', text: 'PDF' }) : null,
-        d.verified ? h('span', { class: 'rs-tag ok', title: t('research.checked') }, iconEl('check')) : null));
+        d.verified ? h('span', { class: 'rs-tag ok', title: t('research.checked') }, iconEl('check')) : null,
+        badge?.(d) || null));
     main.addEventListener('click', () => onPick?.(d));
     return h('li', { class: `cr-page${on ? ' on' : ''}` }, main,
       h('button', { type: 'button', class: 'icon-btn cr-read', title: t('research.read'), 'aria-label': `${t('research.read')}: ${d.title}`, html: icon('book'), onclick: () => onRead?.(d) }),

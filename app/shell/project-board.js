@@ -395,15 +395,7 @@ function widgetsArea(p, members, ctx) {
     scope: path,
     list,
     wide: p.wide || [],
-    render: (id) => {
-      const block = p.blocks?.get(id);
-      if (block) {
-        const body = blockBody(block, { go, focus: nodeByPath(path), saveContent: (text) => saveProjectBlockContent(path, id, text) });
-        return body && { kind: `block-${block.kind}`, title: blockTitle(block), icon: BLOCK_ICON[block.kind], body, editable: true, hasContent: blockHasContent(block) };
-      }
-      const body = WIDGET_BODY[id]?.(p, members, ctx);
-      return body && { kind: id, title: t(`widget.${id}`), icon: WIDGET_ICON[id], body };
-    },
+    render: (id) => projectWidgetView(id, p, ctx, members),
     save: async ({ list: next, wide }) => {
       let ok = false;
       if (next.join() !== list.join()) ok = await setWidgets(path, next) || ok;
@@ -426,6 +418,18 @@ function widgetsArea(p, members, ctx) {
 
 // The body of one of the project's own widgets, for the control panel on Start (timer, date).
 export const projectWidgetBody = (id, p, ctx) => WIDGET_BODY[id]?.(p, projectNodes(p.links), ctx) || null;
+// One widget of a project as the frame draws it: { kind, title, icon, body, editable, hasContent } or null. Also for
+// the "Project" tab beside the page you write (0.29.0, library-view.js).
+export function projectWidgetView(id, p, ctx, members = projectNodes(p.links)) {
+  const { path, go } = ctx;
+  const block = p.blocks?.get(id);
+  if (block) {
+    const body = blockBody(block, { go, focus: nodeByPath(path), saveContent: (text) => saveProjectBlockContent(path, id, text) });
+    return body && { kind: `block-${block.kind}`, title: blockTitle(block), icon: BLOCK_ICON[block.kind], body, editable: true, hasContent: blockHasContent(block) };
+  }
+  const body = WIDGET_BODY[id]?.(p, members, ctx);
+  return body && { kind: id, title: t(`widget.${id}`), icon: WIDGET_ICON[id], body };
+}
 
 const WIDGET_BODY = {
   // next steps with their lights: tick, change the light, remove, add; the field keeps the focus (steps-ui.js)

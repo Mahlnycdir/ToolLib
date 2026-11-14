@@ -96,6 +96,8 @@ const P = {
   shrink: '<path d="M9.5 4.5v5h-5M14.5 4.5v5h5M9.5 19.5v-5h-5M14.5 19.5v-5h5"/>',
   // 0.28.1: a handle to drag a step
   grip: '<circle cx="9" cy="7" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="7" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="17" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="17" r="1.2" fill="currentColor" stroke="none"/>',
+  // 0.29.0: the library to browse, books on a shelf
+  shelf: '<path d="M3 20.5h18"/><rect x="4.5" y="6.5" width="3.6" height="14" rx=".7"/><rect x="9.4" y="3.5" width="3.6" height="17" rx=".7"/><path d="m14.4 7.9 3.3-.9 3.4 12.6-3.3.9z"/>',
 };
 
 export function icon(name, cls = '') {

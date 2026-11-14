@@ -240,6 +240,10 @@ export function summary(node) {
     doi: m.doi ? String(m.doi).toLowerCase() : '',
     arxiv: m.arxiv ? String(m.arxiv).toLowerCase() : '',
     url: m.url ? String(m.url) : '',
+    // the library to browse (0.29.0): who wrote a work and when, the website a page comes from
+    authors: m.type === 'clip' ? asList(m.authors).slice(0, 3) : [],
+    year: m.type === 'clip' && m.year ? String(m.year) : '',
+    site: m.type === 'clip' && m.site ? String(m.site) : '',
     clips: m.type === 'research' ? asList(m.clips) : [],
     // going through a website (0.14.3): a clip is a page or a document of a run; a folder names its run
     kind: m.type === 'clip' && m.kind ? String(m.kind) : '',
@@ -276,6 +280,7 @@ export function summary(node) {
     } : null,
     // the red thread of a project (0.27.0): its cards in your own order, so every card can show back / next
     thread: m.type === 'project' ? asList(m.thread) : [],
+    readSlugs: m.type === 'project' ? asList(m.read) : [],   // 0.29.0: the works you read in the project (for the library)
     question: m.question ? String(m.question) : '',
     source: m.source ? String(m.source) : '',
     // where a card comes from (0.14.1): the links of its sources, so a work finds the cards made from it

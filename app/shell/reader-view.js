@@ -15,6 +15,7 @@ import { cardDialog } from './card-dialog.js';
 import { nodeHref, typeLabel } from './node-view.js';
 import { buildIndex, findQuote, selectionQuote, unwrap, wrapRange } from './reader-marks.js';
 import { clipByUrl } from '../services/crawl.js';
+import { noteProgress } from '../services/shelf.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const narrow = () => window.matchMedia('(max-width: 759px)').matches;
@@ -235,6 +236,7 @@ export function mountReader(host, opts) {
     drawMarks();
     restorePosition();
     trackSection();
+    notePlace();
   }
 
   function warningLines(doc) {
@@ -294,7 +296,15 @@ export function mountReader(host, opts) {
     const keys = Object.keys(all);
     if (keys.length > 60) delete all[keys[0]];
     savePref('reader.pos', all);
+    notePlace();
   }, 500);
+  // how far you got, for the library (0.29.0): the part of the text above the bottom of the window. A kept work only
+  // (a work you only look at has no path yet); a text that fits on the screen counts as read once it is shown.
+  function notePlace() {
+    if (!state.clipPath || state.rendering || !state.doc) return;
+    const max = textEl.scrollHeight - textEl.clientHeight;
+    noteProgress(state.clipPath, max > 8 ? (textEl.scrollTop + textEl.clientHeight) / textEl.scrollHeight : 1);
+  }
   textEl.addEventListener('scroll', () => {
     if (!ticking) { ticking = true; requestAnimationFrame(trackSection); }
     savePos();

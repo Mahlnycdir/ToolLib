@@ -15,7 +15,8 @@ import {
 import { loadClipDoc, keepWork, clipFor } from '../services/research-store.js';
 import { startSearch } from '../services/research.js';
 import { knowledgeFor } from '../services/reader-cards.js';
-import { projectWorks, addToProject } from '../services/projects.js';
+import { projectWorks, addToProject, loadProject, nextUp, setStepStatus, widgetsOf } from '../services/projects.js';
+import { lightButton, stepsEditor } from './steps-ui.js';
 import { mountEditor, sectionOf } from './page-editor.js';
 import { draggable, dropZone } from './drag.js';
 import { nodeHref, typeLabel } from './node-view.js';
@@ -25,7 +26,7 @@ const narrow = () => window.matchMedia('(max-width: 759px)').matches;
 const CARDS = new Set(['formula', 'definition', 'theorem', 'convention']);
 const urlOfClip = (m) => (m.doi ? `https://doi.org/${m.doi}` : m.arxiv ? `https://arxiv.org/abs/${m.arxiv}` : m.url ? String(m.url) : '');
 
-// opts: { path, page, onBack(), onRead(clipPath) }
+// opts: { path, page, projectOf(), go(hash), onBack(), onRead(clipPath) }
 export function mountLibrary(host, opts) {
   const lang = getLang();
   const state = { lib: null, page: null, editor: null, dirty: false, saving: false, again: false, pane: opts.page ? 'page' : 'toc', side: loadPref('library.side', 'marks'), marks: null, filter: '', know: '' };
@@ -426,18 +427,74 @@ export function mountLibrary(host, opts) {
   side.append(sideTabs, sideBody);
   function drawSideTabs() {
     const inProject = !!opts.projectOf?.();
-    sideTabs.replaceChildren(...[['marks', inProject ? 'library.side.works' : 'library.side.marks'], ['search', 'library.side.search'], ['know', 'library.side.know'], ['sources', 'library.side.sources']].map(([id, key]) => h('button', {
-      type: 'button', class: state.side === id ? 'on' : '', 'aria-pressed': String(state.side === id),
+    // 0.29.0: the project beside the page (its steps and widgets), only when the pages belong to one
+    if (!inProject && state.side === 'project') state.side = 'marks';
+    sideTabs.replaceChildren(...[...(inProject ? [['project', 'library.side.project']] : []), ['marks', inProject ? 'library.side.works' : 'library.side.marks'], ['search', 'library.side.search'], ['know', 'library.side.know'], ['sources', 'library.side.sources']].map(([id, key]) => h('button', {
+      type: 'button', class: state.side === id ? 'on' : '', 'aria-pressed': String(state.side === id), dataset: { side: id },
       text: id === 'sources' && state.page?.sources.length ? `${t(key)} (${state.page.sources.length})` : t(key),
       onclick: () => { state.side = id; savePref('library.side', id); drawSide(); },
     })));
   }
   function drawSide() {
     drawSideTabs();
-    if (state.side === 'know') drawKnow();
+    if (state.side === 'project') drawProject();
+    else if (state.side === 'know') drawKnow();
     else if (state.side === 'sources') drawSources();
     else if (state.side === 'search') drawSearch();
     else drawMarks();
+  }
+
+  // The project beside the page (0.29.0, Etappe 4b): its next step with the light (done or handed in with one tap),
+  // the other steps, and its widgets (timer, date, notes, building blocks …), so you keep the project in view while
+  // you write. The pages themselves are the contents on the left, the works the next tab.
+  const sideRefocus = { want: '', set(name) { this.want = name; } };
+  const SKIP_HERE = new Set(['steps', 'pages', 'reading']);
+  let projectDraw = 0;
+  async function drawProject() {
+    const proj = opts.projectOf?.();
+    if (!proj) { state.side = 'marks'; drawSide(); return; }
+    const token = ++projectDraw;
+    const box = h('div', { class: 'lb-project' });
+    // drawn again (after a tick): the old content stays until the new one is ready, so nothing flickers
+    if (!sideBody.querySelector('.lb-project')) sideBody.replaceChildren(h('p', { class: 'muted small lb-project-loading', text: t('library.loading') }));
+    let p;
+    let board;
+    try {
+      // project-board.js is loaded when the tab opens (it leads back to the writing view: no loop at start)
+      [p, board] = await Promise.all([loadProject(proj.path), import('./project-board.js')]);
+    } catch (e) {
+      console.warn('Could not load the project', e);
+      sideBody.replaceChildren(h('p', { class: 'muted small', text: t('library.side.projectGone') }));
+      return;
+    }
+    if (destroyed || state.side !== 'project' || token !== projectDraw) return;
+    const fields = {};
+    const ctx = { path: p.path, go: opts.go || ((hash) => { location.hash = hash; }), redraw: () => drawProject(), fields, refocus: sideRefocus };
+    const parts = [h('div', { class: 'lb-project-head' },
+      h('a', { class: 'lb-project-title', href: nodeHref(p.path), onclick: () => { flush(); } }, iconEl('target'), h('span', { text: p.title })),
+      p.goal ? h('p', { class: 'muted small', text: p.goal }) : null)];
+    const next = nextUp(p.steps);
+    if (next) {
+      const i = p.steps.indexOf(next);
+      const end = (status) => async () => { await setStepStatus(p.path, i, status); const fresh = await loadProject(p.path).catch(() => null); const n2 = fresh && nextUp(fresh.steps); toast(n2 ? t('steps.goOn', { step: n2.text }) : t('steps.allDone'), 'ok', 6000); drawProject(); };
+      parts.push(h('div', { class: `pult-next lb-project-next s-${next.status}` }, lightButton(p, i, { path: p.path, redraw: () => drawProject() }),
+        h('span', { class: 'pult-next-text' }, h('span', { class: 'muted small', text: t('project.next') }), h('b', { text: next.text })),
+        h('div', { class: 'btn-row' },
+          h('button', { type: 'button', class: 'btn small lb-step-done', onclick: end('done') }, iconEl('check'), h('span', { text: t('steps.light.done') })),
+          h('button', { type: 'button', class: 'btn small lb-step-wait', onclick: end('wait') }, iconEl('arrowRight'), h('span', { text: t('steps.light.wait') })))));
+    }
+    parts.push(h('section', { class: 'lb-project-part' }, h('h4', { class: 'lb-side-h', text: t('widget.steps') }), stepsEditor(p, { ...ctx, compact: true, skip: next ? p.steps.indexOf(next) : -1 })));
+    // the other widgets of the project, in its order; steps, pages and works have their place here already
+    for (const id of widgetsOf(p).filter((x) => !SKIP_HERE.has(x))) {
+      let w = null;
+      try { w = board.projectWidgetView(id, p, ctx); } catch (e) { console.warn('Widget', id, e); }
+      if (w) parts.push(h('section', { class: `lb-project-part widget-${w.kind}`, dataset: { widget: id } }, h('h4', { class: 'lb-side-h' }, iconEl(w.icon), h('span', { text: w.title })), w.body));
+    }
+    parts.push(h('a', { class: 'small lb-project-more', href: nodeHref(p.path), onclick: () => { flush(); } }, h('span', { text: t('library.side.toProject') }), iconEl('chevronRight')));
+    box.replaceChildren(...parts);
+    sideBody.replaceChildren(box);
+    // the field you typed in (a new step) keeps the focus when the tab is drawn again
+    if (sideRefocus.want && fields[sideRefocus.want]) { fields[sideRefocus.want].focus(); sideRefocus.want = ''; }
   }
 
   // Research while you write (0.18.0): papers and books from the open sources, beside the page. Keep goes into the
