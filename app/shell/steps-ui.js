@@ -2,6 +2,8 @@
 // Start. Every step has a light in front: grey = open, red = next, yellow = handed in / waiting for someone,
 // green = done. Tap the light to change it; the box ticks a step off (green) or opens it again. When a step turns
 // green or yellow, the board says what you could go on with (the first red step, else the first open one).
+// 0.28.1: steps can be dragged into another order (by the dots at the left, or anywhere on the row; on a phone after
+// a short press), on the project's board and in the control panel.
 //
 //   stepsEditor(p, { path, redraw, fields, refocus, compact, skip, after })
 //     p        the loaded project (projects.js loadProject: steps with status)
@@ -15,7 +17,8 @@
 import { h, toast, actionSheet } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t } from '../i18n/i18n.js';
-import { addStep, loadProject, nextUp, removeStep, setStepStatus, toggleStep } from '../services/projects.js';
+import { addStep, loadProject, moveStep, nextUp, removeStep, setStepStatus, toggleStep } from '../services/projects.js';
+import { draggable, dropZone, half } from './drag.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 // the colours of the lights, also for the menu (which wants hex values)
@@ -64,7 +67,16 @@ export function stepsEditor(p, { path, redraw, fields = {}, refocus = { set() {}
       });
       const del = h('button', { type: 'button', class: 'icon-btn small step-del', 'aria-label': `${t('action.remove')}: ${s.text}`, title: t('action.remove'), html: icon('close') });
       del.addEventListener('click', async () => { await removeStep(path, i); redraw(); });
-      list.append(h('li', { class: `s-${s.status}${s.status === 'done' ? ' done' : ''}` }, dot, h('label', {}, box, h('span', { text: s.text })), del));
+      const grip = h('span', { class: 'step-grip', title: t('steps.drag'), 'aria-hidden': 'true', html: icon('grip') });
+      const row = h('li', { class: `s-${s.status}${s.status === 'done' ? ' done' : ''}`, dataset: { step: String(i) } }, grip, dot, h('label', {}, box, h('span', { text: s.text })), del);
+      // drag a step onto another: it goes in front of or behind it (the upper or lower half)
+      draggable(row, { data: { kind: 'step', path, i }, label: s.text });
+      dropZone(row, {
+        accept: (x) => x.kind === 'step' && x.path === path && x.i !== i,
+        place: (x, e, el) => half(e, el),
+        drop: async (x, place) => { if (await moveStep(path, x.i, i, place)) redraw(); },
+      });
+      list.append(row);
     });
     if (compact && done) {
       const fold = h('button', { type: 'button', class: 'link-btn steps-fold small' }, iconEl('check'), h('span', { text: t(showDone ? 'steps.hideDone' : 'steps.showDone', { n: done }) }));

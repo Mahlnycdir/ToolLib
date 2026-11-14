@@ -2452,5 +2452,6 @@
   "block.net.depth": { "en": "{n} step(s) out", "de": "{n} Schritt(e) weit" },
   "block.countdown": { "en": "Countdown", "de": "Countdown" },
   "block.countdown.hint": { "en": "The days until a date", "de": "Die Tage bis zu einem Datum" },
-  "block.countdown.empty": { "en": "No date yet: set it up in the menu ⋯", "de": "Noch kein Datum: im Menü ⋯ einrichten" }
+  "block.countdown.empty": { "en": "No date yet: set it up in the menu ⋯", "de": "Noch kein Datum: im Menü ⋯ einrichten" },
+  "steps.drag": { "en": "Drag to move the step", "de": "Ziehen, um den Schritt zu verschieben" }
 }

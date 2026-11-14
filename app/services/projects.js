@@ -480,6 +480,19 @@ export const setStepStatus = (path, index, status) => change(path, (text) => {
   lines[i] = lines[i].replace(/^- \[([ xX!>])\]/, `- [${mark}]`);
   return lines.join('\n');
 });
+// Moves step `from` in front of or behind step `to` (0.28.1: dragging steps); its light goes along.
+export const moveStep = (path, from, to, place = 'before') => change(path, (text) => {
+  const s = sections(text);
+  if (s.next < 0 || from === to) return null;
+  const i = stepLine(s, from);
+  let j = stepLine(s, to);
+  if (i < 0 || j < 0) return null;
+  const lines = [...s.lines];
+  const [line] = lines.splice(i, 1);
+  if (i < j) j -= 1;
+  lines.splice(place === 'after' ? j + 1 : j, 0, line);
+  return lines.join('\n');
+});
 // What to go on with in a project: the first red step, else the first open one (handed-in ones wait for others).
 export const nextUp = (steps) => steps.find((x) => x.status === 'next') || steps.find((x) => x.status === 'open') || null;
 export const removeStep = (path, index) => change(path, (text) => {

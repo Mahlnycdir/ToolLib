@@ -2393,3 +2393,13 @@ body.pc-full-open { overflow: hidden; }
 .block-link-edit li > span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .block-link-add { display: grid; gap: 8px; }
 .pult-actions a.btn { text-decoration: none; }
+
+/* 0.28.1: steps are dragged into another order; the dots at the left show it (always on a phone, on hover with a mouse) */
+.steps-list li.drag-item { cursor: grab; border-radius: 8px; }
+.step-grip { flex: none; display: grid; place-items: center; width: 14px; margin-left: -4px; color: var(--muted); opacity: 0; transition: opacity 0.15s ease; cursor: grab; }
+.step-grip .ic { width: 14px; height: 14px; }
+.steps-list li:hover .step-grip { opacity: 0.8; }
+@media (pointer: coarse) { .step-grip { opacity: 0.55; } }
+.steps-list li.drop-before { box-shadow: inset 0 3px 0 var(--accent); }
+.steps-list li.drop-after { box-shadow: inset 0 -3px 0 var(--accent); }
+
