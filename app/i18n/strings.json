@@ -2361,5 +2361,10 @@
   "thread.ctx": { "en": "Red thread · {project}", "de": "Roter Faden · {project}" },
   "thread.prev": { "en": "Before", "de": "Vorher" },
   "thread.next": { "en": "Next", "de": "Weiter" },
-  "thread.of": { "en": "{i} of {n}", "de": "{i} von {n}" }
+  "thread.of": { "en": "{i} of {n}", "de": "{i} von {n}" },
+  "rel.kind.leadsTo": { "en": "leads to", "de": "führt zu" },
+  "canvas.thread.suggest": { "en": "Suggest", "de": "Vorschlagen" },
+  "canvas.thread.suggest.hint": { "en": "Order the cards along their derivations: what a card follows from comes first", "de": "Die Karten entlang ihrer Herleitungen ordnen: was eine Karte voraussetzt, kommt zuerst" },
+  "canvas.thread.suggested": { "en": "Red thread along the derivations: {n} cards. Tap to change it.", "de": "Roter Faden entlang der Herleitungen: {n} Karten. Antippen ändert ihn." },
+  "canvas.thread.suggest.none": { "en": "Too few cards to put in order", "de": "Zu wenige Karten zum Ordnen" }
 }

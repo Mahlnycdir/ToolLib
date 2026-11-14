@@ -63,14 +63,20 @@ export async function linkFrom(d) {
 // ------------------------------------------------------------------ the panel
 // "Points to" and "Linked from" with every kind of relation. A formula card shows its "follows from" and its
 // conventions in its own text (formulary.js), so here they are left out for cards; for everything else they count.
+// The other way round, what follows from a card ("leads to") is not written in the card: it stands here, first
+// among "Linked from", marked "leads to" (0.27.1; until then a heading in the card's text).
 export function relationsPanel(d) {
   const box = h('section', { class: 'ctx-rel', 'aria-live': 'polite' });
   const draw = () => {
     const now = nodeBySlug(d.slug) || d;
     const r = relationsOf(d.slug);
-    const skip = (x) => isCard(now) && (x.kind === 'derived' || x.kind === 'convention');
-    const out = r.out.filter((x) => !skip(x));
-    const inn = r.in.filter((x) => !skip(x));
+    const card = isCard(now);
+    const skipOut = (x) => card && (x.kind === 'derived' || x.kind === 'convention');
+    const skipIn = (x) => card && x.kind === 'convention';
+    const out = r.out.filter((x) => !skipOut(x));
+    // incoming "follows from" = this card leads to that one; those first
+    const inn = r.in.filter((x) => !skipIn(x)).map((x) => (x.kind === 'derived' ? { ...x, kind: 'leadsTo' } : x))
+      .sort((a, b) => (b.kind === 'leadsTo') - (a.kind === 'leadsTo'));
     const add = h('button', { type: 'button', class: 'btn small rel-add', title: t('rel.link.hint') }, iconEl('link'), h('span', { text: t('rel.link') }));
     add.addEventListener('click', () => linkFrom(nodeBySlug(d.slug) || d));
     const count = out.length + inn.length;
@@ -88,7 +94,7 @@ export function relationsPanel(d) {
     const lang = getLang();
     const rows = h('div', { class: 'related rel-list' });
     const row = (x) => {
-      const kind = x.kind === 'cite' || x.kind === 'page' || x.kind === 'derived' || x.kind === 'convention' ? h('span', { class: `rel-kind k-${x.kind}`, text: t(`rel.kind.${x.kind}`) }) : null;
+      const kind = ['cite', 'page', 'derived', 'convention', 'leadsTo'].includes(x.kind) ? h('span', { class: `rel-kind k-${x.kind}`, text: t(`rel.kind.${x.kind}`) }) : null;
       const a = h('a', { class: 'related-link', href: nodeHref(x.d.path), title: typeLabel(x.d.type) }, typeTile(x.d.type, 'small'), h('span', { class: 'rel-title', text: nodeTitle(x.d, lang) }), kind);
       const target = removable?.(x);
       if (!target) return h('div', { class: 'rel-row' }, a);

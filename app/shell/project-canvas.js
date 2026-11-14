@@ -9,6 +9,7 @@
 //              (the same tension as in the network: same topic, same group, shared neighbours).
 //   red thread "Red thread": tap the cards in the order you want (definition → formula → snippet …); they get
 //              numbers, a glowing red line joins them, the board shows the numbers, every card offers back / next.
+//              "Suggest" orders them along their derivations first (0.27.1); you change it by tapping.
 //   groups     frames with a name and a colour; dragging the name moves the cards inside along
 //   notes      double-click the empty surface (or "Note"): what you type becomes a note of the project, right there
 //
@@ -25,7 +26,7 @@ import { t, getLang } from '../i18n/i18n.js';
 import { nodeBySlug, onNodesChange } from '../services/search.js';
 import { getNode } from '../services/nodes.js';
 import { connect, disconnect, graph, isDrawn, onRelationsChange } from '../services/relations.js';
-import { boardOf, loadProject, setThread } from '../services/projects.js';
+import { boardOf, loadProject, setThread, suggestThread } from '../services/projects.js';
 import { capture } from '../services/notes.js';
 import { loadCanvas, saveCanvas, canvasPathOf } from '../services/canvas-store.js';
 import { onAnnounce } from '../services/channel.js';
@@ -108,9 +109,11 @@ export function projectCanvas(p, ctx) {
       clear.addEventListener('click', async () => {
         if (state.thread.length && await confirmDialog(t('canvas.thread'), t('canvas.thread.clear.confirm'), { okLabel: t('canvas.thread.clear'), danger: true })) saveThread([]);
       });
+      const suggest = h('button', { type: 'button', class: 'btn small pc-suggest', title: t('canvas.thread.suggest.hint') }, iconEl('wand'), h('span', { text: t('canvas.thread.suggest') }));
+      suggest.addEventListener('click', () => suggestNow());
       const ready = h('button', { type: 'button', class: 'btn small primary pc-done', text: t('canvas.done') });
       ready.addEventListener('click', () => setMode(''));
-      hint.replaceChildren(h('span', { text: t('canvas.thread.on') }), clear, ready);
+      hint.replaceChildren(h('span', { text: t('canvas.thread.on') }), suggest, clear, ready);
     } else if (m === 'link') {
       const ready = h('button', { type: 'button', class: 'btn small primary pc-done', text: t('canvas.done') });
       ready.addEventListener('click', () => setMode(''));
@@ -434,6 +437,15 @@ export function projectCanvas(p, ctx) {
     layout();
     try { await setThread(path, list); } catch { toast(t('canvas.saveFailed'), 'error', 5000); }
     scheduleSave();   // the canvas file carries the red thread as lines for Obsidian
+  }
+  // "Suggest" (0.27.1): the red thread along the derivations (projects.js suggestThread), with Undo
+  async function suggestNow() {
+    const fresh = (await loadProject(path).catch(() => null)) || p;
+    const list = suggestThread(fresh, membersOf(p.slug));
+    if (list.length < 2) { toast(t('canvas.thread.suggest.none'), 'info'); return; }
+    const was = [...state.thread];
+    await saveThread(list);
+    toast(t('canvas.thread.suggested', { n: list.length }), 'ok', 6000, { label: t('delete.undo'), run: () => saveThread(was) });
   }
   function tapCard(slug) {
     if (state.mode === 'thread') saveThread(state.thread.includes(slug) ? state.thread.filter((x) => x !== slug) : [...state.thread, slug]);

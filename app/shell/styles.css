@@ -1997,7 +1997,7 @@ body.dragging-now, body.dragging-now * { cursor: grabbing !important; -webkit-us
 .rel-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rel-kind { flex: none; font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; }
 .rel-kind.k-cite { color: var(--c-yellow); border-color: color-mix(in srgb, var(--c-yellow) 45%, var(--border)); }
-.rel-kind.k-derived { color: var(--c-rose); border-color: color-mix(in srgb, var(--c-rose) 40%, var(--border)); }
+.rel-kind.k-derived, .rel-kind.k-leadsTo { color: var(--c-rose); border-color: color-mix(in srgb, var(--c-rose) 40%, var(--border)); }
 .rel-rm { width: 26px; height: 26px; margin: 0; opacity: 0.45; }
 .rel-row:hover .rel-rm, .rel-rm:focus-visible { opacity: 1; }
 .rel-more { margin: 2px 0 0; font-size: 13px; align-self: flex-start; }

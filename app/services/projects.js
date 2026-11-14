@@ -333,6 +333,34 @@ export function threadPlace(p, slug) {
   const i = (p.thread || []).indexOf(slug);
   return i < 0 ? null : { index: i, prev: p.thread[i - 1] || null, next: p.thread[i + 1] || null, list: p.thread };
 }
+// A red thread along the derivations (0.27.1, "Roten Faden vorschlagen"): what a card follows from, and the
+// conventions it uses, come before it. Among the cards free to come next, one that builds on the card placed last
+// goes first (so a chain stays together), then definitions before formulas before snippets, then the board's order.
+// Notes, sources and folders stay out, unless fewer than two cards would remain. Returns the slugs in order.
+// For Python readers: a topological sort like graphlib.TopologicalSorter, picking the next node by a sort key.
+const STEP_RANK = { definition: 0, term: 0, convention: 1, topic: 2, theorem: 3, formula: 3, page: 4, snippet: 5, recipe: 5 };
+export function suggestThread(p, members = projectNodes(p.links)) {
+  const usable = members.filter((d) => d && !d.conflict && d.type !== 'library' && d.type !== 'project');
+  let list = usable.filter((d) => d.type in STEP_RANK);
+  if (list.length < 2) list = usable;
+  const slugs = new Set(list.map((d) => d.slug));
+  const boardPos = new Map(boardOf(p, members).flatMap((sec) => sec.items).map((d, i) => [d.slug, i]));
+  // before.get(x): the cards of this project that have to come before x
+  const before = new Map(list.map((d) => [d.slug, new Set([...(d.derived || []), ...(d.conventions || [])].filter((x) => x !== d.slug && slugs.has(x)))]));
+  const out = [];
+  const placed = new Set();
+  while (out.length < list.length) {
+    const left = list.filter((d) => !placed.has(d.slug));
+    const free = left.filter((d) => [...before.get(d.slug)].every((x) => placed.has(x)));
+    const pool = free.length ? free : left;   // a circle in the derivations: take the best one and go on
+    const last = out[out.length - 1];
+    const key = (d) => [last && before.get(d.slug).has(last) ? 0 : 1, STEP_RANK[d.type] ?? 9, boardPos.get(d.slug) ?? 999];
+    pool.sort((a, b) => { const ka = key(a); const kb = key(b); return ka[0] - kb[0] || ka[1] - kb[1] || ka[2] - kb[2]; });
+    out.push(pool[0].slug);
+    placed.add(pool[0].slug);
+  }
+  return out;
+}
 export const setRead = toggleIn('read');
 export const setPinned = toggleIn('pins');
 export const setDue = (path, date, what = '') => changeProject(path, (text) => {

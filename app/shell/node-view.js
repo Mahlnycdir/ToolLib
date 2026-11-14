@@ -294,7 +294,7 @@ export async function renderNode(main, path, ctx) {
   // Body in the chosen language; the spots of an open convention show what you picked
   box.append(renderMarkdown(localize(choices ? markSpots(node.body, choices.pick) : node.body, lang), { onCopy: (text) => copyWithToast(text), onNodeLink }));
 
-  // Formulary: symbols, follows from, leads to, conventions; for a topic the cards its text does not name
+  // Formulary: symbols, follows from, conventions; for a topic the cards its text does not name
   box.append(...cardSections(node, d, lang));
 
   if (libInfo && d.type === 'library') {

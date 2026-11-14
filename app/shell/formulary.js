@@ -54,7 +54,9 @@ export function shownElsewhere(node, d) {
   return out;
 }
 
-// Symbols, Follows from, Leads to, Conventions and, for a topic, the cards its text does not mention yet.
+// Symbols, Follows from, Conventions and, for a topic, the cards its text does not mention yet. What a card leads to
+// (the cards that follow from it) stands since 0.27.1 beside the node with the other incoming links (link-ui.js):
+// it is not written in this card but worked out from the others.
 export function cardSections(node, d, lang = getLang()) {
   const out = [];
   const symbols = Array.isArray(node.meta.symbols) ? node.meta.symbols : [];
@@ -72,8 +74,6 @@ export function cardSections(node, d, lang = getLang()) {
   }
   const from = (d.derived || []).map(nodeBySlug).filter(Boolean);
   if (from.length) out.push(h('h2', { class: 'follows-from', text: t('formulary.from') }), linkList(from, lang));
-  const to = allNodes().filter((x) => isCard(x) && (x.derived || []).includes(d.slug)).sort(byTitle);
-  if (to.length) out.push(h('h2', { class: 'leads-to', text: t('formulary.to') }), linkList(to, lang));
   const conv = (d.conventions || []).map(nodeBySlug).filter(Boolean);
   if (conv.length) out.push(h('h2', { class: 'uses-conventions', text: t('formulary.conventions') }), linkList(conv, lang));
   if (d.type === 'topic') {
