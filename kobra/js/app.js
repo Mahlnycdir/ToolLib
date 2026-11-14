@@ -346,7 +346,8 @@ function renderTree() {
     const items = (byDir.get(dir) || []).slice().sort((a, b) => (a.type === b.type ? a.path.localeCompare(b.path, 'de', { numeric: true }) : a.type === 'dir' ? -1 : 1));
     for (const f of items) {
       const name = store.basename(f.path);
-      const row = h('div', { class: `tree-row${f.path === state.active ? ' on' : ''}`, role: 'treeitem', style: { paddingLeft: `${10 + depth * 16}px` } });
+      // deep folders indent at most six steps, so a name keeps room on a phone (0.27.2)
+      const row = h('div', { class: `tree-row${f.path === state.active ? ' on' : ''}`, role: 'treeitem', title: f.path, style: { paddingLeft: `${10 + Math.min(depth, 6) * 16}px` } });
       if (f.type === 'dir') {
         const open = state.expanded.has(f.path);
         row.innerHTML = `${icon(open ? 'chevronDown' : 'chevronRight', 'tree-chev')}${icon(open ? 'folderOpen' : 'folder', 'tree-ic dir')}<span class="tree-name"></span>`;
@@ -535,7 +536,7 @@ async function openProjectsSheet() {
   const sheet = openSheet(tr('kobra.projects'), body);
   const here = new Set();
   for (const p of list) {
-    const row = h('button', { class: `project-row${p.name === state.project ? ' on' : ''}`, type: 'button', html: `${icon('folder')}<span class="pname"></span>${p.git ? `<span class="tree-tag">Git</span>` : ''}` });
+    const row = h('button', { class: `project-row${p.name === state.project ? ' on' : ''}`, type: 'button', title: p.name, html: `${icon('folder')}<span class="pname"></span>${p.git ? `<span class="tree-tag">Git</span>` : ''}` });
     row.querySelector('.pname').textContent = p.name;
     row.addEventListener('click', async () => { sheet.close(); await openProject(p.name); showView(isWide() ? 'code' : 'files'); });
     body.append(row);
@@ -701,7 +702,9 @@ async function openFile(path, { line, col, noView } = {}) {
   persistTabs();
   renderTabs();
   renderTree();
-  $('#file-name').textContent = path;
+  // a file in folders shows as …/name (the full path as a tooltip), so a long path never hides the file's name (0.27.2)
+  $('#file-name').textContent = path.includes('/') ? `…/${store.basename(path)}` : path;
+  $('#file-name').title = path;
   $('#editor-empty').hidden = true;
   if (!noView) showView('code');
   if (line) setTimeout(() => editor.gotoLine(line, col || 0), 40);
@@ -726,6 +729,7 @@ async function previewFile(path) {
 function showEmptyEditor() {
   $('#editor-empty').hidden = false;
   $('#file-name').textContent = '';
+  $('#file-name').title = '';
 }
 
 function persistTabs() { savePref(`tabs.${state.project}`, state.tabs); }
@@ -735,7 +739,7 @@ function renderTabs() {
   el.textContent = '';
   for (const p of state.tabs) {
     const t = h('div', { class: `tab${p === state.active ? ' on' : ''}${editor?.isDirty(p) ? ' dirty' : ''}`, role: 'tab', dataset: { path: p } });
-    const label = h('button', { class: 'tab-label', type: 'button', text: store.basename(p), title: p });
+    const label = h('button', { class: 'tab-label', type: 'button', title: p }, h('span', { class: 'tab-text', text: store.basename(p) }));
     label.addEventListener('click', () => openFile(p));
     const close = h('button', { class: 'tab-close', type: 'button', 'aria-label': tr('kobra.tab.close', { p }), html: icon('close') });
     close.addEventListener('click', (e) => { e.stopPropagation(); closeTab(p); });
@@ -825,7 +829,7 @@ function buildKeybar() {
   const key = (content, fn, cls = '', label = '') => {
     const b = h('button', { class: `kb-key ${cls}`, type: 'button', 'aria-label': label || (typeof content === 'string' ? content : '') });
     if (content.startsWith('<svg')) b.innerHTML = content; else b.textContent = content;
-    tapKeepFocus(b, fn);
+    tapKeepFocus(b, () => { if (!(b.parentElement === mid && mid.dataset.swiped)) fn(); });   // a key you swiped over does not type
     return b;
   };
   left.append(key(icon('tab'), () => editor.key('tab'), 'wide', 'Tab'), key(icon('blocks'), () => openSnippets(), 'accent', tr('kobra.blocks')));
@@ -845,6 +849,7 @@ function buildKeybar() {
   );
   right.append(key(icon('keyboardDown'), () => editor.blur(), '', tr('kobra.key.hideKeyboard')));
   bar.append(left, mid, right);
+  swipeScroll(mid);
   const host = $('#editor');
   if (host.dataset.kbWired) return;   // nach einem Sprachwechsel nur die Tasten neu
   host.dataset.kbWired = '1';
@@ -852,6 +857,44 @@ function buildKeybar() {
   host.addEventListener('focusout', () => setTimeout(() => {
     if (!host.contains(document.activeElement)) document.body.classList.remove('editing');
   }, 100));
+}
+
+// The middle of the key bar scrolls sideways with the finger (0.27.2, ENTE: "I can't scroll in the symbols").
+// Every key swallows its touch (tapKeepFocus, so the keyboard stays open), which also stopped the browser from
+// scrolling the strip. So the strip scrolls itself: it follows the finger, glides on a little after a swipe, and
+// marks the touch as a swipe so the key under the finger does not type.
+// For Python readers: touchstart/touchmove/touchend are the finger going down, moving and lifting; scrollLeft is
+// how far the strip is scrolled, in pixels.
+function swipeScroll(strip) {
+  let x0 = 0; let s0 = 0; let lastX = 0; let lastT = 0; let speed = 0; let raf = 0;
+  strip.addEventListener('touchstart', (e) => {
+    cancelAnimationFrame(raf);
+    const t = e.touches[0];
+    x0 = lastX = t.clientX; s0 = strip.scrollLeft; lastT = performance.now(); speed = 0;
+    strip.dataset.swiped = '';
+  }, { passive: true, capture: true });
+  strip.addEventListener('touchmove', (e) => {
+    const t = e.touches[0];
+    const dx = t.clientX - x0;
+    if (!strip.dataset.swiped && Math.abs(dx) < 8) return;
+    if (!strip.dataset.swiped) strip.querySelectorAll('.kb-key.pressed').forEach((k) => k.classList.remove('pressed'));
+    strip.dataset.swiped = '1';
+    strip.scrollLeft = s0 - dx;
+    const now = performance.now();
+    speed = (t.clientX - lastX) / Math.max(1, now - lastT);   // pixels per millisecond
+    lastX = t.clientX; lastT = now;
+  }, { passive: true });
+  strip.addEventListener('touchend', () => {
+    if (!strip.dataset.swiped) return;
+    let step = -speed * 16;   // pixels per frame
+    const glide = () => {
+      if (Math.abs(step) < 0.5) return;
+      strip.scrollLeft += step;
+      step *= 0.94;
+      raf = requestAnimationFrame(glide);
+    };
+    raf = requestAnimationFrame(glide);
+  }, { passive: true });
 }
 
 function openSnippets() {
