@@ -36,6 +36,7 @@ import { keyTitle } from '../services/keys.js';
 import { PALETTE, colourVar, typeColour } from './colors.js';
 import { graph, onRelationsChange } from '../services/relations.js';
 import { projectCanvas } from './project-canvas.js';
+import { aheadBody } from './problem-ui.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const narrow = () => window.matchMedia('(max-width: 899px)').matches;
@@ -43,7 +44,7 @@ const narrow = () => window.matchMedia('(max-width: 899px)').matches;
 export const COLOUR_HEX = Object.fromEntries(Object.entries(PALETTE).map(([k, v]) => [k, v[0]]));   // light shades, for older callers
 const paintSection = (el, color) => el.style.setProperty('--sec', colourVar(color));
 export const sectionTitle = (s) => s.title || (['collect', 'keep', 'apply'].includes(s.id) ? t(`station.${s.id}`) : s.id);
-const WIDGET_ICON = { steps: 'check', reading: 'book', pins: 'bookmark', calc: 'vars', timer: 'history', due: 'target', links: 'link', pages: 'file', notes: 'edit' };
+const WIDGET_ICON = { steps: 'check', ahead: 'route', reading: 'book', pins: 'bookmark', calc: 'vars', timer: 'history', due: 'target', links: 'link', pages: 'file', notes: 'edit' };
 const upper = (e, el) => { const r = el.getBoundingClientRect(); return e.clientY < r.top + r.height * 0.6 ? 'before' : 'after'; };
 
 // ------------------------------------------------------------------ the body of a project: actions, widgets, board
@@ -435,6 +436,12 @@ const WIDGET_BODY = {
   // next steps with their lights: tick, change the light, remove, add; the field keeps the focus (steps-ui.js)
   steps(p, members, ctx) {
     return stepsEditor(p, ctx);
+  },
+
+  // "Weiterkommen" (0.30.0): the path the project walks, and what your knowledge has for its next step and its goal;
+  // a field for what you are stuck on (problem-ui.js)
+  ahead(p, members, ctx) {
+    return aheadBody(p, ctx);
   },
 
   // the works of the project: read or not yet, read them from here

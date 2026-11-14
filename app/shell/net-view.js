@@ -44,6 +44,7 @@ function clampInt(v, lo, hi) { const n = Math.round(Number(v)); return Number.is
 export function areaOf(d) {
   if (d.area?.length) return String(d.area[0]).toLowerCase();
   if (d.type === 'snippet' || d.type === 'recipe') return 'programming';
+  if (d.type === 'path') return d.themes?.includes('programming') ? 'programming' : String(d.themes?.[0] || '');   // 0.30.0
   return '';
 }
 
@@ -141,7 +142,7 @@ const TYPE_GROUPS = ['own', 'cards', 'code', 'sources', 'other'];
 function typeGroup(type) {
   if (['project', 'note', 'page', 'library'].includes(type)) return 'own';
   if (['formula', 'theorem', 'definition', 'term', 'convention', 'topic'].includes(type)) return 'cards';
-  if (type === 'snippet' || type === 'recipe') return 'code';
+  if (type === 'snippet' || type === 'recipe' || type === 'path') return 'code';
   if (type === 'clip' || type === 'research') return 'sources';
   return 'other';
 }

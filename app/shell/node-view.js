@@ -20,13 +20,14 @@ import { createFromWork } from './card-dialog.js';
 import { openOriginal } from '../services/pdf-inbox.js';
 import { contextBox } from './context.js';
 import { askDelete } from './delete-node.js';
+import { pathSection } from './path-view.js';
 import { DELETED_ELSEWHERE } from '../services/remove.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 
 // ------------------------------------------------------------------ kinds of nodes
 const TYPE_ICON = {
-  snippet: 'code', recipe: 'list', topic: 'outline', formula: 'vars', convention: 'outline', definition: 'book', term: 'book', theorem: 'book',
+  snippet: 'code', recipe: 'list', path: 'route', topic: 'outline', formula: 'vars', convention: 'outline', definition: 'book', term: 'book', theorem: 'book',
   rule: 'warn', part: 'chip', device: 'chip', pin_map: 'board', tool: 'wand', note: 'edit', project: 'target',
   card: 'chalkboard', clip: 'globe', research: 'search', library: 'book', page: 'file',
 };
@@ -291,8 +292,10 @@ export async function renderNode(main, path, ctx) {
     }
   }
 
-  // Body in the chosen language; the spots of an open convention show what you picked
-  box.append(renderMarkdown(localize(choices ? markSpots(node.body, choices.pick) : node.body, lang), { onCopy: (text) => copyWithToast(text), onNodeLink }));
+  // Body in the chosen language; the spots of an open convention show what you picked. A path (0.30.0) shows its
+  // steps instead, each with its task and check (path-view.js).
+  if (d.type === 'path' && !node.error) box.append(pathSection(node, { go }));
+  else box.append(renderMarkdown(localize(choices ? markSpots(node.body, choices.pick) : node.body, lang), { onCopy: (text) => copyWithToast(text), onNodeLink }));
 
   // Formulary: symbols, follows from, conventions; for a topic the cards its text does not name
   box.append(...cardSections(node, d, lang));

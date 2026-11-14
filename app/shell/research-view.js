@@ -24,6 +24,7 @@ import { createFromWork } from './card-dialog.js';
 import { crawlState, onCrawl, pageWork, parseStart } from '../services/crawl.js';
 import { crawlDialog, crawlPanel, pageTree } from './crawl-view.js';
 import { projectAccent } from './projects-view.js';
+import { ownHelp } from './problem-ui.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const solo = () => new URLSearchParams(location.search).has('solo');
@@ -400,6 +401,12 @@ export function renderResearch(main) {
           h('button', { type: 'button', class: 'btn rs-address-words', onclick: () => run(st.query, { words: true }) }, iconEl('search'), h('span', { text: t('crawl.asWords') }))),
         h('p', { class: 'muted small', text: t('crawl.address.hint') })));
       return;
+    }
+    // 0.30.0: what your own knowledge has for the question (paths first), above the hits; with a project in focus,
+    // what helps it on (ENTE: "gerade wenn man im Research ist und nicht weiter weiß")
+    if (st.query && st.query.trim().length >= 3 && parseQuery(st.query).kind === 'text') {
+      const own = ownHelp(st.query, { go: (hash) => { location.hash = hash; } });
+      if (own) list.append(h('li', { class: 'rs-own' }, own));
     }
     if (learning()) { drawLearn(); return; }
     if (!st.result) {

@@ -5,6 +5,7 @@
 //   widgets: ["pult", "resume", "inbox", "tools"]       which widgets, in this order
 //   wide: ["pult"]                                      the ones two columns wide
 //   pult: ["projects/master-thesis.md", …]              the projects in the control panel, at most four
+//   themes: ["electronics", "physics", …]              your themes for ideas and paths (0.30.0, paths.js THEMES)
 //   w_<id>: {"kind": "note", …}                         building blocks (widget-store.js)
 //   ---
 //   ## Widget <id>                                      their content
@@ -18,11 +19,13 @@ import { noteChange } from './sync.js';
 import { post, onAnnounce } from './channel.js';
 import { onNodesChange } from './search.js';
 import { blocksOf, widgetList, wideList, withConfig, withContent, withoutBlock } from './widget-store.js';
+import { THEMES, isTheme } from './paths.js';
 
 export const START_FILE = 'start.md';
 export const START_WIDGETS = ['pult', 'resume', 'inbox', 'projects', 'tools'];
 export const DEFAULT_START = { widgets: ['pult', 'resume', 'inbox', 'tools'], wide: ['pult'] };
 export const PULT_MAX = 4;
+export const DEFAULT_THEMES = THEMES.map((x) => x.id);   // ENTE's interests, all of them at first
 const FILE = `${KNOWLEDGE}/${START_FILE}`;
 const asList = (v) => (Array.isArray(v) ? v.map(String) : v ? [String(v)] : []);
 const BLANK = '---\ntype: start\ntitle: "Start"\nsource: you\n---\n';
@@ -38,12 +41,13 @@ function parse(text) {
     widgets,
     wide: meta.wide == null ? DEFAULT_START.wide : wideList(meta.wide),
     pult: meta.pult == null ? null : asList(meta.pult).filter((p) => /^projects\/[\w.-]+\.md$/.test(p)).slice(0, PULT_MAX),
+    themes: meta.themes == null ? DEFAULT_THEMES : [...new Set(asList(meta.themes).filter(isTheme))],
     blocks: blocksOf(meta, text, widgets),
   };
 }
 
 export async function loadStart() {
-  let s = { found: false, ...DEFAULT_START, pult: null, blocks: new Map() };
+  let s = { found: false, ...DEFAULT_START, pult: null, themes: DEFAULT_THEMES, blocks: new Map() };
   try { if (await exists(FILE)) s = parse(await readText(FILE)); } catch (e) { console.warn('start.md', e); }
   cache = s;
   return s;
@@ -66,6 +70,7 @@ async function changeStart(fn) {
 const AFTER = ['title', 'type'];
 export const setStartWidgets = (list) => changeStart((text) => setField(text, 'widgets', yamlValue(widgetList(list, START_WIDGETS)), AFTER));
 export const setStartWide = (wide) => changeStart((text) => setField(text, 'wide', yamlValue(wideList(wide)), ['widgets', ...AFTER]));
+export const setStartThemes = (list) => changeStart((text) => setField(text, 'themes', yamlValue([...new Set(list)].filter(isTheme)), ['pult', 'wide', 'widgets', ...AFTER]));
 export const setPult = (paths) => changeStart((text) => setField(text, 'pult', yamlValue([...new Set(paths)].slice(0, PULT_MAX)), ['wide', 'widgets', ...AFTER]));
 // a new building block: its config, then its place at the end of the widgets
 export const addStartBlock = (id, cfg) => changeStart((text, s) => setField(withConfig(text, id, cfg, ['pult', 'wide', 'widgets', ...AFTER]), 'widgets', yamlValue([...s.widgets, id]), AFTER));

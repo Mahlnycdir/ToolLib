@@ -1060,7 +1060,9 @@ async function showVariables() {
 // ============================================================ Mehr-Menue
 async function moreMenu() {
   const py = state.active?.endsWith('.py');
+  const task = taskOf(state.project);
   const v = await actionSheet(null, [
+    ...(task ? [{ label: tr('kobra.backToPath', { title: task.title }), icon: 'arrowLeft', value: 'path' }, '-'] : []),
     { label: tr('kobra.menu.search'), icon: 'search', value: 'search', disabled: !state.active },
     { label: tr('kobra.menu.line'), icon: 'arrowDown', value: 'line', disabled: !state.active },
     { label: tr('kobra.menu.outline'), icon: 'outline', value: 'outline', disabled: !py },
@@ -1075,6 +1077,7 @@ async function moreMenu() {
     { label: tr('kobra.settings'), icon: 'settings', value: 'settings' },
   ]);
   if (!v) return;
+  if (v === 'path') { await saveAll(false); location.hash = `#/n/${task.node.split('/').map(encodeURIComponent).join('/')}`; return; }
   if (v === 'search') { showView('code'); editor.search(); }
   else if (v === 'line') {
     const n = await promptDialog(tr('kobra.menu.lineTitle'), { type: 'number', validate: (s) => /^\d+$/.test(s) ? null : tr('kobra.menu.needNumber') });
@@ -1323,7 +1326,26 @@ function openRequested() {
   if (want === 'settings') openSettings('git');
   else if (want && typeof want === 'object' && want.run) runFromToollib(want.run).catch((e) => toast(String(e.message || e), 'error'));
   else if (want && typeof want === 'object' && want.project) openFromToollib(want.project).catch((e) => toast(String(e.message || e), 'error'));
+  else if (want && typeof want === 'object' && want.task) openTask(want.task).catch((e) => toast(String(e.message || e), 'error'));
 }
+
+// „In Kobra schreiben“ in einem Pfad von Toollib (0.30.0): das Projekt des Pfads („pfad-…“) mit der Datei dieses
+// Schritts; beide entstehen nur beim ersten Mal (was du schon geschrieben hast, bleibt). Die Datei wird zur
+// Hauptdatei, so führt ▶ deinen Code aus. Das Menü ⋯ führt danach zurück zum Pfad.
+async function openTask({ project, file, starter, node, title }) {
+  if (!/^pfad-[a-z0-9-]{1,50}$/.test(String(project)) || !/^[0-9]{2}_[a-z0-9_]{1,40}\.py$/.test(String(file))) return;
+  const dir = store.projectPath(project);
+  if (!(await store.exists(dir))) await store.createProject(project, 'leer');
+  if (!(await store.exists(`${dir}/${file}`))) await store.writeFile(`${dir}/${file}`, String(starter || ''));
+  if (typeof node === 'string' && /^nodes\/paths\/[\w.-]+\.md$/.test(node)) savePref('tasks', { ...loadPref('tasks', {}), [project]: { node, title: String(title || '').slice(0, 120) } });
+  savePref(`main.${project}`, file);
+  if (state.project !== project) await openProject(project);
+  else await refreshTree();
+  await openFile(file);
+  showView('code');
+}
+// the path a Kobra project belongs to (0.30.0), for „Zurück zum Pfad“
+const taskOf = (project) => { const x = loadPref('tasks', {})?.[project]; return x && /^nodes\/paths\/[\w.-]+\.md$/.test(x.node) ? x : null; };
 
 // „In Kobra öffnen“ in einem Toollib-Projekt (0.24.0): das Projekt zu diesem Repository öffnen; ist es noch nicht
 // auf diesem Gerät, kommt der Dialog zum Klonen mit Adresse und Konto.

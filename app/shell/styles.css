@@ -2544,3 +2544,90 @@ body.pc-full-open { overflow: hidden; }
 .lb-project-part .lb-side-h .ic { width: 15px; height: 15px; }
 .lb-project-more { display: inline-flex; align-items: center; gap: 4px; }
 .lb-project-more .ic { width: 14px; height: 14px; }
+
+/* ------------------------------------------------------------------ 0.30.0: problem first, paths (problem-ui.js, path-view.js) */
+/* Start: "Was willst du lösen?" with suggestions, one small step, ideas by theme */
+.start-head { margin-bottom: 18px; }
+.start-problem { margin: 0 0 26px; }
+.problem { display: grid; gap: 10px; }
+.problem-label { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 16px; }
+.problem-label .icon { color: color-mix(in srgb, var(--c-violet) 75%, var(--ink-base)); }
+.problem-in { font-size: 16px; height: 48px; border-radius: 12px; }
+.problem-results:empty { display: none; }
+.problem-none .btn-row { margin-top: 8px; }
+.problem-rest { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 14px; margin-top: 4px; }
+@media (max-width: 899px) { .problem-rest { grid-template-columns: minmax(0, 1fr); } }
+.problem-h { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 650; margin: 0 0 8px; color: var(--muted); }
+.problem-h .ic { width: 16px; height: 16px; }
+.small-step, .ideas { min-width: 0; padding: 12px 14px 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); }
+.small-card { display: grid; gap: 4px; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--c-violet) 7%, var(--mix)); border: 1px solid color-mix(in srgb, var(--c-violet) 22%, var(--border)); }
+.small-card.k-project { background: color-mix(in srgb, var(--light-next) 7%, var(--mix)); border-color: color-mix(in srgb, var(--light-next) 25%, var(--border)); }
+.small-title { font-size: 16px; line-height: 1.3; overflow-wrap: anywhere; }
+.small-card .btn-row { margin: 8px 0 0; }
+.ideas-themes { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.ideas-theme, .ideas-edit { cursor: pointer; font: inherit; font-size: 13px; color: var(--fg); }
+.ideas-theme.on { border-color: var(--c-violet); background: color-mix(in srgb, var(--c-violet) 12%, var(--mix)); font-weight: 600; }
+.ideas-theme b { font-size: 11px; color: var(--muted); }
+.ideas-edit { color: var(--muted); }
+.ideas-body > p { margin: 0 0 8px; }
+.ideas-wish { margin-top: 8px; }
+.theme-choices { display: grid; gap: 6px; }
+.theme-choice { align-items: flex-start; }
+.theme-choice > .icon { margin-top: 2px; }
+
+/* suggestions: one list on Start, in the project and in the research window */
+.suggest-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.suggest-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border: 0; border-radius: 10px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.suggest-row:hover { background: var(--panel-2); }
+.suggest-row .tile { --accent: var(--c-sky); }
+.suggest-row.is-path .tile { --accent: var(--c-violet); }
+.suggest-text { flex: 1; min-width: 0; display: grid; }
+.suggest-title { display: flex; align-items: center; gap: 6px; min-width: 0; font-weight: 550; }
+.suggest-title > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggest-tag { flex: none; background: color-mix(in srgb, var(--c-violet) 14%, var(--mix)); color: color-mix(in srgb, var(--c-violet) 80%, var(--ink-base)); }
+.suggest-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggest-go { color: var(--muted); }
+.suggest-go .ic { width: 16px; height: 16px; }
+.ahead { display: grid; gap: 8px; }
+.rs-own { list-style: none; padding: 8px 10px; margin: 0 0 8px; border: 1px dashed color-mix(in srgb, var(--c-violet) 35%, var(--border)); border-radius: 12px; background: color-mix(in srgb, var(--c-violet) 5%, var(--mix)); }
+.own-help-h { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; }
+.own-help-h .ic { width: 15px; height: 15px; }
+
+/* a path: intro, themes, project, progress, the steps with task and check */
+.path-view { margin: 8px 0 20px; font-size: 16px; }
+.path-step-head, .path-view .btn { font-size: 15px; }
+.path-intro { margin-bottom: 10px; }
+.path-themes { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.path-theme .ic { width: 14px; height: 14px; }
+.path-project { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 12px; margin: 0 0 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--panel); }
+.path-project.none { display: grid; justify-items: start; gap: 6px; background: color-mix(in srgb, var(--accent) 6%, var(--mix)); border-color: color-mix(in srgb, var(--accent) 25%, var(--border)); }
+.path-project.none p { margin: 0; }
+.path-project > .icon { color: var(--accent); }
+.path-project-link { font-weight: 600; }
+.path-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 12px; }
+.path-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; counter-reset: none; }
+.path-step { border: 1px solid var(--border); border-radius: 14px; background: var(--panel); overflow: hidden; }
+.path-step.s-next { border-color: color-mix(in srgb, var(--light-next) 40%, var(--border)); }
+.path-step.s-done { background: color-mix(in srgb, var(--light-done) 5%, var(--panel)); }
+.path-step-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 11px 14px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.path-step-head:hover { background: var(--panel-2); }
+.path-step-num { flex: none; width: 22px; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
+.path-step-title { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.path-step.s-done .path-step-title { color: var(--muted); }
+.path-step-min { flex: none; }
+.path-step-kind { color: var(--muted); }
+.path-step-kind .ic { width: 16px; height: 16px; }
+.path-step-body { padding: 2px 16px 14px 46px; display: grid; gap: 10px; }
+@media (max-width: 759px) { .path-step-body { padding-left: 14px; } }
+.path-step-body > .md > :first-child { margin-top: 0; }
+.path-example { display: flex; align-items: center; gap: 8px; }
+.path-example > .icon { color: var(--muted); }
+.path-example-code pre, .path-hint pre { max-height: 320px; overflow: auto; margin: 6px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--code-bg); font-size: 13px; }
+.path-example-code summary, .path-hint summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+.path-hint summary { display: inline-flex; align-items: center; gap: 6px; }
+.path-hint summary .ic { width: 15px; height: 15px; }
+.path-actions { margin: 0; align-items: center; }
+.path-status { display: flex; align-items: center; gap: 6px; margin: 0; }
+.path-status:empty { display: none; }
+.path-status .ic { width: 16px; height: 16px; }
+.path-console:empty { display: none; }

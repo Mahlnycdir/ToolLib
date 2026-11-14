@@ -20,7 +20,7 @@ export const ACCENTS = [
 // (module.<id>.name, module.<id>.desc), its view in VIEWS of shell.js and, if it creates something, an entry in
 // CREATORS of create.js; types: the kinds of nodes it shows, which take its colour.
 export const MODULES = [
-  { id: 'projects', icon: 'target', accent: 'violet', types: ['project', 'note', 'library', 'page'] },   // 0.15.0; pages since 0.16.0
+  { id: 'projects', icon: 'target', accent: 'violet', types: ['project', 'note', 'library', 'page', 'path'] },   // 0.15.0; pages since 0.16.0; paths (0.30.0) lead to projects
   // 0.29.0: the library to browse, four shelves: go on reading, your texts, documentations, papers and finds (shelf-view.js).
   // Its route is #/m/shelf: #/m/library stays the writing of a project (shell.js).
   { id: 'shelf', icon: 'shelf', accent: 'green', types: [], keys: 'library bibliothek bücherregal regal bücher books shelf lesen read weiterlesen dokumentation docs papers funde' },

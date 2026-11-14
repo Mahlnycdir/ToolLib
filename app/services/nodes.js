@@ -209,6 +209,22 @@ export function leadOf(body, lang, max = 140) {
   return '';
 }
 
+// The steps of a path (0.30.0), from its head: [{ id, en, de, min, example }]. Ids are short names for the parts
+// "## Step <id>"; a step without a usable id or title is left out.
+export function pathStepsOf(list) {
+  const out = [];
+  for (const x of Array.isArray(list) ? list : []) {
+    if (!x || typeof x !== 'object') continue;
+    const id = String(x.id || '');
+    if (!/^[a-z0-9][a-z0-9-]{0,30}$/.test(id) || out.some((y) => y.id === id)) continue;
+    const en = String(x.en || x.de || '').trim();
+    if (!en) continue;
+    const min = Number(x.min);
+    out.push({ id, en, de: String(x.de || '').trim() || en, min: Number.isFinite(min) && min > 0 && min < 600 ? Math.round(min) : 0, example: /^[\w.-]{1,120}$/.test(String(x.example || '')) ? String(x.example) : '' });
+  }
+  return out.slice(0, 40);
+}
+
 // Everything the search and the lists need, without the body.
 export function summary(node) {
   const m = node.meta;
@@ -281,6 +297,11 @@ export function summary(node) {
     // the red thread of a project (0.27.0): its cards in your own order, so every card can show back / next
     thread: m.type === 'project' ? asList(m.thread) : [],
     readSlugs: m.type === 'project' ? asList(m.read) : [],   // 0.29.0: the works you read in the project (for the library)
+    fromPath: m.type === 'project' && m.from_path ? String(m.from_path) : '',   // 0.30.0: the path a project was begun from
+    // a path (0.30.0): its themes, level and steps (the step texts are parts "## Step <id>" of the body)
+    themes: m.type === 'path' ? asList(m.themes) : [],
+    level: m.type === 'path' && m.level ? String(m.level) : '',
+    pathSteps: m.type === 'path' ? pathStepsOf(m.steps) : [],
     question: m.question ? String(m.question) : '',
     source: m.source ? String(m.source) : '',
     // where a card comes from (0.14.1): the links of its sources, so a work finds the cards made from it

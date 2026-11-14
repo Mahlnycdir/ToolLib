@@ -96,6 +96,14 @@ const P = {
   shrink: '<path d="M9.5 4.5v5h-5M14.5 4.5v5h5M9.5 19.5v-5h-5M14.5 19.5v-5h5"/>',
   // 0.28.1: a handle to drag a step
   grip: '<circle cx="9" cy="7" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="7" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="17" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="17" r="1.2" fill="currentColor" stroke="none"/>',
+  // 0.30.0: a path step by step, and the themes of your interests
+  route: '<circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h7.5a3.5 3.5 0 0 0 0-7h-7a3.5 3.5 0 0 1 0-7H16"/>',
+  hammer: '<path d="m14.5 6.5-9.8 9.8a1.8 1.8 0 0 0 2.5 2.5l9.8-9.8"/><path d="m13 5 3-2.5 5.5 5.5-2.5 3-2-2-1 1-3-3 1-1z"/>',
+  bolt: '<path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/>',
+  wave: '<path d="M2.5 12c2-5 3.8-5 5.7 0s3.7 5 5.6 0 3.8-5 5.7 0"/><path d="M2.5 19.5h19" opacity=".45"/>',
+  circuit: '<rect x="8" y="8" width="8" height="8" rx="1.2"/><path d="M10.5 8V4.5M13.5 8V4.5M10.5 19.5V16M13.5 19.5V16M8 10.5H4.5M8 13.5H4.5M19.5 10.5H16M19.5 13.5H16"/>',
+  atom: '<circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><ellipse cx="12" cy="12" rx="9.5" ry="3.8"/><ellipse cx="12" cy="12" rx="9.5" ry="3.8" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="9.5" ry="3.8" transform="rotate(120 12 12)"/>',
+  cube: '<path d="M12 2.8 20 7.2v9.6L12 21.2 4 16.8V7.2z"/><path d="M4 7.2 12 11.6l8-4.4M12 11.6v9.6"/>',
   // 0.29.0: the library to browse, books on a shelf
   shelf: '<path d="M3 20.5h18"/><rect x="4.5" y="6.5" width="3.6" height="14" rx=".7"/><rect x="9.4" y="3.5" width="3.6" height="17" rx=".7"/><path d="m14.4 7.9 3.3-.9 3.4 12.6-3.3.9z"/>',
 };

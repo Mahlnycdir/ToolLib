@@ -74,16 +74,23 @@ async function written(path, what) {
   announce([path]);
 }
 
-export function projectText({ title, goal = '', date = today() }) {
-  const head = ['---', 'type: project', `title: ${q(title)}`, goal ? `goal: ${q(goal)}` : null, 'state: active', 'links: []', `created: ${q(date)}`, 'source: you', '---'].filter(Boolean);
-  return `${head.join('\n')}\n\n## Next\n\n## Notes\n`;
+// steps: [{ text, status }] as "- [ ] …" lines under "## Next"; fromPath: the slug of the path it was begun from.
+export function projectText({ title, goal = '', date = today(), steps = [], links = [], fromPath = '' }) {
+  const slugs = [...new Set(asList(links).filter((x) => /^[\w.-]{1,120}$/.test(x)))];
+  const from = /^[a-z0-9][a-z0-9-]{0,80}$/.test(String(fromPath)) ? String(fromPath) : '';
+  const head = ['---', 'type: project', `title: ${q(title)}`, goal ? `goal: ${q(goal)}` : null, 'state: active', `links: ${yamlValue(slugs)}`,
+    from ? `from_path: ${q(from)}` : null, `created: ${q(date)}`, 'source: you', '---'].filter(Boolean);
+  const lines = steps.map((x) => ({ text: String(x?.text || '').replace(/\s+/g, ' ').trim(), mark: MARK_OF[x?.status] ?? ' ' })).filter((x) => x.text)
+    .map((x) => `- [${x.mark}] ${x.text}`);
+  return `${head.join('\n')}\n\n## Next\n\n${lines.length ? `${lines.join('\n')}\n\n` : ''}## Notes\n`;
 }
 
-export async function createProject({ title, goal = '' }) {
+// 0.30.0: a project begun from a path brings its steps (with their lights), its members and the path it walks.
+export async function createProject({ title, goal = '', steps = [], links = [], fromPath = '' }) {
   const name = String(title).trim();
   if (!name) throw new Error('A project needs a title');
   const path = await freePath(slugify(name).slice(0, 40) || 'project');
-  await writeNode(path, projectText({ title: name, goal: String(goal).trim() }));
+  await writeNode(path, projectText({ title: name, goal: String(goal).trim(), steps, links, fromPath }));
   await written(path, 'added');
   touchProject(path);
   return path;
@@ -151,13 +158,13 @@ const STATION = {
   clip: 'collect', research: 'collect',
   formula: 'keep', definition: 'keep', theorem: 'keep', term: 'keep', convention: 'keep', topic: 'keep', note: 'keep', rule: 'keep', part: 'keep', device: 'keep',
   page: 'keep', library: 'keep',
-  snippet: 'apply', recipe: 'apply', pin_map: 'apply', tool: 'apply',
+  snippet: 'apply', recipe: 'apply', path: 'apply', pin_map: 'apply', tool: 'apply',
 };
 export const stationOf = (type) => STATION[type] || 'keep';
 export const DEFAULT_SECTIONS = [{ id: 'collect', title: '', color: 'sky' }, { id: 'keep', title: '', color: 'violet' }, { id: 'apply', title: '', color: 'green' }];
 export const SECTION_COLOURS = ['blue', 'sky', 'teal', 'green', 'orange', 'rose', 'violet', 'yellow', 'slate'];
-export const WIDGETS = ['steps', 'reading', 'pins', 'calc', 'timer', 'due', 'links', 'pages', 'notes'];
-export const DEFAULT_WIDGETS = ['steps', 'pages', 'reading', 'notes'];
+export const WIDGETS = ['steps', 'ahead', 'reading', 'pins', 'calc', 'timer', 'due', 'links', 'pages', 'notes'];   // ahead: "Weiterkommen" (0.30.0)
+export const DEFAULT_WIDGETS = ['steps', 'ahead', 'pages', 'reading', 'notes'];
 
 // "id|title|colour" → { id, title, colour }; when the sync joined two versions of one section, the later one wins.
 export function parseSections(list) {

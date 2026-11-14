@@ -18,7 +18,7 @@ import { appearance, onThemeChange, setAppearance, shownTheme } from '../service
 import { applyUpdate, checkForUpdate, onPwaChange, pwaState } from '../services/pwa.js';
 import { isConfigured, onSyncChange, phaseText, refreshPending, syncKnowledge, syncState } from '../services/sync.js';
 import { bind, matches, keyTitle, withKeys, formatKeys, helpRows, onKeysChange, hasKeyboard } from '../services/keys.js';
-import { bestProblem, buildIndex, indexState, nodeByPath, onIndexChange, refreshNode, searchDetailed, rememberPick } from '../services/search.js';
+import { bestProblem, buildIndex, indexState, nodeByPath, onIndexChange, refreshNode, searchDetailed, searchNodes, rememberPick } from '../services/search.js';
 import { searchNote } from './search-note.js';
 import { renderFormulary } from './formulary.js';
 import { copyWithToast, nodeHref, nodeLead, nodeTitle, recentPaths, renderCheatsheet, renderNode, typeAccent, typeIcon, typeLabel } from './node-view.js';
@@ -501,6 +501,11 @@ export function startShell(root) {
     // A hit found through one of its problems shows that problem instead of the first sentence.
     const found = q ? searchDetailed(q, { limit: 8 }) : null;
     lastNote = found?.note || null;
+    // 0.30.0, "Problem zuerst": a path whose problems fit what you typed comes first, also when the search ranked it lower
+    if (found && q.length >= 3) {
+      const way = searchNodes(q, { limit: 2, filter: (x) => x.type === 'path' }).find((x) => bestProblem(x, q, lang) || found.hits[0]?.path === x.path);
+      if (way) found.hits = [way, ...found.hits.filter((x) => x.path !== way.path)].slice(0, 8);
+    }
     const nodes = (found ? found.hits : recentPaths().map(nodeByPath).filter(Boolean).slice(0, 4)).map((d) => {
       const problem = q ? bestProblem(d, q, lang) : '';
       return {

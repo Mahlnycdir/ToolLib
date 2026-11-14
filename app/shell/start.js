@@ -1,5 +1,6 @@
 // Start (0.15.0; a board of your own since 0.28.0). At the top, fixed: the question and the ways to answer it
-// (search, and everything you can create). Below: your widgets, which you choose, order, make wide and take away,
+// (search, and everything you can create), and since 0.30.0 "Problem zuerst": what you want to solve, with suggestions,
+// one small step and ideas by theme (problem-ui.js). Below: your widgets, which you choose, order, make wide and take away,
 // kept in start.md in your knowledge (start-store.js), so the Mac and the iPhone show the same:
 //   pult      the control panel: up to four projects, the one in focus open (pult.js)
 //   resume    where you left off
@@ -25,8 +26,9 @@ import { capture, inbox } from '../services/notes.js';
 import { trail } from '../services/trail.js';
 import { newBlockId } from '../services/widget-store.js';
 import {
-  START_WIDGETS, addStartBlock, cachedStart, loadStart, onStartChange, removeStartWidget, saveStartBlock, saveStartContent, setPult, setStartWide, setStartWidgets,
+  DEFAULT_THEMES, START_WIDGETS, addStartBlock, cachedStart, loadStart, onStartChange, removeStartWidget, saveStartBlock, saveStartContent, setPult, setStartThemes, setStartWide, setStartWidgets,
 } from '../services/start-store.js';
+import { problemBox } from './problem-ui.js';
 import { CREATORS } from './create.js';
 import { nodeHref, nodeTitle, typeLabel, typeTile } from './node-view.js';
 import { paintProject } from './projects-view.js';
@@ -59,6 +61,20 @@ export function renderStart(main, { go, onSync, onSetup, focusCommand }) {
   }
   main.append(h('header', { class: 'start-head' }, h('p', { class: 'start-hello muted', text: greeting() }), h('h1', { class: 'start-ask', text: t('start.ask') }), verbs));
 
+  // ---------------------------------------------------------------- problem first (0.30.0): suggestions, a small step, ideas
+  const problemHost = h('div', { class: 'start-problem' });
+  let themesShown = '';
+  const drawProblem = (themes) => {
+    if (!ready) return;
+    const key = themes.join();
+    if (key === themesShown && problemHost.firstChild) return;
+    if (problemHost.contains(document.activeElement)) return;   // you are typing: keep the field
+    themesShown = key;
+    problemHost.replaceChildren(problemBox({ go, themes, saveThemes: (list) => setStartThemes(list) }));
+  };
+  main.append(problemHost);
+  drawProblem(cachedStart()?.themes || DEFAULT_THEMES);
+
   if (!isConfigured() || indexState().hasKnowledge === false) {
     main.append(h('section', { class: 'card start-setup' }, h('h2', { text: t('home.knowledge.title') }),
       h('p', { class: 'muted', text: t(isConfigured() ? 'home.knowledge.first' : 'home.knowledge.setup') }),
@@ -76,12 +92,13 @@ export function renderStart(main, { go, onSync, onSetup, focusCommand }) {
     board.replaceChildren(startGrid(s, { go, ready }));
   };
   if (cachedStart()) draw(cachedStart());
-  loadStart().then((s) => { if (board.isConnected) draw(s); });
+  loadStart().then((s) => { if (board.isConnected) { draw(s); drawProblem(s.themes || DEFAULT_THEMES); } });
   const stop = onStartChange(() => {
     if (!board.isConnected) { stop(); return; }
     // while you type in a widget the board waits, so the field keeps its text and its focus
     if (board.contains(document.activeElement) && document.activeElement.matches('input, textarea')) return;
     draw(cachedStart());
+    drawProblem(cachedStart()?.themes || DEFAULT_THEMES);
   });
 
   // ---------------------------------------------------------------- the bottom line: knowledge, sync, install
