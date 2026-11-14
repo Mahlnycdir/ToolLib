@@ -16,6 +16,7 @@ import { allNodes, forgetNode, nodeByPath, nodeBySlug, refreshNode } from './sea
 import { noteChange, onNoteChange } from './sync.js';
 import { announce } from './channel.js';
 import { loadPref, savePref } from './prefs.js';
+import { removeCanvas } from './canvas-store.js';
 
 const q = (v) => JSON.stringify(String(v));
 const today = () => new Date().toISOString().slice(0, 10);
@@ -83,6 +84,7 @@ export async function deleteProject(path) {
   await deleteNode(path);
   forgetNode(path);
   await noteChange(path, 'removed');
+  await removeCanvas(path).catch(() => {});   // its canvas (0.27.0)
   announce([path]);
   if (focusPath() === path) setFocus('');
 }
@@ -201,6 +203,7 @@ function boardParts(meta, text) {
     widgets: meta.widgets == null ? null : asList(meta.widgets).filter((w) => WIDGETS.includes(w)),
     read: asList(meta.read),
     pins: asList(meta.pins),
+    thread: asList(meta.thread),   // 0.27.0: the red thread, cards in your own order
     due: isDate(meta.due) ? String(meta.due) : '',
     dueWhat: meta.due_what ? String(meta.due_what) : '',
     links2: links,
@@ -318,6 +321,18 @@ const toggleIn = (key) => (path, slug, on) => changeProject(path, (text, p) => {
   if (want === has) return null;
   return setField(text, key, yamlValue(want ? [...list, slug] : list.filter((s) => s !== slug)), AFTER_LINKS);
 });
+// The red thread of a project (0.27.0, ENTE: "wie ein roter Faden"): the cards in the order you tapped them, one line
+// `thread: [slugs]` in the project. An empty thread removes the line.
+export const setThread = (path, list) => changeProject(path, (text, p) => {
+  const next = [...new Set(asList(list).filter((x) => p.links.includes(x)))];
+  if (next.length === p.thread.length && next.every((x, i) => x === p.thread[i])) return null;
+  return next.length ? setField(text, 'thread', yamlValue(next), AFTER_LINKS) : removeField(text, 'thread');
+});
+// Where a card stands in the red thread: { index, prev, next, list } or null
+export function threadPlace(p, slug) {
+  const i = (p.thread || []).indexOf(slug);
+  return i < 0 ? null : { index: i, prev: p.thread[i - 1] || null, next: p.thread[i + 1] || null, list: p.thread };
+}
 export const setRead = toggleIn('read');
 export const setPinned = toggleIn('pins');
 export const setDue = (path, date, what = '') => changeProject(path, (text) => {
@@ -369,7 +384,7 @@ export const removeFromProject = (path, slug) => change(path, (text) => {
   let next = setLinks(text, before.filter((s) => s !== slug));
   // its place on the board, read and pinned go with it (0.18.0)
   for (const k of Object.keys(meta)) {
-    if ((/^board_/.test(k) || k === 'read' || k === 'pins') && asList(meta[k]).includes(slug)) next = setField(next, k, yamlValue(asList(meta[k]).filter((s) => s !== slug)), AFTER_LINKS);
+    if ((/^board_/.test(k) || k === 'read' || k === 'pins' || k === 'thread') && asList(meta[k]).includes(slug)) next = setField(next, k, yamlValue(asList(meta[k]).filter((s) => s !== slug)), AFTER_LINKS);
   }
   return next;
 });

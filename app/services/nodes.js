@@ -270,6 +270,8 @@ export function summary(node) {
       sections: asList(m.sections),
       lists: Object.fromEntries(Object.entries(m).filter(([k]) => /^board_[a-z0-9-]{1,40}$/.test(k)).map(([k, v]) => [k.slice(6), asList(v)])),
     } : null,
+    // the red thread of a project (0.27.0): its cards in your own order, so every card can show back / next
+    thread: m.type === 'project' ? asList(m.thread) : [],
     question: m.question ? String(m.question) : '',
     source: m.source ? String(m.source) : '',
     // where a card comes from (0.14.1): the links of its sources, so a work finds the cards made from it

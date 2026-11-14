@@ -5,7 +5,8 @@
 import { h, toast, actionSheet } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
-import { addToProject, focusProject, projects, projectsWith, removeFromProject } from '../services/projects.js';
+import { addToProject, focusProject, projects, projectsWith, removeFromProject, threadPlace } from '../services/projects.js';
+import { nodeBySlug } from '../services/search.js';
 import { relationsOf } from '../services/relations.js';
 import { nodeHref, nodeTitle } from './node-view.js';
 import { newNote, newProject } from './create.js';
@@ -32,6 +33,11 @@ export function contextBox(d, { go, redraw }) {
 
   // projects
   const inProjects = projectsWith(d.slug);
+  // the red thread (0.27.0): where this card stands in the order you gave a project's cards, with back and next
+  for (const p of inProjects) {
+    const at = threadPlace(p, d.slug);
+    if (at) box.append(threadNav(p, at, lang));
+  }
   const focus = focusProject();
   const chips = h('div', { class: 'ctx-projects' });
   for (const p of inProjects) {
@@ -71,4 +77,19 @@ export function contextBox(d, { go, redraw }) {
     act('ctx.note', 'edit', async () => { if (await newNote({ text: `[[${d.slug}|${title}]]\n\n` })) redraw(); }, 'ctx-note'),
     d.type === 'clip' || d.type === 'research' ? null : act('ctx.search', 'search', () => { queueSearch(title); go('#/m/scraper'); }, 'ctx-search'))));
   return box;
+}
+
+// "Red thread · Project   ← back   2 / 5   next →" for one project
+function threadNav(p, at, lang) {
+  const step = (slug, dir) => {
+    const n = slug ? nodeBySlug(slug) : null;
+    if (!n) return h('span', { class: `ctx-thread-${dir} off`, 'aria-hidden': 'true' });
+    return h('a', { class: `ctx-thread-${dir}`, href: nodeHref(n.path), title: t(`thread.${dir}`), 'aria-label': `${t(`thread.${dir}`)}: ${nodeTitle(n, lang)}` },
+      dir === 'prev' ? iconEl('arrowLeft') : null, h('span', { class: 'ctx-thread-name', text: nodeTitle(n, lang) }), dir === 'next' ? iconEl('arrowRight') : null);
+  };
+  const nav = h('nav', { class: 'ctx-thread', 'aria-label': t('thread.ctx', { project: p.title }) },
+    h('a', { class: 'ctx-thread-t', href: nodeHref(p.path) }, iconEl('thread'), h('span', { text: t('thread.ctx', { project: p.title }) })),
+    h('div', { class: 'ctx-thread-row' }, step(at.prev, 'prev'), h('span', { class: 'ctx-thread-n', text: t('thread.of', { i: at.index + 1, n: at.list.length }) }), step(at.next, 'next')));
+  paintProject(nav, p.slug);
+  return nav;
 }

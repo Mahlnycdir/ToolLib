@@ -2,6 +2,9 @@
 // within and between them, sections you drag too; above them widgets you choose per project (next steps, reading
 // list, pinned formulas and snippets, a scratch pad that calculates, a focus timer, a date, links, the pages, notes).
 // The drawer shows the project in focus from anywhere and takes the node you are looking at into a section.
+// 0.27.0: the same cards also as a canvas (project-canvas.js), switched above the board and kept per project; on the
+// board a card shows its threads to the other cards when you point at it (tap once on a phone), and its number in
+// the red thread.
 import { h, toast, promptDialog, confirmDialog, actionSheet, debounce, loadPref, savePref, modal, copyText, openSheet } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
@@ -23,7 +26,9 @@ import { draggable, dropZone } from './drag.js';
 import { typeset } from './math.js';
 import { compile } from './plot.js';
 import { keyTitle } from '../services/keys.js';
-import { PALETTE, colourVar } from './colors.js';
+import { PALETTE, colourVar, typeColour } from './colors.js';
+import { graph, onRelationsChange } from '../services/relations.js';
+import { projectCanvas } from './project-canvas.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const narrow = () => window.matchMedia('(max-width: 899px)').matches;
@@ -61,11 +66,40 @@ export function projectBody(p, ctx) {
       act('create.note', 'edit', async () => { if (await newNote({ project: path })) redraw(); }),
       act('create.snippet', 'code', () => here(() => newSnippet({ go })))));
 
-  return [actions, widgetsArea(p, members, ctx), board(p, members, ctx)];
+  return [actions, widgetsArea(p, members, ctx), cardsArea(p, members, ctx)];
+}
+
+// ------------------------------------------------------------------ board or canvas (0.27.0)
+// The choice is kept per project (pref project.view: { slug: 'canvas' }); switching does not draw the page again.
+const viewOf = (slug) => (loadPref('project.view', {})[slug] === 'canvas' ? 'canvas' : 'board');
+function keepView(slug, v) {
+  const all = loadPref('project.view', {});
+  if (v === 'canvas') all[slug] = v; else delete all[slug];
+  savePref('project.view', Object.fromEntries(Object.entries(all).slice(-100)));
+}
+function cardsArea(p, members, ctx) {
+  const holder = h('div', { class: 'project-cards' });
+  const show = (v) => {
+    holder.querySelector('.pc')?.cleanup?.();
+    document.body.classList.remove('pc-full-open');
+    const sw = h('div', { class: 'segmented small view-switch', role: 'group', 'aria-label': t('project.view') },
+      ...[['board', 'board'], ['canvas', 'canvas']].map(([id, ic]) => {
+        const b = h('button', { type: 'button', class: v === id ? 'on' : '', 'aria-pressed': String(v === id), dataset: { view: id } }, iconEl(ic), h('span', { text: t(`project.view.${id}`) }));
+        b.addEventListener('click', () => { if (id === v) return; keepView(p.slug, id); show(id); holder.querySelector(id === 'canvas' ? '.pc' : '.board')?.focus?.({ preventScroll: true }); });
+        return b;
+      }));
+    holder.replaceChildren(v === 'canvas' ? canvasArea(p, ctx, sw) : board(p, members, ctx, sw));
+  };
+  show(viewOf(p.slug));
+  return holder;
+}
+function canvasArea(p, ctx, sw) {
+  const top = h('div', { class: 'board-top' }, h('h2', { class: 'board-h' }, h('span', { text: t('canvas.title') }), h('span', { class: 'muted small board-hint', text: t(narrow() ? 'canvas.hint.touch' : 'canvas.hint') })), sw);
+  return h('section', { class: 'board-wrap canvas-wrap' }, top, projectCanvas(p, ctx));
 }
 
 // ------------------------------------------------------------------ the board
-function board(p, members, ctx) {
+function board(p, members, ctx, sw = null) {
   const { path, redraw } = ctx;
   const lang = getLang();
   const secs = boardOf(p, members);
@@ -115,7 +149,116 @@ function board(p, members, ctx) {
     await addSection(path, v, SECTION_COLOURS.find((c) => !used.has(c)) || 'slate');
     redraw();
   });
-  return h('section', { class: 'board-wrap' }, h('div', { class: 'board-top' }, h('h2', { class: 'board-h' }, h('span', { text: t('board.title') }), h('span', { class: 'muted small board-hint', text: t(narrow() ? 'board.hint.touch' : 'board.hint') })), newSec), wrap);
+  const section = h('section', { class: 'board-wrap' }, h('div', { class: 'board-top' }, h('h2', { class: 'board-h' }, h('span', { text: t('board.title') }), h('span', { class: 'muted small board-hint', text: t(narrow() ? 'board.hint.touch' : 'board.hint') })), h('div', { class: 'board-top-end' }, sw, newSec)), wrap);
+  boardThreads(section, wrap, p);
+  return section;
+}
+
+// ------------------------------------------------------------------ threads on the board (0.27.0)
+// Point at a card (tap it once on a phone): lines to the cards on this board it is tied to, those cards stand out,
+// the others step back; its neighbours in the red thread are joined in red. A second tap opens the card.
+// For Python readers: an SVG lies over the whole board; drawing asks every card where it is on the screen
+// (getBoundingClientRect) and joins the middles of their edges with a curve.
+const SVGNS = 'http://www.w3.org/2000/svg';
+function boardThreads(section, boardEl, p) {
+  const overlay = document.createElementNS(SVGNS, 'svg');
+  overlay.setAttribute('class', 'board-lines');
+  overlay.setAttribute('aria-hidden', 'true');
+  section.append(overlay);
+  let lit = null;
+  const cardOf = (slug) => boardEl.querySelector(`.board-card[data-slug="${CSS.escape(slug)}"]`);
+  // the other cards of the board this one is tied to (both directions, every kind but "member of")
+  const tiesOf = (slug) => {
+    const g = graph();
+    const here = new Set([...boardEl.querySelectorAll('.board-card')].map((el) => el.dataset.slug));
+    const out = new Map();
+    for (const e of g.out.get(slug) || []) if (e.kind !== 'member' && here.has(e.to)) out.set(e.to, e.kind);
+    for (const e of g.in.get(slug) || []) if (e.kind !== 'member' && here.has(e.from) && !out.has(e.from)) out.set(e.from, e.kind);
+    return out;
+  };
+  const draw = () => {
+    overlay.replaceChildren();
+    boardEl.querySelectorAll('.board-card.lit, .board-card.near, .board-card.far').forEach((el) => el.classList.remove('lit', 'near', 'far'));
+    section.classList.toggle('threads-on', !!lit);
+    if (!lit) return;
+    const from = cardOf(lit);
+    if (!from) { lit = null; section.classList.remove('threads-on'); return; }
+    const box = section.getBoundingClientRect();
+    overlay.setAttribute('viewBox', `0 0 ${box.width} ${box.height}`);
+    const clip = boardEl.getBoundingClientRect();   // the board scrolls sideways: lines stay inside what you see
+    const rectOf = (el) => { const r = el.getBoundingClientRect(); return { x: r.left - box.left, y: r.top - box.top, w: r.width, h: r.height }; };
+    const a0 = rectOf(from);
+    const visible = (r) => r.x + r.w > clip.left - box.left && r.x < clip.right - box.left;
+    const line = (b, cls, colour) => {
+      // from the side of a that faces b to the side of b that faces a
+      const right = b.x > a0.x + a0.w / 2;
+      const sameCol = Math.abs(b.x - a0.x) < 20;
+      const ax = sameCol ? a0.x + a0.w : right ? a0.x + a0.w : a0.x; const ay = a0.y + a0.h / 2;
+      const bx = sameCol ? b.x + b.w : right ? b.x : b.x + b.w; const by = b.y + b.h / 2;
+      const bulge = sameCol ? 46 + Math.min(80, Math.abs(by - ay) * 0.15) : (bx - ax) * 0.45;
+      const d = `M${ax.toFixed(1)},${ay.toFixed(1)} C${(ax + bulge).toFixed(1)},${ay.toFixed(1)} ${(bx - (sameCol ? -bulge : bulge)).toFixed(1)},${by.toFixed(1)} ${bx.toFixed(1)},${by.toFixed(1)}`;
+      const path = document.createElementNS(SVGNS, 'path');
+      path.setAttribute('d', d);
+      path.setAttribute('class', cls);
+      if (colour) path.style.stroke = colour;
+      overlay.append(path);
+      for (const [x, y] of [[ax, ay], [bx, by]]) {
+        const dot = document.createElementNS(SVGNS, 'circle');
+        dot.setAttribute('cx', x.toFixed(1)); dot.setAttribute('cy', y.toFixed(1)); dot.setAttribute('r', '3.2');
+        dot.setAttribute('class', `${cls}-dot`);
+        if (colour) dot.style.fill = colour;
+        overlay.append(dot);
+      }
+    };
+    from.classList.add('lit');
+    const ties = tiesOf(lit);
+    for (const el of boardEl.querySelectorAll('.board-card')) if (el !== from) el.classList.add(ties.has(el.dataset.slug) ? 'near' : 'far');
+    for (const [slug, kind] of ties) {
+      const el = cardOf(slug);
+      if (!el) continue;
+      const r = rectOf(el);
+      if (visible(r)) line(r, `board-line k-${kind}`, colourVar(typeColour(el.dataset.type)));
+    }
+    // the red thread: to the card before and the card after
+    const i = (p.thread || []).indexOf(lit);
+    if (i >= 0) {
+      for (const s of [p.thread[i - 1], p.thread[i + 1]]) {
+        const el = s && cardOf(s);
+        if (!el) continue;
+        el.classList.remove('far');
+        el.classList.add('near');
+        const r = rectOf(el);
+        if (visible(r)) line(r, 'board-red', null);
+      }
+    }
+  };
+  const light = (slug) => { if (slug === lit) return; lit = slug; draw(); };
+  let touch = false;
+  boardEl.addEventListener('pointerdown', (e) => { touch = e.pointerType !== 'mouse'; }, true);
+  boardEl.addEventListener('pointerover', (e) => {
+    if (e.pointerType !== 'mouse' || document.body.classList.contains('dragging-now')) return;
+    const card = e.target.closest('.board-card');
+    if (card) light(card.dataset.slug);
+  });
+  section.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') light(null); });
+  // a phone: the first tap on a card with ties lights them up, the second one opens it
+  boardEl.addEventListener('click', (e) => {
+    const card = e.target.closest('.board-card');
+    if (!touch || !card || e.target.closest('button')) return;
+    const slug = card.dataset.slug;
+    if (lit === slug) return;
+    const has = tiesOf(slug).size || (p.thread || []).includes(slug);
+    if (!has) return;
+    e.preventDefault();
+    light(slug);
+  }, true);
+  document.addEventListener('pointerdown', function off(e) {
+    if (!section.isConnected) { document.removeEventListener('pointerdown', off, true); return; }
+    if (lit && !e.target.closest?.('.board-card')) light(null);
+  }, true);
+  boardEl.addEventListener('scroll', () => { if (lit) draw(); }, { passive: true });
+  // a link drawn elsewhere: the lines follow
+  const stop = onRelationsChange(() => { if (!section.isConnected) { stop(); return; } if (lit) draw(); });
 }
 
 function cardRow(n, index, s, p, ctx, lang) {
@@ -139,12 +282,15 @@ function cardRow(n, index, s, p, ctx, lang) {
       try { await dissolveFolder(n.path, path); toast(t('research.adopted', { project: p.title }), 'ok'); } catch (e) { console.warn(e); toast(t('create.failed'), 'error', 5000); }
       redraw();
     });
-    li = h('li', { class: 'member member-old board-card', dataset: { slug: n.slug } }, h('a', { class: 'member-main', href: nodeHref(n.path) }, typeTile(n.type, 'small'),
+    li = h('li', { class: 'member member-old board-card', dataset: { slug: n.slug, type: n.type } }, h('a', { class: 'member-main', href: nodeHref(n.path) }, typeTile(n.type, 'small'),
       h('span', { class: 'member-text' }, h('span', { class: 'member-title', text: nodeTitle(n, lang) }), h('span', { class: 'muted small member-lead', text: t('project.oldFolder', { n: n.clips.length }) }))), take);
   } else {
     const lead = n.type === 'research' ? t('research.kept', { n: n.clips.length }) : n.type === 'note' ? `${typeLabel('note')}${n.at ? `, ${new Date(n.at).toLocaleDateString(lang === 'de' ? 'de-DE' : 'en-GB')}` : ''}` : nodeLead(n, lang) || typeLabel(n.type);
     const read = n.type === 'clip' && p.read.includes(n.slug) ? h('span', { class: 'board-read', title: t('reading.read'), html: icon('check') }) : null;
-    li = h('li', { class: `member board-card type-${n.type}`, dataset: { slug: n.slug } }, h('a', { class: 'member-main', href: nodeHref(n.path) }, typeTile(n.type, 'small'),
+    // its place in the red thread (0.27.0)
+    const step = (p.thread || []).indexOf(n.slug);
+    const num = step < 0 ? null : h('span', { class: 'board-thread-num', title: t('board.thread.n', { n: step + 1 }), 'aria-label': t('board.thread.n', { n: step + 1 }), text: String(step + 1) });
+    li = h('li', { class: `member board-card type-${n.type}`, dataset: { slug: n.slug, type: n.type } }, num, h('a', { class: 'member-main', href: nodeHref(n.path) }, typeTile(n.type, 'small'),
       h('span', { class: 'member-text' }, h('span', { class: 'member-title', text: nodeTitle(n, lang) }), h('span', { class: 'muted small member-lead', text: lead }))), read, pin, rm);
   }
   draggable(li, { data: { kind: 'card', slug: n.slug, project: path }, label: nodeTitle(n, lang) });

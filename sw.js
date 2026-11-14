@@ -1,7 +1,7 @@
 // Service worker: keeps the whole app in a cache so Toollib starts without a network, keeps Python in a cache of
 // its own and carries input() from the Python worker to the page (the synchronous channel, from Kobra's sw.js).
 // Raise VERSION with every release; the shell then offers "Reload" for the update.
-const VERSION = '0.26.1';
+const VERSION = '0.27.0';
 const CACHE = `toollib-${VERSION}`;
 // Python (vendor/pyodide) is big and changes only with a new Pyodide version, so its cache survives app updates.
 // Keep PYODIDE equal to "pyodide" in vendor/pyodide/toollib-bundle.json.
@@ -43,6 +43,7 @@ const FILES = [
   './app/shell/colors.js',
   './app/shell/link-ui.js',
   './app/services/relations.js',
+  './app/services/canvas-store.js',
   './app/services/graph-layout.js',
   './app/shell/net-canvas.js',
   './app/shell/net-view.js',
@@ -87,6 +88,7 @@ const FILES = [
   './app/shell/start.js',
   './app/shell/projects-view.js',
   './app/shell/project-board.js',
+  './app/shell/project-canvas.js',
   './app/shell/search-note.js',
   './app/shell/create.js',
   './app/shell/context.js',

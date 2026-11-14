@@ -89,6 +89,11 @@ const P = {
   pen: '<path d="M4 20l1.2-4.6L15.6 5a2 2 0 0 1 2.8 0l.6.6a2 2 0 0 1 0 2.8L8.6 18.8z"/><path d="M13.5 7l3.5 3.5"/>',
   device: '<rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/>',
   shield: '<path d="M12 3 5 6v5.5c0 4.3 2.9 8 7 9.5 4.1-1.5 7-5.2 7-9.5V6z"/>',
+  // 0.27.0: the canvas of a project, its red thread, full screen
+  canvas: '<rect x="3.5" y="4.5" width="7.5" height="5.5" rx="1.3"/><rect x="13" y="14" width="7.5" height="5.5" rx="1.3"/><path d="M11 7.2h3.3a2.4 2.4 0 0 1 2.4 2.4V14"/>',
+  thread: '<circle cx="5" cy="17" r="2"/><circle cx="12" cy="7" r="2"/><circle cx="19" cy="16" r="2"/><path d="m6.2 15.3 4.6-6.6M13.3 8.6l4.5 5.8"/>',
+  expand: '<path d="M4.5 9.5v-5h5M19.5 9.5v-5h-5M4.5 14.5v5h5M19.5 14.5v5h-5"/>',
+  shrink: '<path d="M9.5 4.5v5h-5M14.5 4.5v5h5M9.5 19.5v-5h-5M14.5 19.5v-5h5"/>',
 };
 
 export function icon(name, cls = '') {
