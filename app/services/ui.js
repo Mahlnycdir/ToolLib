@@ -211,10 +211,41 @@ export function openSheet(title, content, { onClose, full = false, actions } = {
   };
   closeBtn.addEventListener('click', close);
   outsideCloses(backdrop, close);
+  pullToClose(head, sheet, close);
   document.body.append(backdrop);
   stack.push(close);
   requestAnimationFrame(() => backdrop.classList.add('show'));
   return { close, body, sheet };
+}
+
+// Pull the head of a sheet down to close it (0.26.1, for the finger): it follows the finger, more than 80 px down or
+// a quick flick closes, less springs back. Buttons in the head (×, actions) work as before.
+function pullToClose(head, sheet, close) {
+  let start = null;
+  head.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button, a, input, select') || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    start = { y: e.clientY, t: performance.now(), id: e.pointerId };
+    try { head.setPointerCapture(e.pointerId); } catch { /* a pointer the browser no longer knows: follow it anyway */ }
+    sheet.classList.add('dragging');
+  });
+  head.addEventListener('pointermove', (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    const dy = Math.max(0, e.clientY - start.y);
+    sheet.style.transform = dy ? `translateY(${dy}px)` : '';
+  });
+  const end = (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    const dy = Math.max(0, e.clientY - start.y);
+    const fast = dy > 30 && dy / Math.max(1, performance.now() - start.t) > 0.6;
+    start = null;
+    sheet.classList.remove('dragging');
+    if (dy > 80 || fast) { close(); return; }
+    sheet.classList.add('settle');
+    sheet.style.transform = '';
+    setTimeout(() => sheet.classList.remove('settle'), 200);
+  };
+  head.addEventListener('pointerup', end);
+  head.addEventListener('pointercancel', end);
 }
 
 // Copies text to the clipboard; falls back to a hidden text field for older browsers. Returns true on success.

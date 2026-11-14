@@ -401,7 +401,7 @@ export function renderNet(main, { slug = '' } = {}) {
     const body = h('div', { class: 'net-filter-body' },
       h('label', { class: 'set-field' }, h('span', { class: 'field-label', text: t('net.project') }), proj),
       group(t('net.kinds'), kinds), group(t('net.types'), types), group(t('net.areas'), areas), lonely, h('div', { class: 'btn-row' }, reset));
-    const closeSheet = openSheet(t('net.filter'), body);
+    const { close: closeSheet } = openSheet(t('net.filter'), body);
   }
 
   // ---------------------------------------------------------------- more: limits, layout
@@ -424,7 +424,7 @@ export function renderNet(main, { slug = '' } = {}) {
       num('maxDepth', t('net.maxDepth'), t('net.maxDepth.hint'), maxDepth(), LIMITS.depth, (v) => { savePref('net.maxDepth', v); state.depth = Math.min(state.depth, v); }),
       num('maxNodes', t('net.maxNodes'), t('net.maxNodes.hint'), maxNodes(), LIMITS.nodes, (v) => savePref('net.maxNodes', v)),
       h('p', { class: 'muted small', text: t('net.relayout.hint') }), h('div', { class: 'btn-row' }, relayout));
-    const closeSheet = openSheet(t('net.more'), body);
+    const { close: closeSheet } = openSheet(t('net.more'), body);
   }
 
   // ---------------------------------------------------------------- live

@@ -462,7 +462,7 @@ export function createNetCanvas({ interactive = true, flat = false, onSelect, on
   if (interactive) {
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     canvas.addEventListener('pointerdown', (e) => {
-      canvas.setPointerCapture?.(e.pointerId);
+      try { canvas.setPointerCapture(e.pointerId); } catch { /* not an active pointer (synthetic): no capture */ }
       const [sx, sy] = local(e);
       pointers.set(e.pointerId, [sx, sy]);
       glide = null;

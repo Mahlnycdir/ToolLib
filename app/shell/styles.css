@@ -403,7 +403,28 @@ dl.keys dd { margin: 0; }
 .action-sheet, .panel-sheet {
   align-self: end; width: min(520px, 100%);
   background: var(--panel); border-radius: 16px; box-shadow: var(--shadow); padding: 8px;
+  /* 0.26.1: a tall sheet gets at most the screen; its head with × stays in reach, only the content scrolls
+     (until 0.26.0 the filter of the network ran off the iPhone screen and could not be scrolled) */
+  display: flex; flex-direction: column; max-height: 100%; min-height: 0;
 }
+.action-sheet { overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.action-sheet > * { flex: none; }
+.panel-sheet-head { flex: none; position: relative; touch-action: none; }
+.panel-sheet-body {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  padding: 2px 6px 6px; scrollbar-width: thin; scrollbar-color: var(--muted) transparent;
+}
+.panel-sheet-body::-webkit-scrollbar { width: 6px; }
+.panel-sheet-body::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 3px; }
+.panel-sheet-body::-webkit-scrollbar-track { background: transparent; }
+.sheet-backdrop { padding-top: max(16px, env(safe-area-inset-top)); padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+/* on touch screens a small handle: pull the head down to close */
+@media (pointer: coarse) {
+  .panel-sheet-head { padding-top: 10px; cursor: grab; }
+  .panel-sheet-head::before { content: ''; position: absolute; top: 4px; left: 50%; width: 38px; height: 5px; margin-left: -19px; border-radius: 3px; background: var(--border); }
+}
+.panel-sheet.dragging { transition: none; }
+.panel-sheet.settle { transition: transform 0.18s ease; }
 .sheet-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px; border: 0; background: none; border-radius: 10px; text-align: left; cursor: pointer; }
 .sheet-item:hover { background: var(--panel-2); }
 .sheet-item.danger { color: var(--danger); }
