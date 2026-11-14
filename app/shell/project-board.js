@@ -5,16 +5,23 @@
 // 0.27.0: the same cards also as a canvas (project-canvas.js), switched above the board and kept per project; on the
 // board a card shows its threads to the other cards when you point at it (tap once on a phone), and its number in
 // the red thread.
+// 0.28.0: the widgets sit in the same frame as on Start (widget-frame.js), can be wide, and include building blocks
+// you put together yourself (widget-blocks.js); the next steps have lights (steps-ui.js).
 import { h, toast, promptDialog, confirmDialog, actionSheet, debounce, loadPref, savePref, modal, copyText, openSheet } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
 import { allNodes, nodeByPath, nodeBySlug, searchNodes } from '../services/search.js';
 import { getNode } from '../services/nodes.js';
 import {
-  WIDGETS, addLink, addSection, addStep, addTime, addToProject, boardOf, focusPath, loadProject, moveSectionTo, placeItem, projectWorks,
-  removeFromProject, removeLink, removeSection, removeStep, saveCalc, saveProjectNotes, sectionsOf, setDue, setFocus, setPinned, setRead,
-  setWidgets, toggleStep, updateSection, widgetsOf, SECTION_COLOURS, focusProject, projectNodes,
+  WIDGETS, addLink, addSection, addTime, addToProject, boardOf, focusPath, loadProject, moveSectionTo, placeItem, projectWorks,
+  removeFromProject, removeLink, removeSection, saveCalc, saveProjectNotes, sectionsOf, setDue, setFocus, setPinned, setRead,
+  setWidgets, updateSection, widgetsOf, SECTION_COLOURS, focusProject, projectNodes, nextUp,
+  setProjectWide, addProjectBlock, saveProjectBlock, saveProjectBlockContent, removeProjectWidget,
 } from '../services/projects.js';
+import { newBlockId } from '../services/widget-store.js';
+import { widgetGrid } from './widget-frame.js';
+import { BLOCK_ICON, blockBody, blockChoices, blockHasContent, blockTitle, editBlock } from './widget-blocks.js';
+import { stepsEditor } from './steps-ui.js';
 import { capture } from '../services/notes.js';
 import { nodeHref, nodeLead, nodeTitle, typeLabel, typeTile } from './node-view.js';
 import { newCard, newCrawl, newNote, newSnippet } from './create.js';
@@ -378,78 +385,52 @@ function knowledgePicker(p, ctx, section = null) {
 }
 
 // ------------------------------------------------------------------ widgets
+// The project's widgets in the shared frame (widget-frame.js): the ones Toollib brings (WIDGET_BODY below) and
+// building blocks you put together (widget-blocks.js), kept in the project file.
 function widgetsArea(p, members, ctx) {
-  const { path, redraw } = ctx;
+  const { path, go, redraw } = ctx;
   const list = widgetsOf(p);
-  const area = h('div', { class: 'widgets' });
-  list.forEach((id, i) => {
-    const body = WIDGET_BODY[id]?.(p, members, ctx);
-    if (!body) return;
-    const menu = h('button', { type: 'button', class: 'icon-btn small widget-menu no-drag', title: t('widget.menu'), 'aria-label': t('widget.menu'), html: icon('more') });
-    menu.addEventListener('click', async () => {
-      const pick = await actionSheet(t(`widget.${id}`), [
-        ...(i > 1 ? [{ label: t('widget.first'), value: 'first', icon: 'arrowLeft' }] : []),
-        { label: t('widget.earlier'), value: 'up', icon: 'arrowLeft', disabled: i === 0 },
-        { label: t('widget.later'), value: 'down', icon: 'arrowRight', disabled: i === list.length - 1 },
-        '-', { label: t('widget.remove'), value: 'remove', icon: 'close', danger: true },
-      ]);
-      if (!pick) return;
-      const next = [...list];
-      if (pick === 'remove') next.splice(i, 1);
-      else if (pick === 'first') next.unshift(...next.splice(i, 1));
-      else { const j = pick === 'up' ? i - 1 : i + 1; [next[i], next[j]] = [next[j], next[i]]; }
-      if (await setWidgets(path, next)) redraw();
-    });
-    const head = h('header', { class: 'widget-head' }, iconEl(WIDGET_ICON[id], 'widget-icon'), h('h3', { text: t(`widget.${id}`) }), menu);
-    const w = h('section', { class: `widget widget-${id}`, dataset: { widget: id } }, head, body);
-    draggable(head, { data: { kind: 'widget', id, project: path }, label: t(`widget.${id}`) });
-    dropZone(w, {
-      accept: (x) => x.kind === 'widget' && x.project === path && x.id !== id,
-      // a widget dropped on another takes its place (0.19.0); which half you hit no longer matters
-      place: (x) => (list.indexOf(x.id) > i ? 'before' : 'after'),
-      drop: async (x, place) => {
-        const next = list.filter((y) => y !== x.id);
-        let at = next.indexOf(id) + (place === 'after' ? 1 : 0);
-        next.splice(at, 0, x.id);
-        if (await setWidgets(path, next)) redraw();
-      },
-    });
-    area.append(w);
+  const after = (ok) => { if (ok) redraw(); };
+  return widgetGrid({
+    scope: path,
+    list,
+    wide: p.wide || [],
+    render: (id) => {
+      const block = p.blocks?.get(id);
+      if (block) {
+        const body = blockBody(block, { go, focus: nodeByPath(path), saveContent: (text) => saveProjectBlockContent(path, id, text) });
+        return body && { kind: `block-${block.kind}`, title: blockTitle(block), icon: BLOCK_ICON[block.kind], body, editable: true, hasContent: blockHasContent(block) };
+      }
+      const body = WIDGET_BODY[id]?.(p, members, ctx);
+      return body && { kind: id, title: t(`widget.${id}`), icon: WIDGET_ICON[id], body };
+    },
+    save: async ({ list: next, wide }) => {
+      let ok = false;
+      if (next.join() !== list.join()) ok = await setWidgets(path, next) || ok;
+      if (wide.join() !== (p.wide || []).join()) ok = await setProjectWide(path, wide) || ok;
+      after(ok);
+    },
+    remove: async (id) => after(await removeProjectWidget(path, id)),
+    edit: async (id) => { const cfg = await editBlock(p.blocks.get(id)); if (cfg) after(await saveProjectBlock(path, id, cfg)); },
+    choices: () => {
+      const own = WIDGETS.filter((w) => !list.includes(w)).map((w) => ({ label: t(`widget.${w}`), value: w, icon: WIDGET_ICON[w], detail: t(`widget.${w}.hint`) }));
+      return [...own, ...(own.length ? ['-'] : []), ...blockChoices()];
+    },
+    add: async (value) => {
+      if (!value.startsWith('block:')) { after(await setWidgets(path, [...list, value])); return; }
+      const cfg = await editBlock({ kind: value.slice(6), title: '' });
+      if (cfg) after(await addProjectBlock(path, newBlockId(), cfg));
+    },
   });
-  const missing = WIDGETS.filter((w) => !list.includes(w));
-  if (missing.length) {
-    const add = h('button', { type: 'button', class: 'widget-add', id: 'widget-add' }, iconEl('plus'), h('span', { text: t('widget.add') }));
-    add.addEventListener('click', async () => {
-      const pick = await actionSheet(t('widget.add'), missing.map((w) => ({ label: t(`widget.${w}`), value: w, icon: WIDGET_ICON[w], detail: t(`widget.${w}.hint`) })));
-      if (pick && await setWidgets(path, [...list, pick])) redraw();
-    });
-    area.append(add);
-  }
-  return area;
 }
 
+// The body of one of the project's own widgets, for the control panel on Start (timer, date).
+export const projectWidgetBody = (id, p, ctx) => WIDGET_BODY[id]?.(p, projectNodes(p.links), ctx) || null;
+
 const WIDGET_BODY = {
-  // next steps: tick, remove, add; the field keeps the focus
+  // next steps with their lights: tick, change the light, remove, add; the field keeps the focus (steps-ui.js)
   steps(p, members, ctx) {
-    const { path, redraw } = ctx;
-    const steps = h('ul', { class: 'steps-list' });
-    p.steps.forEach((s, i) => {
-      const box = h('input', { type: 'checkbox', checked: s.done ? true : null, 'aria-label': s.text });
-      box.addEventListener('change', async () => { await toggleStep(path, i); redraw(); });
-      const del = h('button', { type: 'button', class: 'icon-btn small step-del', 'aria-label': `${t('action.remove')}: ${s.text}`, title: t('action.remove'), html: icon('close') });
-      del.addEventListener('click', async () => { await removeStep(path, i); redraw(); });
-      steps.append(h('li', { class: s.done ? 'done' : '' }, h('label', {}, box, h('span', { text: s.text })), del));
-    });
-    const input = h('input', { class: 'field step-input', type: 'text', placeholder: t('project.step.add'), 'aria-label': t('project.step.add'), enterkeyhint: 'done' });
-    input.addEventListener('keydown', async (e) => {
-      if (e.key !== 'Enter' || !input.value.trim()) return;
-      e.preventDefault();
-      await addStep(path, input.value);
-      ctx.refocus.set('step');
-      redraw();
-    });
-    ctx.fields.step = input;
-    return h('div', { class: 'project-steps' }, steps, input);
+    return stepsEditor(p, ctx);
   },
 
   // the works of the project: read or not yet, read them from here
@@ -685,7 +666,7 @@ export async function openProjectDrawer({ go, current = '' } = {}) {
     const secs = boardOf(p);
     const node = current ? nodeByPath(current) : null;
     const open = h('button', { type: 'button', class: 'btn small primary drawer-open', onclick: () => { sheet.close(); go(nodeHref(d.path)); } }, iconEl('target'), h('span', { text: t('drawer.open') }));
-    const next = p.steps.find((s) => !s.done);
+    const next = nextUp(p.steps);
     const parts = [h('div', { class: 'drawer-top' }, next ? h('p', { class: 'small' }, h('span', { class: 'muted', text: `${t('project.next')} ` }), h('span', { text: next.text })) : h('span'), open)];
     if (node && node.type !== 'project' && node.path !== d.path) {
       const inIt = p.links.includes(node.slug);

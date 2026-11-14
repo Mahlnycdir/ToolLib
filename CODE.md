@@ -29,6 +29,7 @@ Toollib ist eine Webseite, die im Browser läuft (Mac, iPhone, Linux). Dein Wiss
 6. `app/services/sync.js`: Abgleich mit GitHub (isomorphic-git im Browser).
 7. Das Netz (0.26.0): `app/services/graph-layout.js` rechnet, wo die Punkte stehen (Kräfte wie bei networkx.spring_layout, in 3D, mit Ebenen); `app/shell/net-canvas.js` zeichnet und dreht; `app/shell/net-view.js` baut die Ansicht und rechnet die Spannung einer Linie aus (`tension`).
 8. Die Leinwand eines Projekts (0.27.0): `app/services/canvas-store.js` liest und schreibt die Plätze als JSON (wie `json.load`/`json.dump`); `app/shell/project-canvas.js` zeichnet Karten, Gruppen und Fäden (ein SVG darüber) und rechnet zwischen Bildschirm und Fläche um (`toWorld`); `setThread` in `projects.js` speichert den roten Faden.
+9. Start und Widgets (0.28.0): `app/services/start-store.js` liest und schreibt `start.md`; `widget-store.js` prüft die Bausteine (wie ein pydantic-Modell) und schreibt sie; `md-parts.js` die Abschnitte `## …`. In `app/shell/`: `widget-frame.js` ist der Rahmen aller Widgets (Menü, Breite, Ziehen), `widget-blocks.js` die Bausteine (eine Funktion pro Art, über ein dict gewählt), `steps-ui.js` die Schritte mit Ampel, `pult.js` das Kontrollpult, `start.js` der Start.
 
 ## Wie eine Verknüpfung durch den Code läuft
 

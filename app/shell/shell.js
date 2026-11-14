@@ -838,6 +838,12 @@ export function startShell(root) {
     const route = currentRoute();
     if (route.kind === 'home' || (route.kind === 'module' && route.mod.id === 'projects')) render();
   });
+  // a search from a widget (0.28.0, a link tile with a search): into the command bar, with its results
+  window.addEventListener('toollib:search', (e) => {
+    input.value = String(e.detail || '').slice(0, 200);
+    input.focus();
+    input.dispatchEvent(new Event('input'));
+  });
   // the project in focus took a node in: the node you look at shows it
   window.addEventListener('toollib:linked', (e) => {
     const route = currentRoute();

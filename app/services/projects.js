@@ -1,6 +1,8 @@
 // Projects (0.15.0): the bracket around everything you do for one aim. A project is a node in your knowledge:
 //   projects/<name>.md   type: project; title, goal, state (active, paused, done), links: [every node that belongs to it];
 //                        below: "## Next" with your steps as "- [ ] …" lines, and "## Notes" with free text
+//                        A step has a light (0.28.0): "- [ ]" open, "- [!]" next (red), "- [>]" handed in / waiting
+//                        (yellow), "- [x]" done (green). Obsidian reads these as tasks too.
 // Since 0.18.0 a project is a board: sections ("id|title|colour" in `sections`, the three stations when there are
 // none) with the order of their cards in one line each (`board_<id>: [slugs]`), and widgets (`widgets: [...]`) with
 // their own data: `read`, `pins`, `due`, `due_what`, and the parts "## Links", "## Calc", "## Time" below.
@@ -17,8 +19,15 @@ import { noteChange, onNoteChange } from './sync.js';
 import { announce } from './channel.js';
 import { loadPref, savePref } from './prefs.js';
 import { removeCanvas } from './canvas-store.js';
+import { keepInPart, partText, setPart } from './md-parts.js';
+import { blocksOf, widgetList, wideList, withConfig, withContent, withoutBlock } from './widget-store.js';
 
 const q = (v) => JSON.stringify(String(v));
+// the steps under "## Next" and their lights (0.28.0)
+export const STEP_STATUS = ['open', 'next', 'wait', 'done'];
+const STEP_LINE = /^- \[([ xX!>])\] (.*)$/;
+const STATUS_OF = { ' ': 'open', '!': 'next', '>': 'wait', x: 'done', X: 'done' };
+const MARK_OF = { open: ' ', next: '!', wait: '>', done: 'x' };
 const today = () => new Date().toISOString().slice(0, 10);
 const asList = (v) => (Array.isArray(v) ? v.map(String) : v ? [String(v)] : []);
 const slugOf = (path) => path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '');
@@ -89,26 +98,7 @@ export async function deleteProject(path) {
   if (focusPath() === path) setFocus('');
 }
 
-// A part "## <name>" of the file: its heading line and the line where the next part starts, or -1.
-function partOf(text, name) {
-  const lines = text.split('\n');
-  let fmEnd = 0;
-  if (lines[0]?.replace(/^﻿/, '') === '---') { fmEnd = lines.indexOf('---', 1) + 1; }
-  const at = lines.findIndex((l, i) => i >= fmEnd && l.trim() === `## ${name}`);
-  let end = lines.length;
-  if (at >= 0) for (let i = at + 1; i < lines.length; i++) if (/^## /.test(lines[i])) { end = i; break; }
-  return { lines, at, end };
-}
-const partText = (text, name) => { const p = partOf(text, name); return p.at < 0 ? '' : p.lines.slice(p.at + 1, p.end).join('\n').trim(); };
-// Puts `body` (text) under "## <name>", in place of what was there; a new part goes to the end of the file.
-function setPart(text, name, body) {
-  const p = partOf(text, name);
-  const b = String(body).replace(/\s+$/, '');
-  if (p.at < 0) return b ? `${text.replace(/\n*$/, '\n')}\n## ${name}\n\n${b}\n` : text;
-  const lines = [...p.lines];
-  lines.splice(p.at + 1, p.end - p.at - 1, '', ...(b ? b.split('\n') : []), ...(p.end < lines.length ? [''] : []));
-  return `${lines.join('\n').replace(/\n*$/, '')}\n`;
-}
+// Parts "## <name>" of the file ("## Calc", "## Time", "## Links", widget contents): md-parts.js.
 
 // The parts of a project file: where "## Next" and "## Notes" sit, as line numbers.
 function sections(text) {
@@ -130,8 +120,8 @@ export async function loadProject(path) {
   const steps = [];
   if (s.next >= 0) {
     for (let i = s.next + 1; i < s.nextEnd; i++) {
-      const m = s.lines[i].match(/^- \[([ xX])\] (.*)$/);
-      if (m) steps.push({ text: m[2].trim(), done: m[1] !== ' ' });
+      const m = s.lines[i].match(STEP_LINE);
+      if (m) { const status = STATUS_OF[m[1]]; steps.push({ text: m[2].trim(), done: status === 'done', status }); }
     }
   }
   const notes = s.notes >= 0 ? s.lines.slice(s.notes + 1, s.notesEnd).join('\n').trim() : '';
@@ -200,7 +190,9 @@ function boardParts(meta, text) {
   return {
     sections: parseSections(meta.sections),
     board,
-    widgets: meta.widgets == null ? null : asList(meta.widgets).filter((w) => WIDGETS.includes(w)),
+    widgets: meta.widgets == null ? null : widgetList(meta.widgets, WIDGETS),
+    wide: wideList(meta.wide),   // 0.28.0: widgets two columns wide
+    blocks: blocksOf(meta, text, meta.widgets == null ? [] : widgetList(meta.widgets, WIDGETS)),   // building blocks (widget-store.js)
     read: asList(meta.read),
     pins: asList(meta.pins),
     thread: asList(meta.thread),   // 0.27.0: the red thread, cards in your own order
@@ -313,7 +305,17 @@ export const moveSectionTo = (path, id, before) => changeProject(path, (text, p)
 });
 
 // ------------------------------------------------------------------ widgets and their data
-export const setWidgets = (path, list) => changeProject(path, (text) => setField(text, 'widgets', yamlValue([...new Set(list)].filter((w) => WIDGETS.includes(w))), AFTER_LINKS));
+export const setWidgets = (path, list) => changeProject(path, (text) => setField(text, 'widgets', yamlValue(widgetList(list, WIDGETS)), AFTER_LINKS));
+// 0.28.0: wide widgets and building blocks (widget-store.js) in a project, like on Start
+export const setProjectWide = (path, wide) => changeProject(path, (text) => setField(text, 'wide', yamlValue(wideList(wide)), ['widgets', ...AFTER_LINKS]));
+export const addProjectBlock = (path, id, cfg) => changeProject(path, (text, p) => setField(withConfig(text, id, cfg, ['widgets', ...AFTER_LINKS]), 'widgets', yamlValue([...widgetsOf(p), id]), AFTER_LINKS));
+export const saveProjectBlock = (path, id, cfg) => changeProject(path, (text) => withConfig(text, id, cfg, ['widgets', ...AFTER_LINKS]));
+export const saveProjectBlockContent = (path, id, body) => changeProject(path, (text) => withContent(text, id, body));
+export const removeProjectWidget = (path, id) => changeProject(path, (text, p) => {
+  let next = setField(text, 'widgets', yamlValue(widgetsOf(p).filter((x) => x !== id)), AFTER_LINKS);
+  if (p.wide.includes(id)) next = setField(next, 'wide', yamlValue(p.wide.filter((x) => x !== id)), ['widgets', ...AFTER_LINKS]);
+  return withoutBlock(next, id);
+});
 const toggleIn = (key) => (path, slug, on) => changeProject(path, (text, p) => {
   const list = p[key];
   const has = list.includes(slug);
@@ -380,7 +382,7 @@ export const removeLink = (path, index) => changeProject(path, (text, p) => {
   return setPart(text, 'Links', p.links2.filter((_, i) => i !== index).map(linkLine).join('\n'));
 });
 // a line "## …" would start a new part of the file, so it gets a space in front (still a comment for the pad)
-export const saveCalc = (path, body) => changeProject(path, (text) => setPart(text, 'Calc', String(body).replace(/^(#{1,6}\s)/gm, ' $1').replace(/^---\s*$/gm, ' ---')));
+export const saveCalc = (path, body) => changeProject(path, (text) => setPart(text, 'Calc', keepInPart(body)));
 // A focus session of `minutes`, written as "- 2026-11-12 14:30 · 25 min" under "## Time".
 export const addTime = (path, minutes, when = new Date()) => changeProject(path, (text, p) => {
   const pad = (n) => String(n).padStart(2, '0');
@@ -445,7 +447,7 @@ export const addStep = (path, step) => change(path, (text0) => {
   if (!line) return null;
   const { s } = withNext(text0);
   let at = s.next + 1;
-  for (let i = s.next + 1; i < s.nextEnd; i++) if (/^- \[[ xX]\] /.test(s.lines[i])) at = i + 1;
+  for (let i = s.next + 1; i < s.nextEnd; i++) if (STEP_LINE.test(s.lines[i])) at = i + 1;
   const lines = [...s.lines];
   const add = [`- [ ] ${line}`];
   if (at === s.next + 1) add.unshift('');          // a blank line under the heading
@@ -457,7 +459,7 @@ export const addStep = (path, step) => change(path, (text0) => {
 
 function stepLine(s, index) {
   let n = -1;
-  for (let i = s.next + 1; i < s.nextEnd; i++) if (/^- \[[ xX]\] /.test(s.lines[i]) && ++n === index) return i;
+  for (let i = s.next + 1; i < s.nextEnd; i++) if (STEP_LINE.test(s.lines[i]) && ++n === index) return i;
   return -1;
 }
 export const toggleStep = (path, index) => change(path, (text) => {
@@ -465,9 +467,21 @@ export const toggleStep = (path, index) => change(path, (text) => {
   const i = s.next < 0 ? -1 : stepLine(s, index);
   if (i < 0) return null;
   const lines = [...s.lines];
-  lines[i] = lines[i].replace(/^- \[([ xX])\]/, (all, c) => `- [${c === ' ' ? 'x' : ' '}]`);
+  lines[i] = lines[i].replace(/^- \[([ xX!>])\]/, (all, c) => `- [${STATUS_OF[c] === 'done' ? ' ' : 'x'}]`);
   return lines.join('\n');
 });
+// The light of a step (0.28.0): 'open', 'next' (red), 'wait' (handed in, yellow), 'done' (green).
+export const setStepStatus = (path, index, status) => change(path, (text) => {
+  const mark = MARK_OF[status];
+  const s = sections(text);
+  const i = mark == null || s.next < 0 ? -1 : stepLine(s, index);
+  if (i < 0) return null;
+  const lines = [...s.lines];
+  lines[i] = lines[i].replace(/^- \[([ xX!>])\]/, `- [${mark}]`);
+  return lines.join('\n');
+});
+// What to go on with in a project: the first red step, else the first open one (handed-in ones wait for others).
+export const nextUp = (steps) => steps.find((x) => x.status === 'next') || steps.find((x) => x.status === 'open') || null;
 export const removeStep = (path, index) => change(path, (text) => {
   const s = sections(text);
   const i = s.next < 0 ? -1 : stepLine(s, index);

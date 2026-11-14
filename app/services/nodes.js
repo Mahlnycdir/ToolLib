@@ -174,12 +174,16 @@ export function citesOf(node) {
   return [...out];
 }
 
-// The steps of a project: the "- [ ] …" lines under "## Next". { open, done, next } with the first open one.
+// The steps of a project: the "- [ ] …" lines under "## Next", with their lights (0.28.0: "[!]" next, "[>]" handed
+// in / waiting, "[x]" done). { open (not done), done, wait, red, next (the first red one, else the first open one),
+// list: [{ text, status }] }, so Start can show every project's steps without reading its file.
+const STEP_STATUS_OF = { ' ': 'open', '!': 'next', '>': 'wait', x: 'done', X: 'done' };
 export function projectSteps(body) {
   const part = String(body).split(/^## /m).find((x) => /^Next\b/.test(x)) || '';
-  const items = [...part.matchAll(/^- \[([ xX])\] (.*)$/gm)].map((x) => ({ done: x[1] !== ' ', text: x[2].trim() }));
-  const open = items.filter((x) => !x.done);
-  return { open: open.length, done: items.length - open.length, next: open[0]?.text || '' };
+  const items = [...part.matchAll(/^- \[([ xX!>])\] (.*)$/gm)].map((x) => ({ status: STEP_STATUS_OF[x[1]], text: x[2].trim() }));
+  const count = (st) => items.filter((x) => x.status === st).length;
+  const next = items.find((x) => x.status === 'next') || items.find((x) => x.status === 'open');
+  return { open: items.length - count('done'), done: count('done'), wait: count('wait'), red: count('next'), next: next?.text || '', list: items.slice(0, 40) };
 }
 
 // Plain text of all languages for the search: prose, code and formulas.

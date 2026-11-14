@@ -457,7 +457,8 @@ function areaLabel(a) {
 // ------------------------------------------------------------------ the small network beside every node
 // The node and what is one step around it (two, when there is little), drawn once; a tap opens the big network
 // with this node in the middle. Redraws itself when a relation changes; nothing when the node has no relations.
-export function miniNet(d) {
+// opts.depth (0.28.0, the network widget): how far it reaches; without it 1, or 2 around a node with few neighbours
+export function miniNet(d, { depth: want = 0 } = {}) {
   const box = h('a', { class: 'net-mini', href: `#/m/net/${encodeURIComponent(d.slug)}`, title: t('net.mini.hint'), 'aria-label': t('net.mini.hint') });
   // flat and laid out afresh each time (the places of the big 3D picture do not fit a flat one); the same picture
   // every time all the same, since start positions come from the names
@@ -466,7 +467,7 @@ export function miniNet(d) {
   box.append(net.el, caption);
   const draw = () => {
     const one = neighbourhood(d.slug, { depth: 1, max: 40 });
-    const depth = one.nodes.size < 5 ? 2 : 1;
+    const depth = want || (one.nodes.size < 5 ? 2 : 1);
     const s = scene({ ...DEFAULT, mode: 'focus', focus: d.slug, depth, hideTypes: [], kinds: KINDS });
     box.hidden = s.list.length < 2;
     if (box.hidden) return;
