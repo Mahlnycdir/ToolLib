@@ -58,9 +58,16 @@ export function pathSection(node, { go }) {
     if (!opened.has(d.slug)) opened.set(d.slug, next?.id || d.steps[0]?.id || '');
     const parts = [];
     if (d.intro) parts.push(h('div', { class: 'path-intro' }, renderMarkdown(d.intro, { onNodeLink })));
-    // the themes it belongs to
-    if (d.themes.length) {
-      parts.push(h('div', { class: 'path-themes' }, ...d.themes.map((id) => h('span', { class: 'chip path-theme' }, iconEl(THEMES.find((x) => x.id === id)?.icon || 'route'), h('span', { text: t(`theme.${id}`) })))));
+    // the themes it belongs to, how far in you should be (0.30.1) and the paths it builds on
+    const before = d.after.map((slug) => nodeBySlug(slug)).filter((x) => x && x.type === 'path');
+    if (d.themes.length || d.level) {
+      parts.push(h('div', { class: 'path-themes' },
+        d.level ? h('span', { class: `chip path-level l-${d.level}`, text: t(`path.level.${d.level}`) }) : null,
+        ...d.themes.map((id) => h('span', { class: 'chip path-theme' }, iconEl(THEMES.find((x) => x.id === id)?.icon || 'route'), h('span', { text: t(`theme.${id}`) })))));
+    }
+    if (before.length) {
+      parts.push(h('p', { class: 'path-after small' }, iconEl('route'), h('span', { class: 'muted', text: t('path.after') }), ' ',
+        ...before.flatMap((x, i) => [i ? ', ' : null, h('a', { href: nodeHref(x.path), text: lang === 'de' && x.title_de ? x.title_de : x.title })].filter(Boolean))));
     }
     // the project begun from it, or the button that begins one
     if (project) {

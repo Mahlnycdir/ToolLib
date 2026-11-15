@@ -2584,5 +2584,9 @@
   "ahead.none": { "en": "Your knowledge has nothing for this yet.", "de": "Dein Wissen hat dazu noch nichts." },
   "ahead.in": { "en": "Move on in {project}", "de": "Weiterkommen in {project}" },
   "ahead.own": { "en": "From your knowledge", "de": "Aus deinem Wissen" },
-  "kobra.backToPath": { "en": "Back to the path “{title}”", "de": "Zurück zum Pfad „{title}“" }
+  "kobra.backToPath": { "en": "Back to the path “{title}”", "de": "Zurück zum Pfad „{title}“" },
+  "path.level.start": { "en": "Start", "de": "Einstieg" },
+  "path.level.middle": { "en": "Getting deeper", "de": "Vertiefung" },
+  "path.level.advanced": { "en": "Advanced", "de": "Fortgeschritten" },
+  "path.after": { "en": "Builds on:", "de": "Baut auf:" }
 }

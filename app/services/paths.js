@@ -37,6 +37,8 @@ export const THEMES = [
   { id: 'printing', icon: 'cube' },
   { id: 'programming', icon: 'code' },
 ];
+// how far in you should be (0.30.1): start, middle, advanced
+export const LEVELS = ['start', 'middle', 'advanced'];
 export const themeById = (id) => THEMES.find((x) => x.id === id) || null;
 export const isTheme = (id) => !!themeById(id);
 
@@ -75,7 +77,9 @@ export function parsePath(node, lang) {
   return {
     path: node.path, slug: node.slug, title: titleOf(m, l, node.slug), intro, goal,
     themes: (Array.isArray(m.themes) ? m.themes : []).map(String).filter(isTheme),
-    level: String(m.level || ''), links: (Array.isArray(m.links) ? m.links : []).map(String),
+    level: LEVELS.includes(String(m.level)) ? String(m.level) : '', links: (Array.isArray(m.links) ? m.links : []).map(String),
+    // 0.30.1: the paths this one builds on ("Baut auf … auf")
+    after: (Array.isArray(m.after) ? m.after : []).map(String).filter((x) => /^[a-z0-9][a-z0-9-]{0,80}$/.test(x)),
     kobra: kobraName(node.slug), steps, meta: m,
   };
 }

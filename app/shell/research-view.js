@@ -235,7 +235,9 @@ export function renderResearch(main) {
     reading = mountReader(readerHost, {
       work, version, folderPath: '', query: st.result?.query.text || st.query || '',
       onBack: closeReader,
-      onSearch: async (term) => { await closeReader(); input.value = term; run(term); },
+      // a reference searched from the reader: the search runs here, also when you came from the library or your pages
+      // (0.30.1, ENTE: "Search in Research" led back to the library and nothing else happened)
+      onSearch: async (term) => { await closeReader({ stay: true }); input.value = term; run(term); },
       // a link to another page you went through (0.14.3) opens that page here
       onOpenClip: async (path) => {
         const next = await workFromClip(path).catch(() => null);
@@ -244,14 +246,15 @@ export function renderResearch(main) {
       onChange: () => { if (view?.root.isConnected) drawList(); },
     });
   }
-  async function closeReader() {
+  async function closeReader({ stay = false } = {}) {
     const clipPath = st.read?.work.clip?.path || (st.read && clipFor(st.read.work)?.path) || '';
     if (clipPath) mark('read', { path: clipPath, title: st.read.work.title });
     st.read = null;
     showReader();
-    // came from your pages (0.16.0): back there
+    // came from your pages (0.16.0) or the library (0.29.0): back there, unless you go on searching here
     const from = loadPref('research.readFrom', '');
-    if (from) { savePref('research.readFrom', ''); location.hash = from; return; }
+    if (from) savePref('research.readFrom', '');
+    if (from && !stay) { location.hash = from; return; }
     if (st.kept?.clip && clipPath === st.kept.clip.path) { try { st.kept = await workFromClip(clipPath) || st.kept; } catch { /* keep what is shown */ } }
     view.drawAll();
   }
