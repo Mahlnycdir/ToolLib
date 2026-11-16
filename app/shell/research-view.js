@@ -56,6 +56,18 @@ const st = {
   learnSearch: null,
   webPdf: new Map(),     // key of a work -> { state, results }: "Search the web for a PDF"
 };
+// The work in the reader comes back after a reload and after iOS closed the app (0.31.0, ENTE: "Wenn ich reloade,
+// werde ich aus dem Paper geworfen"); kept on this device only, for a week.
+const READING = 'research.reading';
+function restoreReading() {
+  const r = loadPref(READING, null);
+  if (!r || typeof r.work !== 'object' || !r.work?.title || Date.now() - (Number(r.at) || 0) > 7 * 864e5) return null;
+  return { work: r.work, version: r.version || null };
+}
+function rememberReading() {
+  try { savePref(READING, st.read ? JSON.parse(JSON.stringify({ work: st.read.work, version: st.read.version, at: Date.now() })) : null); } catch { /* keeps working without */ }
+}
+st.read = restoreReading();
 let view = null;         // the mounted view: { root, draw* }
 let panel = null;        // the panel of the run that is open (0.14.3)
 let inboxLine = '';      // what the last look into the PDF inbox found (0.14.4)
@@ -228,6 +240,7 @@ export function renderResearch(main) {
   function showReader() {
     reading?.destroy();
     reading = null;
+    rememberReading();
     readerHost.replaceChildren();
     root.dataset.mode = st.read ? 'read' : '';
     if (!st.read) return;

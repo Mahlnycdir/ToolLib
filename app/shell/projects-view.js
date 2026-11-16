@@ -17,6 +17,8 @@ import { colourVar } from './colors.js';
 import { capture, deleteNote, inbox, loadNote, saveNote } from '../services/notes.js';
 import { nodeHref, nodeLead, nodeTitle, typeLabel, typeTile } from './node-view.js';
 import { renderMarkdown } from './markdown.js';
+import { createEditor } from './md-editor.js';
+import { offsetAtPoint } from './tap-place.js';
 import { newCard, newCrawl, newNote, newPage, newProject, newSnippet } from './create.js';
 import { openWriting } from './library-home.js';
 import { loadLibrary } from '../services/library-store.js';
@@ -256,18 +258,35 @@ export async function renderNote(main, path, ctx) {
     box.append(pic);
     loadInkNote(path).then((x) => { const url = thumbnail(x.strokes, { w: 640, h: 300, color: '#15171b' }); if (url) pic.firstChild.append(h('img', { src: url, alt: '' })); }).catch(() => {});
   }
-  const area = h('textarea', { class: 'field note-text big', rows: '8', 'aria-label': t('type.note') });
-  area.value = n.text;
-  const view = h('div', { class: 'note-read' });
-  const showRead = () => view.replaceChildren(renderMarkdown(area.value, { onNodeLink: (slug) => { const x = allNodes().find((y) => y.slug === slug && !y.conflict); return x ? { href: nodeHref(x.path), label: nodeTitle(x) } : null; } }));
+  // Writing a note (0.31.0): the editor of the library, so lists and numbers go on with Enter, formulas and shorthand
+  // work; a tap on the text opens it with the cursor where you tapped (ENTE: "der Cursor soll an die Stelle springen,
+  // wo ich draufgeklickt habe"). Before, a plain text field opened with a double click, the cursor at the end.
+  let text = n.text;
+  const host = h('div', { class: 'note-editor' });
+  let editor = null;
+  const view = h('div', { class: 'note-read', title: t('note.tapToEdit') });
+  const showRead = () => view.replaceChildren(renderMarkdown(text, { onNodeLink: (slug) => { const x = allNodes().find((y) => y.slug === slug && !y.conflict); return x ? { href: nodeHref(x.path), label: nodeTitle(x) } : null; } }));
   const saved = h('span', { class: 'muted small note-saved' });
-  const save = async () => { try { if (await saveNote(path, area.value)) saved.textContent = t('research.saved'); } catch { saved.textContent = t('research.saveFailed'); } };
+  const save = async () => { try { if (await saveNote(path, text)) saved.textContent = t('research.saved'); } catch { saved.textContent = t('research.saveFailed'); } };
   const later = debounce(save, 1000);
-  area.addEventListener('input', () => { saved.textContent = ''; later(); });
-  area.addEventListener('blur', () => { later.cancel(); save().then(() => { showRead(); box.classList.remove('editing'); }); });
-  const edit = h('button', { type: 'button', class: 'btn small note-edit', onclick: () => { box.classList.add('editing'); area.focus(); } }, iconEl('edit'), h('span', { text: t('node.edit') }));
+  const stopEditing = () => { later.cancel(); save().then(() => { if (!box.isConnected) return; showRead(); box.classList.remove('editing'); }); };
+  function startEditing(at = null) {
+    box.classList.add('editing');
+    if (!editor) {
+      editor = createEditor(host, { kind: 'note', value: text, label: t('type.note'), onChange: (v) => { text = v; saved.textContent = ''; later(); }, onBlur: stopEditing });
+    } else editor.setValue(text);
+    editor.focus();
+    const pos = at == null ? text.length : Math.max(0, Math.min(text.length, at));
+    editor.setSelection(pos, pos);
+  }
+  const edit = h('button', { type: 'button', class: 'btn small note-edit', onclick: () => startEditing() }, iconEl('edit'), h('span', { text: t('node.edit') }));
   showRead();
-  view.addEventListener('dblclick', () => edit.click());
+  view.addEventListener('click', (e) => {
+    if (e.target.closest('a, button, input, summary, .copy-btn, .code-head')) return;
+    if (String(window.getSelection() || '')) return;   // you are selecting text to copy
+    startEditing(offsetAtPoint(view, text, e.clientX, e.clientY));
+  });
+  const area = { get value() { return text; } };   // what the buttons below hand on
 
   const file = async () => {
     const all = projects();
@@ -298,7 +317,7 @@ export async function renderNote(main, path, ctx) {
     if (history.length > 1) history.back(); else go('#/home');
   };
   const btn = (key, iconName, fn, cls = '') => h('button', { type: 'button', class: `btn small ${cls}`, onclick: fn }, iconEl(iconName), h('span', { text: t(key) }));
-  box.append(view, area, h('div', { class: 'btn-row note-actions' }, edit, saved),
+  box.append(view, host, h('div', { class: 'btn-row note-actions' }, edit, saved),
     h('h2', { text: t('note.then') }),
     h('div', { class: 'btn-row note-next' },
       btn('note.toProject', 'target', file, 'note-file'),

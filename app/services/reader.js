@@ -100,7 +100,8 @@ export function outlineOf(markdown) {
   let math = false;
   for (const line of String(markdown).split('\n')) {
     const t = line.trim();
-    if (/^(```|~~~)/.test(t)) { fence = !fence; continue; }
+    // inside a display formula "~~~" is TeX (spaces), not a code fence (0.31.0)
+    if (!math && /^(```|~~~)/.test(t)) { fence = !fence; continue; }
     if (fence) continue;
     if (t === '$$') { math = !math; continue; }
     if (math) continue;
@@ -118,10 +119,20 @@ export function parseBody(body) {
   let math = false;
   for (const line of String(body).replace(/\r\n?/g, '\n').split('\n')) {
     const t = line.trim();
-    if (/^(```|~~~)/.test(t)) fence = !fence;
+    // inside a display formula a line like "~~~\tilde{\xi}" is TeX, not a code fence (0.31.0: such a line hid the
+    // parts after the text, so every save of your highlights added another "## Highlights" and the reader found none)
+    if (!math && /^(```|~~~)/.test(t)) fence = !fence;
     else if (!fence && t === '$$') math = !math;
     const h = !fence && !math && line.match(/^## (.+?)\s*$/);
     if (h) parts.push({ title: h[1], lines: [] }); else parts[parts.length - 1].lines.push(line);
+  }
+  // A clip saved before 0.31.0 can hold a part more than once: the text and the references count once (the first),
+  // the highlights as saved last (every save wrote the whole list). The next save writes the clip clean.
+  for (const [title, last] of [['Text', false], ['References', false], ['Highlights', true]]) {
+    const at = parts.map((p, i) => (p.title === title ? i : -1)).filter((i) => i >= 0);
+    if (at.length < 2) continue;
+    const stay = last ? at[at.length - 1] : at[0];
+    for (let k = at.length - 1; k >= 0; k--) if (at[k] !== stay) parts.splice(at[k], 1);
   }
   const text = (title) => parts.find((p) => p.title === title)?.lines.join('\n').trim() || '';
   return {

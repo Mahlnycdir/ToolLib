@@ -33,6 +33,7 @@ import { onAnnounce } from '../services/channel.js';
 import { firstFormula } from '../services/library-store.js';
 import { nodeHref, nodeLead, nodeTitle, typeLabel, typeTile } from './node-view.js';
 import { typeset } from './math.js';
+import { renderMarkdown } from './markdown.js';
 import { PALETTE, COLOURS, colourVar, typeColour } from './colors.js';
 import { tension } from './net-view.js';
 
@@ -168,6 +169,8 @@ export function projectCanvas(p, ctx) {
     const body = h('div', { class: 'pc-card-body' });
     const lead = leadOf(d);
     if (lead) body.append(h('p', { class: 'pc-lead', text: lead }));
+    // a note shows its text (0.31.0); drag the corner to give it more room
+    if (d.type === 'note') noteText(d, body);
     // formulas show their formula, as on the board
     if (MATH.has(d.type)) {
       getNode(d.path).then((node) => {
@@ -180,12 +183,20 @@ export function projectCanvas(p, ctx) {
         h('div', { class: 'pc-card-t' }, h('span', { class: 'pc-title', text: nodeTitle(d, lang) }), h('span', { class: 'pc-type', text: typeLabel(d.type) }))),
       body,
       h('span', { class: 'pc-num', hidden: true }),
-      h('span', { class: 'pc-handle', title: t('canvas.handle') }));
+      h('span', { class: 'pc-handle', title: t('canvas.handle') }),
+      h('span', { class: 'pc-size', title: t('canvas.size') }));
     el.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); go(nodeHref(d.path)); }
       else if (e.key === ' ') { e.preventDefault(); tapCard(d.slug); }
     });
     return el;
+  }
+  function noteText(d, body) {
+    const box = body.querySelector('.pc-note-text') || body.appendChild(h('div', { class: 'pc-note-text' }));
+    getNode(d.path).then((node) => {
+      const text = node ? String(node.body || '').replace(/^\s*#\s.*\n?/, '').trim() : '';
+      box.replaceChildren(text ? renderMarkdown(text) : '');
+    }).catch(() => {});
   }
   // a card grows with its formula: the lines follow its real height
   const ro = typeof ResizeObserver === 'function' ? new ResizeObserver((entries) => {
@@ -193,7 +204,7 @@ export function projectCanvas(p, ctx) {
     for (const en of entries) {
       const b = state.cards.get(en.target.dataset.slug);
       const hh = Math.round(en.target.offsetHeight);
-      if (b && hh && Math.abs(b.h - hh) > 1) { b.h = hh; changed = true; }
+      if (b && !b.sized && hh && Math.abs(b.h - hh) > 1) { b.h = hh; changed = true; }
     }
     if (!changed) return;
     if (state.auto) restack(); else drawLines();
@@ -261,6 +272,10 @@ export function projectCanvas(p, ctx) {
       const b = state.cards.get(slug);
       if (!b) continue;
       el.style.transform = `translate(${b.x}px, ${b.y}px)`;
+      // the size you gave it (0.31.0); without one the card is as wide as all and as high as its content
+      el.style.width = b.w && b.w !== CARD_W ? `${b.w}px` : '';
+      el.style.height = b.sized ? `${b.h}px` : '';
+      el.classList.toggle('sized', !!b.sized);
       el.classList.toggle('sel', slug === state.selected);
       const n = state.thread.indexOf(slug);
       const num = el.querySelector('.pc-num');
@@ -300,7 +315,18 @@ export function projectCanvas(p, ctx) {
         list.push(e); nb.get(s).add(e.to); nb.get(e.to).add(s);
       }
     }
-    return list.map((e) => ({ ...e, strength: tension(g.nodes.get(e.from), g.nodes.get(e.to), e.kind, nb.get(e.from), nb.get(e.to)) }));
+    // one line per pair of cards (0.31.0, ENTE: "wenn vor und zurück hinterlegt sind, nur ein Link"): a link both
+    // ways or of two kinds draws once, with the strongest tension; `both` notes that it runs both ways
+    const pairs = new Map();
+    for (const e of list) {
+      const key = e.from < e.to ? `${e.from}\n${e.to}` : `${e.to}\n${e.from}`;
+      const strength = tension(g.nodes.get(e.from), g.nodes.get(e.to), e.kind, nb.get(e.from), nb.get(e.to));
+      const had = pairs.get(key);
+      if (!had) { pairs.set(key, { ...e, strength, both: false, back: null }); continue; }
+      if (had.from !== e.from) { had.both = true; had.back = had.back || e; }
+      if (strength > had.strength) Object.assign(had, { kind: e.kind, strength });
+    }
+    return [...pairs.values()];
   }
   let rubber = null;   // the line you are drawing: { a, b } in world coordinates
   function drawLines() {
@@ -331,7 +357,7 @@ export function projectCanvas(p, ctx) {
       const on = lit && (e.from === lit || e.to === lit);
       lines.append(
         svg('path', { d, class: `pc-line k-${e.kind}${on ? ' lit' : ''}${lit && !on ? ' dim' : ''}`, stroke: `url(#${id})`, 'stroke-width': (0.9 + 0.8 * e.strength).toFixed(2) }),
-        svg('path', { d, class: 'pc-hit', 'data-from': e.from, 'data-to': e.to }));
+        svg('path', { d, class: 'pc-hit', 'data-from': e.from, 'data-to': e.to, 'data-both': e.both ? '1' : null }));
     });
     // the red thread on top: a soft glow below, the line above, small arrows that show its direction
     const pts = state.thread.map((s) => state.cards.get(s)).filter(Boolean);
@@ -453,17 +479,21 @@ export function projectCanvas(p, ctx) {
   }
 
   // ---------------------------------------------------------------- a click on a thread: what it is, let go of it
-  function threadPop(from, to, sx, sy) {
+  function threadPop(from, to, sx, sy, both = false) {
     const da = nodeBySlug(from); const db = nodeBySlug(to);
     if (!da || !db) return;
     const close = h('button', { type: 'button', class: 'icon-btn small', 'aria-label': t('action.close'), html: icon('close') });
     close.addEventListener('click', hidePop);
-    const kids = [h('div', { class: 'pc-pop-t' }, h('span', { text: `${nodeTitle(da, lang)} → ${nodeTitle(db, lang)}` }), close)];
-    if (isDrawn(from, to)) {
+    const kids = [h('div', { class: 'pc-pop-t' }, h('span', { text: `${nodeTitle(da, lang)} ${both ? '↔' : '→'} ${nodeTitle(db, lang)}` }), close)];
+    // a line that runs both ways goes as a whole (both links, where they stand in the head)
+    const ways = [[from, to], ...(both ? [[to, from]] : [])].filter(([a, b]) => isDrawn(a, b));
+    if (ways.length) {
       const rm = h('button', { type: 'button', class: 'btn small danger pc-unlink' }, iconEl('close'), h('span', { text: t('rel.remove') }));
       rm.addEventListener('click', async () => {
         hidePop();
-        if (await disconnect(from, to) === true) toast(t('rel.removed'), 'ok', 5000, { label: t('delete.undo'), run: () => connect(from, to) });
+        const gone = [];
+        for (const [a, b] of ways) if (await disconnect(a, b) === true) gone.push([a, b]);
+        if (gone.length) toast(t('rel.removed'), 'ok', 5000, { label: t('delete.undo'), run: async () => { for (const [a, b] of gone) await connect(a, b); } });
       });
       kids.push(rm);
     } else kids.push(h('p', { class: 'muted small', text: t('canvas.thread.fixed') }));
@@ -499,7 +529,10 @@ export function projectCanvas(p, ctx) {
     const hit = e.target.closest('.pc-hit');
     const groupHead = e.target.closest('.pc-group-head');
     const groupSize = e.target.closest('.pc-group-size');
-    if (card && (e.target.closest('.pc-handle') || state.mode === 'link' || e.altKey)) {
+    if (card && e.target.closest('.pc-size')) {
+      const b = state.cards.get(card.dataset.slug);
+      drag = { mode: 'csize', slug: card.dataset.slug, sx: s.x, sy: s.y, ow: b.w || CARD_W, oh: b.h, moved: false };
+    } else if (card && (e.target.closest('.pc-handle') || state.mode === 'link' || e.altKey)) {
       drag = { mode: 'link', slug: card.dataset.slug, sx: s.x, sy: s.y, moved: false };
       rubber = { a: centre(state.cards.get(card.dataset.slug)), b: toWorld(s.x, s.y) };
     } else if (card) {
@@ -514,7 +547,7 @@ export function projectCanvas(p, ctx) {
       const inside = [...state.cards.values()].filter((b) => { const c = centre(b); return c.x > gr.x && c.x < gr.x + gr.w && c.y > gr.y && c.y < gr.y + gr.h; }).map((b) => ({ b, ox: b.x, oy: b.y }));
       drag = { mode: 'group', gr, inside, sx: s.x, sy: s.y, ox: gr.x, oy: gr.y, moved: false };
     } else if (hit) {
-      drag = { mode: 'hit', from: hit.dataset.from, to: hit.dataset.to, sx: s.x, sy: s.y, moved: false };
+      drag = { mode: 'hit', from: hit.dataset.from, to: hit.dataset.to, both: hit.dataset.both === '1', sx: s.x, sy: s.y, moved: false };
     } else {
       drag = { mode: 'pan', sx: s.x, sy: s.y, tx: state.tx, ty: state.ty, moved: false };
     }
@@ -553,6 +586,12 @@ export function projectCanvas(p, ctx) {
       drag.gr.x = Math.round(drag.ox + dx / state.k); drag.gr.y = Math.round(drag.oy + dy / state.k);
       for (const c of drag.inside) { c.b.x = Math.round(c.ox + dx / state.k); c.b.y = Math.round(c.oy + dy / state.k); }
       layout();
+    } else if (drag.mode === 'csize') {
+      const b = state.cards.get(drag.slug);
+      b.w = Math.max(150, Math.round(drag.ow + dx / state.k));
+      b.h = Math.max(64, Math.round(drag.oh + dy / state.k));
+      b.sized = true;
+      layout();
     } else if (drag.mode === 'size') {
       drag.gr.w = Math.max(180, Math.round(drag.ow + dx / state.k)); drag.gr.h = Math.max(120, Math.round(drag.oh + dy / state.k));
       drawGroups();
@@ -587,8 +626,8 @@ export function projectCanvas(p, ctx) {
       if (d.moved) scheduleSave(); else tapCard(d.slug);
       return;
     }
-    if (d.mode === 'group' || d.mode === 'size') { if (d.moved) scheduleSave(); return; }
-    if (d.mode === 'hit' && !d.moved) { const s = local(e); threadPop(d.from, d.to, s.x, s.y); return; }
+    if (d.mode === 'group' || d.mode === 'size' || d.mode === 'csize') { if (d.moved) scheduleSave(); return; }
+    if (d.mode === 'hit' && !d.moved) { const s = local(e); threadPop(d.from, d.to, s.x, s.y, d.both); return; }
     if (d.mode === 'pan' && !d.moved && state.selected) { state.selected = null; layout(); }
   });
   wrap.addEventListener('pointercancel', (e) => {
@@ -614,6 +653,8 @@ export function projectCanvas(p, ctx) {
     const el = under(e);
     if (!el || !wrap.contains(el) || el.closest(`${OWN}, .pc-group-head, .pc-group-size, .pc-hit`)) return;
     const card = el.closest('.pc-card');
+    // the corner: back to the width of all cards and the height of the content
+    if (card && el.closest('.pc-size')) { const b = state.cards.get(card.dataset.slug); if (b) { b.sized = false; b.w = CARD_W; layout(); scheduleSave(); } return; }
     if (card) { const d = nodeBySlug(card.dataset.slug); if (d) go(nodeHref(d.path)); return; }
     const s = local(e);
     noteAt(toWorld(s.x - 20, s.y - 20));
@@ -684,7 +725,9 @@ export function projectCanvas(p, ctx) {
   const stopNodes = onNodesChange((paths) => {
     if (!wrap.isConnected) return;
     // a sync brought files from another device: read the places again
-    if (paths === null) { load({ keepView: true }); return; }
+    if (paths === null) { load({ keepView: true }); for (const [slug, el] of els) { const d = nodeBySlug(slug); if (d?.type === 'note') noteText(d, el.querySelector('.pc-card-body')); } return; }
+    // a note on the canvas was written: its text on the card follows
+    for (const [slug, el] of els) { const d = nodeBySlug(slug); if (d?.type === 'note' && paths.includes(d.path)) noteText(d, el.querySelector('.pc-card-body')); }
     // the red thread changed in the project (here, on the board, in another window): take it over
     if (paths.includes(path)) loadProject(path).then((fresh) => { if (fresh && !drag) { state.thread = [...fresh.thread]; layout(); } }).catch(() => {});
   });

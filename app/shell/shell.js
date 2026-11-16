@@ -712,13 +712,23 @@ export function startShell(root) {
     }
   }
 
+  // what the last sync brought from elsewhere: null = anything may have changed (the first index, a new copy)
+  let incoming = null;
+  const brought = (list, test) => list === null || list.some(test);
   // While a sync runs only the status bar and the Sync buttons change; afterwards Home shows the new numbers.
   let wasBusy = false;
   const syncKey = (l) => (l ? `${l.head}|${l.nodes}|${l.kind === 'cloned'}` : '');
   let lastKey = syncKey(syncState().last);
   onSyncChange((s) => {
     const key = syncKey(s.last);
-    if (key !== lastKey && !s.busy) buildIndex(); // after a sync or after removing the local copy
+    if (key !== lastKey && !s.busy) {
+      // A sync that only uploaded your own changes brings nothing new: the index has them already (0.31.0; until
+      // then every upload rebuilt it and drew the open view again, which threw you out of the canvas and the reader).
+      if (s.last?.kind !== 'pushed' && s.last?.kind !== 'upToDate') {
+        incoming = Array.isArray(s.last?.incoming) ? s.last.incoming : null;
+        buildIndex(); // after a sync that brought something, or after removing the local copy
+      }
+    }
     lastKey = key;
     renderStatus();
     for (const b of document.querySelectorAll('[data-sync-btn]')) {
@@ -726,12 +736,21 @@ export function startShell(root) {
       b.classList.toggle('busy', s.busy);
       b.lastChild.textContent = s.busy ? (phaseText(s) || t('status.sync.busy')) : t('action.sync');
     }
-    if (wasBusy && !s.busy && currentRoute().kind === 'home' && !typingInMain()) render();
+    // on Start only the time of the last sync changes; what came from elsewhere draws Start again through the index
+    if (wasBusy && !s.busy && currentRoute().kind === 'home' && s.last?.time) {
+      const el = main.querySelector('.start-synced');
+      if (el) el.textContent = t('status.sync.last', { time: formatTime(s.last.time) });
+    }
     wasBusy = s.busy;
   });
 
   // a view is not drawn again under your fingers while you type in it
   const typingInMain = () => main.contains(document.activeElement) && /INPUT|TEXTAREA/.test(document.activeElement.tagName) && document.activeElement.value;
+  // You are in the middle of something the open view holds (0.31.0): a dialog or sheet, the canvas on the whole
+  // screen, or writing in an editor. A change from elsewhere then waits until you go to another page.
+  const busyInMain = () => typingInMain() || !!document.querySelector('.modal-backdrop, .sheet-backdrop')
+    || document.body.classList.contains('pc-full-open')
+    || (main.contains(document.activeElement) && !!document.activeElement.closest('[contenteditable="true"], .cm-editor'));
 
   // ---------------------------------------------------------------- status bar
   function statusItems() {
@@ -829,13 +848,21 @@ export function startShell(root) {
   onLangChange(refresh);
 
   // The index is built in the background; views that show knowledge are drawn again once it is ready.
+  // After a sync only a view whose own file came from elsewhere is drawn again (0.31.0): the node you look at, the
+  // list of projects; Start always. Links drawn anywhere follow by themselves
+  // (relations.js, onRelationsChange).
   onIndexChange((s) => {
     if (s.building) return;
     if (app.classList.contains('cmd-open')) showResults();
     renderPill();
+    const came = incoming;
+    incoming = null;
     const route = currentRoute();
-    if (typingInMain()) return;
-    if (route.kind === 'home' || route.kind === 'node' || (route.kind === 'module' && route.mod.id === 'projects')) render();
+    if (busyInMain()) return;
+    if (route.kind === 'home') render();
+    // (a project's canvas file is not among them: the canvas reads its places again by itself)
+    else if (route.kind === 'node' && brought(came, (p) => p === route.path)) render();
+    else if (route.kind === 'module' && route.mod.id === 'projects' && brought(came, (p) => p.startsWith('projects/'))) render();
   });
 
   // What is new joins the project in focus (0.15.0); a change of the focus shows in the pill and on Start.

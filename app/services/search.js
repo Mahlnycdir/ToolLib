@@ -262,7 +262,8 @@ export function searchDetailed(query, { limit = 8, filter } = {}) {
     boost: BOOST,
     prefix: true,
     fuzzy: (term) => (term.length > 3 ? 0.2 : false),
-    filter: filter ? (r) => filter(byPath.get(r.id)) : undefined,
+    // an old research folder with nothing in it never comes up (0.31.0)
+    filter: (r) => { const d = byPath.get(r.id); return !!d && !(d.type === 'research' && !(d.clips || []).length) && (!filter || filter(d)); },
   };
   const own = (u) => ({ combineWith: 'AND', queries: [u.text] });
   const withSyn = (u) => (u.syn.length ? {

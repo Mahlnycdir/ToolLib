@@ -32,7 +32,7 @@ export function splitChunks(markdown, max = 12000) {
   const push = () => { if (cur.length) chunks.push(cur.join('\n')); cur = []; size = 0; };
   for (const line of markdown.split('\n')) {
     const tl = line.trim();
-    if (/^(```|~~~)/.test(tl)) fence = !fence;
+    if (!math && /^(```|~~~)/.test(tl)) fence = !fence;   // "~~~" in a formula is TeX
     else if (!fence && tl === '$$') math = !math;
     const free = !fence && !math;
     if (free && /^###\s/.test(line) && cur.length) push();
@@ -331,6 +331,8 @@ export function mountReader(host, opts) {
 
   function removeMarks(hl) { unwrap(hl.els || []); hl.els = []; }
 
+  // saved 0.7 s after the last change; closing the reader, leaving the page or the app going to the background saves
+  // at once (0.31.0: a highlight made just before closing was lost)
   const persist = debounce(async () => {
     if (destroyed) return;
     try {
@@ -613,14 +615,20 @@ export function mountReader(host, opts) {
   drawTabs();
   drawMarks();
   outlineEl.replaceChildren(h('h3', { text: t('reader.outline') }));
+  const saveNow = () => persist.flush();
+  window.addEventListener('pagehide', saveNow);
+  document.addEventListener('visibilitychange', saveNow);
   load();
 
   return {
     root,
     destroy() {
+      persist.flush();
       destroyed = true;
       abort?.abort();
       document.removeEventListener('selectionchange', onSelection);
+      window.removeEventListener('pagehide', saveNow);
+      document.removeEventListener('visibilitychange', saveNow);
       root.remove();
     },
     hasSettings: () => hasFetcher(researchSettings()),

@@ -29,6 +29,7 @@ export async function loadCanvas(projectPath) {
   for (const n of Array.isArray(data?.nodes) ? data.nodes : []) {
     if (!n || !okId(n.id)) continue;
     const box = { x: num(n.x), y: num(n.y), w: Math.max(80, num(n.width, 230)), h: Math.max(40, num(n.height, 110)) };
+    if (n.sized === true) box.sized = true;   // a size you gave the card (0.31.0); otherwise its height follows the content
     if (n.type === 'file') out.cards.set(n.id, box);
     else if (n.type === 'group') out.groups.push({ id: n.id, ...box, label: typeof n.label === 'string' ? n.label.slice(0, 120) : '', color: typeof n.color === 'string' ? n.color.slice(0, 9) : '' });
   }
@@ -43,7 +44,7 @@ export async function saveCanvas(projectPath, { cards, groups, files, edges = []
   const had = await exists(file);
   const nodes = [
     ...groups.map((g) => ({ id: g.id, type: 'group', x: num(g.x), y: num(g.y), width: num(g.w), height: num(g.h), label: g.label || '', ...(g.color ? { color: g.color } : {}) })),
-    ...[...cards].filter(([slug]) => files(slug)).map(([slug, b]) => ({ id: slug, type: 'file', file: files(slug), x: num(b.x), y: num(b.y), width: num(b.w), height: num(b.h) })),
+    ...[...cards].filter(([slug]) => files(slug)).map(([slug, b]) => ({ id: slug, type: 'file', file: files(slug), x: num(b.x), y: num(b.y), width: num(b.w), height: num(b.h), ...(b.sized ? { sized: true } : {}) })),
   ];
   const ids = new Set(nodes.map((n) => n.id));
   const lines = edges.filter((e) => ids.has(e.from) && ids.has(e.to)).map((e, i) => ({ id: `e${i}-${e.from}-${e.to}`.slice(0, 120), fromNode: e.from, toNode: e.to, ...(e.color ? { color: e.color } : {}), ...(e.label ? { label: e.label } : {}) }));

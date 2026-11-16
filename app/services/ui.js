@@ -265,10 +265,13 @@ export async function copyText(text) {
   return ok;
 }
 
+// Like a timer you restart on every call: fn runs ms after the last call. flush() runs a waiting call now (0.31.0).
 export function debounce(fn, ms) {
   let t;
-  const d = (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
-  d.cancel = () => clearTimeout(t);
+  let waiting = null;
+  const d = (...a) => { clearTimeout(t); waiting = a; t = setTimeout(() => { waiting = null; fn(...a); }, ms); };
+  d.cancel = () => { clearTimeout(t); waiting = null; };
+  d.flush = () => { if (!waiting) return; clearTimeout(t); const a = waiting; waiting = null; fn(...a); };
   return d;
 }
 

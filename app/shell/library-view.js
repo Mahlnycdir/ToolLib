@@ -3,6 +3,7 @@
 // the sources of the page. On the iPhone the three are tabs. The order lives in the library node, the text in the
 // page nodes (services/library-store.js); everything is saved by itself and synced like other nodes.
 import { mark } from '../services/trail.js';
+import { clamp, grip } from './grips.js';
 import { h, toast, debounce, loadPref, savePref, promptDialog, confirmDialog, actionSheet, copyText, keepScroll } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { getLang, t } from '../i18n/i18n.js';
@@ -42,7 +43,19 @@ export function mountLibrary(host, opts) {
   const toc = h('nav', { class: 'lb-toc', 'aria-label': t('library.toc') });
   const mid = h('section', { class: 'lb-page', 'aria-label': t('library.pageArea') });
   const side = h('aside', { class: 'lb-side', 'aria-label': t('library.side') });
-  root.append(bar, tabs, h('div', { class: 'lb-body' }, toc, mid, side));
+  // 0.31.0: the contents and the side panel as wide as you drag them (the line between the columns; double click:
+  // as before). Kept on this device; only what you changed is set, so a narrow window keeps its own defaults.
+  const cols = loadPref('library.cols', {}) || {};
+  const applyCols = () => {
+    for (const [k, v] of [['--lb-toc', cols.toc], ['--lb-side', cols.side]]) { if (v) root.style.setProperty(k, `${v}px`); else root.style.removeProperty(k); }
+  };
+  applyCols();
+  const keepCols = () => savePref('library.cols', cols);
+  const width = (el, fallback) => el.getBoundingClientRect().width || fallback;
+  const body = h('div', { class: 'lb-body' }, toc, mid, side,
+    grip({ cls: 'grip-toc', label: t('library.grip'), start: () => width(toc, 230), move: (v, dx) => { cols.toc = clamp(v + dx, 150, 520); applyCols(); }, done: keepCols, reset: () => { delete cols.toc; applyCols(); } }),
+    grip({ cls: 'grip-side', label: t('library.grip'), start: () => width(side, 320), move: (v, dx) => { cols.side = clamp(v - dx, 220, 720); applyCols(); }, done: keepCols, reset: () => { delete cols.side; applyCols(); } }));
+  root.append(bar, tabs, body);
   // on the phone only one pane shows at a time; the contents and the side keep their place meanwhile (0.22.0)
   keepScroll(toc);
   keepScroll(side);

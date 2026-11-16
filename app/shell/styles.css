@@ -910,7 +910,7 @@ a.rd-cite:hover { background: color-mix(in srgb, var(--accent) 12%, transparent)
 .lb a.btn { text-decoration: none; color: inherit; }
 .lb-tabs { display: none; margin: 8px 12px 0; }
 .lb-tabs button { flex: 1; }
-.lb-body { min-height: 0; display: grid; grid-template-columns: 240px minmax(0, 1fr) 320px; }
+.lb-body { position: relative; min-height: 0; display: grid; grid-template-columns: var(--lb-toc, 240px) minmax(0, 1fr) var(--lb-side, 320px); }
 .lb-toc, .lb-page, .lb-side { min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .lb-toc { padding: 14px 10px 32px; border-right: 1px solid var(--border); background: var(--panel); display: flex; flex-direction: column; gap: 10px; }
 .lb-side { padding: 14px 12px 32px; border-left: 1px solid var(--border); background: var(--panel); }
@@ -962,7 +962,7 @@ a.rd-cite:hover { background: color-mix(in srgb, var(--accent) 12%, transparent)
 .pe-modes { margin-left: auto; }
 .pe-status { min-width: 7em; text-align: right; }
 .pe-status[data-kind="failed"] { color: var(--warn); }
-.pe-panes { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.pe-panes { position: relative; min-height: 0; display: grid; grid-template-columns: var(--pe-cols, minmax(0, 1fr) minmax(0, 1fr)); }
 .pe[data-mode="write"] .pe-panes, .pe[data-mode="preview"] .pe-panes { grid-template-columns: minmax(0, 1fr); }
 .pe[data-mode="write"] .pe-preview, .pe[data-mode="preview"] .pe-write { display: none; }
 .pe-write { position: relative; min-height: 0; display: flex; }
@@ -975,7 +975,7 @@ a.rd-cite:hover { background: color-mix(in srgb, var(--accent) 12%, transparent)
 .pe-suggest li.on, .pe-suggest li:hover { background: color-mix(in srgb, var(--accent) 12%, var(--mix)); }
 .pe-suggest-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 1100px) and (min-width: 760px) {
-  .lb-body { grid-template-columns: 200px minmax(0, 1fr) 260px; }
+  .lb-body { grid-template-columns: var(--lb-toc, 200px) minmax(0, 1fr) var(--lb-side, 260px); }
 }
 @media (max-width: 759px) {
   .lb { grid-template-rows: auto auto minmax(0, 1fr); }
@@ -1232,8 +1232,12 @@ textarea.field { height: auto; padding: 10px 12px; line-height: 1.45; resize: ve
 .project-notes { min-height: 120px; }
 
 /* a note */
-.note-view .note-text { display: none; min-height: 180px; }
-.note-view.editing .note-text { display: block; }
+.note-view .note-editor { display: none; }
+.note-view.editing .note-editor { display: block; }
+.note-editor .md-editor { min-height: 180px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+.note-editor .md-editor.cm-focused { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.md-editor.md-note .cm-content, .md-editor.md-cnote .cm-content { padding: 14px 16px 28px; min-height: 160px; }
+.note-read { cursor: text; }
 .note-view.editing .note-read, .note-view.editing .note-edit { display: none; }
 .note-read { min-height: 40px; }
 .chip-project { gap: 4px; border-color: color-mix(in srgb, var(--accent) 38%, var(--mix)); background: color-mix(in srgb, var(--accent) 10%, var(--mix)); color: color-mix(in srgb, var(--accent) 72%, var(--ink-base)); text-decoration: none; }
@@ -1339,17 +1343,17 @@ textarea.field { height: auto; padding: 10px 12px; line-height: 1.45; resize: ve
 
 /* the library: the page gets the room (0.15.1) */
 @media (min-width: 760px) {
-  .lb .lb-body { grid-template-columns: 230px minmax(0, 1fr); }
-  .lb.side-open .lb-body { grid-template-columns: 230px minmax(0, 1fr) 320px; }
+  .lb .lb-body { grid-template-columns: var(--lb-toc, 230px) minmax(0, 1fr); }
+  .lb.side-open .lb-body { grid-template-columns: var(--lb-toc, 230px) minmax(0, 1fr) var(--lb-side, 320px); }
   .lb.focus .lb-body { grid-template-columns: minmax(0, 1fr); }
-  .lb.focus.side-open .lb-body { grid-template-columns: minmax(0, 1fr) 320px; }
+  .lb.focus.side-open .lb-body { grid-template-columns: minmax(0, 1fr) var(--lb-side, 320px); }
   .lb:not(.side-open) .lb-side { display: none; }
   .lb.focus .lb-toc { display: none; }
   .lb.focus .pe-head, .lb.focus .pe-tools { max-width: 980px; width: 100%; margin: 0 auto; }
   .lb.focus .pe[data-mode="write"] .pe-text, .lb.focus .pe[data-mode="preview"] .pe-preview { max-width: 760px; margin: 0 auto; width: 100%; }
 }
 @media (max-width: 1100px) and (min-width: 760px) {
-  .lb.side-open .lb-body { grid-template-columns: 200px minmax(0, 1fr) 280px; }
+  .lb.side-open .lb-body { grid-template-columns: var(--lb-toc, 200px) minmax(0, 1fr) var(--lb-side, 280px); }
 }
 /* 0.24.3: "Only the page" keeps the text in a 760 px column, but the whole page is the scrolling area: the wheel
    scrolls the text wherever the mouse is, also beside the column, and the scrollbar stands at the edge of the page.
@@ -1489,7 +1493,7 @@ textarea.field { height: auto; padding: 10px 12px; line-height: 1.45; resize: ve
 .md-editor { background: transparent; color: var(--fg); font-size: var(--ed-size, 16px); }
 .md-editor.cm-focused { outline: none; }
 .md-editor .cm-scroller { font-family: inherit; line-height: 1.65; overscroll-behavior: contain; }
-.md-editor .cm-content { padding: 16px 18px 40vh; caret-color: var(--accent); }
+.md-editor .cm-content { padding: 16px 18px 40vh; caret-color: var(--caret); }
 .md-editor .cm-line { padding: 0; }
 .md-source { font-size: 13.5px; }
 .md-source .cm-scroller { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; line-height: 1.5; }
@@ -2638,3 +2642,45 @@ body.pc-full-open { overflow: hidden; }
 .path-level.l-advanced { background: color-mix(in srgb, var(--light-next) 12%, var(--mix)); }
 .path-after { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: -4px 0 12px; }
 .path-after .ic { width: 15px; height: 15px; color: var(--muted); }
+
+/* ---------------------------------------------------------------- 0.31.0: the text cursor
+   One colour for every cursor, clear on light and dark. CodeMirror draws its own cursor (black unless told
+   otherwise) and hides the system's; on the iPhone the system's is the one you move with the magnifier, so it
+   stays and CodeMirror's goes (ENTE: "im Darkmode sehe ich den Cursor kaum, wenn ich ihn setzen möchte"). */
+:root { --caret: #1f63e0; }
+:root[data-theme="dark"] { --caret: #8fb8ff; }
+.kobra-scope { --caret: var(--accent-text); }
+:root[data-theme="dark"] .kobra-scope { --caret: var(--accent); }
+input, textarea, [contenteditable="true"] { caret-color: var(--caret); }
+.cm-editor .cm-cursor, .cm-editor .cm-dropCursor { border-left-color: var(--caret) !important; border-left-width: 2px; }
+html.ios .cm-editor .cm-content, html.ios .cm-editor .cm-line { caret-color: var(--caret) !important; }
+html.ios .cm-editor .cm-cursorLayer { display: none !important; }
+
+/* 0.31.0: cards on the canvas take the size you give them; a note shows its text */
+.pc-size { position: absolute; right: 3px; bottom: 3px; width: 12px; height: 12px; cursor: nwse-resize; opacity: 0; transition: opacity 0.15s ease;
+  border-right: 2px solid color-mix(in srgb, var(--c) 70%, transparent); border-bottom: 2px solid color-mix(in srgb, var(--c) 70%, transparent); border-radius: 0 0 5px 0; }
+.pc-size::after { content: ''; position: absolute; inset: -10px; }
+.pc-card:hover .pc-size, .pc-card.sel .pc-size, .pc-card.sized .pc-size { opacity: 1; }
+.pc-card.sized { display: flex; flex-direction: column; overflow: hidden; }
+.pc-card.sized .pc-card-body { flex: 1; min-height: 0; overflow: hidden; }
+.pc-note-text { font-size: 13px; line-height: 1.45; color: var(--fg); max-height: 9.5em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 75%, transparent); mask-image: linear-gradient(#000 75%, transparent); }
+.pc-card.sized .pc-note-text { max-height: none; height: 100%; }
+.pc-note-text .md > :first-child { margin-top: 0; }
+.pc-note-text p, .pc-note-text ul, .pc-note-text ol { margin: 0 0 0.45em; }
+.pc-note-text h2, .pc-note-text h3, .pc-note-text h4 { font-size: 13.5px; margin: 0.4em 0 0.2em; }
+@media (hover: none) { .pc-card.sel .pc-size { width: 18px; height: 18px; } }
+
+/* 0.31.0: grips between the columns of the library and between writing and preview */
+.grip { position: absolute; top: 0; bottom: 0; width: 9px; margin-left: -4px; z-index: 5; cursor: col-resize; touch-action: none; display: none; }
+.grip::after { content: ''; position: absolute; left: 4px; top: 0; bottom: 0; width: 1px; background: transparent; transition: background 0.15s ease; }
+.grip:hover::after, .grip.on::after { background: var(--accent); width: 2px; left: 3.5px; }
+body.gripping, body.gripping * { cursor: col-resize !important; user-select: none !important; }
+@media (min-width: 760px) and (hover: hover) {
+  .lb:not(.focus) .grip-toc { display: block; left: var(--lb-toc, 230px); }
+  .lb.side-open .grip-side { display: block; left: auto; right: var(--lb-side, 320px); margin-left: 0; margin-right: -5px; }
+  .pe[data-mode="split"] .grip-split { display: block; left: var(--pe-at, 50%); }
+}
+@media (min-width: 760px) and (max-width: 1100px) and (hover: hover) {
+  .lb:not(.focus) .grip-toc { left: var(--lb-toc, 200px); }
+  .lb.side-open .grip-side { right: var(--lb-side, 280px); }
+}

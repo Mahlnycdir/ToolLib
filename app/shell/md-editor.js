@@ -451,6 +451,58 @@ export function createEditor(host, opts = {}) {
 }
 
 // Enter continues lists (- item, 1. item, - [ ] task, > quote), Backspace removes the mark; from lang-markdown.
+// Since 0.31.0 (ENTE: "wie bei anderen Markdown-Programmen"): letters go on as well (a) → b), A. → B.), and Enter
+// on an empty item moves it one level out, at the top level the mark goes; the next Enter is a plain new line.
 function listKeys() {
-  return Prec.high(keymap.of([{ key: 'Enter', run: insertNewlineContinueMarkup }, { key: 'Backspace', run: deleteMarkupBackward }]));
+  return Prec.high(keymap.of([
+    { key: 'Enter', run: (v) => emptyItemOut(v) || nextLetter(v) || insertNewlineContinueMarkup(v) },
+    { key: 'Backspace', run: deleteMarkupBackward },
+  ]));
+}
+const ITEM = /^(\s*)([-*+]|\d{1,9}[.)]|[a-zA-Z][.)])(\s+)(\[[ xX]\]\s+)?/;
+const indentOf = (s) => s.replace(/\t/g, '    ').length;
+// An empty item ("  - ", "3. ", "b) ") with the cursor at its end: one level out, like the item it hangs on.
+function emptyItemOut(view) {
+  const { state } = view;
+  const sel = state.selection.main;
+  if (!sel.empty || state.selection.ranges.length > 1) return false;
+  const line = state.doc.lineAt(sel.head);
+  const m = ITEM.exec(line.text);
+  if (!m || m[0].length !== line.text.length || sel.head !== line.to) return false;
+  const own = indentOf(m[1]);
+  let insert = '';
+  if (own > 0) {
+    // the item above with less indent is the one it hangs on: a sibling of that one, with its kind of mark
+    for (let n = line.number - 1; n >= 1; n--) {
+      const up = state.doc.line(n).text;
+      if (!up.trim()) continue;
+      const pm = ITEM.exec(up);
+      const ind = indentOf(up.match(/^\s*/)[0]);
+      if (ind >= own) continue;
+      if (pm) {
+        const mark = pm[2];
+        const num = /^\d/.test(mark) ? `${Number(mark.slice(0, -1)) + 1}${mark.slice(-1)}`
+          : /^[a-zA-Z][.)]$/.test(mark) ? `${mark[0] === 'z' || mark[0] === 'Z' ? mark[0] : String.fromCharCode(mark.charCodeAt(0) + 1)}${mark[1]}` : mark;
+        insert = `${pm[1]}${num} ${pm[4] ? '[ ] ' : ''}`;
+      }
+      break;
+    }
+  }
+  view.dispatch({ changes: { from: line.from, to: line.to, insert }, selection: { anchor: line.from + insert.length }, scrollIntoView: true, userEvent: 'input' });
+  return true;
+}
+// "a) text" + Enter → "b) ": only where it is clearly a list (it starts at a or A, or the line above is the letter before)
+function nextLetter(view) {
+  const { state } = view;
+  const sel = state.selection.main;
+  if (!sel.empty) return false;
+  const line = state.doc.lineAt(sel.head);
+  const m = /^(\s*)([a-yA-Y])([.)])(\s+)\S/.exec(line.text);
+  if (!m || sel.head < line.from + m[0].length - 1) return false;
+  const prev = line.number > 1 ? state.doc.line(line.number - 1).text : '';
+  const before = String.fromCharCode(m[2].charCodeAt(0) - 1);
+  if (!/[aA]/.test(m[2]) && !new RegExp(`^\\s*${before}\\${m[3]}\\s`).test(prev)) return false;
+  const insert = `\n${m[1]}${String.fromCharCode(m[2].charCodeAt(0) + 1)}${m[3]} `;
+  view.dispatch({ changes: { from: sel.head, to: sel.head, insert }, selection: { anchor: sel.head + insert.length }, scrollIntoView: true, userEvent: 'input' });
+  return true;
 }

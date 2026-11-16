@@ -156,6 +156,15 @@ export async function renderNode(main, path, ctx) {
         ? h('button', { type: 'button', class: 'btn small delete-node', title: t('delete.ok'), 'aria-label': t('delete.ok'), onclick: () => askDelete(path, { go, title: nodeTitle(d, lang) }) }, iconEl('trash')) : null,
     ].filter(Boolean))));
 
+  // An old research folder with nothing in it (0.31.0, ENTE: such pages "haben keinen Nutzen und wirken
+  // irritierend"): since 0.16 what you keep goes into the project, so only this short note and a way to delete it.
+  if (d.type === 'research' && !(d.clips || []).length) {
+    box.append(h('div', { class: 'note empty-folder' }, h('div', { class: 'note-body' },
+      h('p', { text: t('node.emptyFolder') }),
+      h('div', { class: 'btn-row' }, h('button', { type: 'button', class: 'btn small danger', onclick: () => askDelete(path, { go, title: nodeTitle(d, lang) }) }, iconEl('trash'), h('span', { text: t('delete.ok') }))))));
+    return;
+  }
+
   // The problems this node solves: what the search matches first.
   const problems = problemsOf(d, lang);
   if (problems.length) {

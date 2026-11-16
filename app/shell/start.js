@@ -111,7 +111,7 @@ export function renderStart(main, { go, onSync, onSetup, focusCommand }) {
     if (!foot.isConnected || !stats) return;
     const s = syncState();
     foot.append(...[h('span', { class: 'know-count', text: t('home.knowledge.count', { count: stats.total }) }),
-      s.last?.time ? h('span', { text: t('status.sync.last', { time: formatTime(s.last.time) }) }) : null,
+      s.last?.time ? h('span', { class: 'start-synced', text: t('status.sync.last', { time: formatTime(s.last.time) }) }) : null,
       s.error ? h('span', { class: 'error-text', text: s.error }) : null,
       !isStandalone() ? h('span', { text: t({ ios: 'home.install.ios', mac: 'home.install.mac' }[platform()] || 'home.install.other') }) : null].filter(Boolean));
     const sync = syncButton(onSync, { primary: false });

@@ -109,3 +109,11 @@ Eine Zeile in `PAGES` (`app/shell/settings/index.js`), die Texte `settings.sec.<
 - Schlüssel in `localStorage` nie umbenennen.
 - Jeder sichtbare Satz steht in `strings.json`, auf Englisch und Deutsch.
 - Neue Datei → in `FILES` von `sw.js`, `VERSION` erhöhen.
+
+## 0.31.0 Stabil
+
+- Sync und Ansichten: `sync.js` meldet in `state.last.incoming`, welche Dateien von anderswo kamen (`null` = alles). `shell.js` baut den Index nur nach einem Sync neu, der etwas gebracht hat, und zeichnet danach nur die Ansicht neu, deren Datei dabei war (`brought`, `busyInMain`).
+- `app/shell/tap-place.js`: `offsetAtPoint(shown, source, x, y)` findet zu einem Tipp auf gezeichnetem Markdown die Stelle im Text (wie `str.find` mit den Wörtern um den Finger, bei mehreren Treffern der nächstgelegene).
+- `app/shell/grips.js`: `grip({ start, move, done, reset })`, eine ziehbare Linie zwischen zwei Spalten (Library, Schreiben/Vorschau).
+- `md-editor.js` `listKeys`: `emptyItemOut` (leerer Punkt eine Stufe aus) und `nextLetter` (a) → b)) vor `insertNewlineContinueMarkup`.
+- `reader.js` `parseBody`: `~~~` in einer Formel ist kein Code-Block; doppelte Abschnitte werden zusammengefasst (Highlights: der letzte).

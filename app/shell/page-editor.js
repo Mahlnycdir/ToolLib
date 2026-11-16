@@ -5,6 +5,7 @@
 // task, [@source], image and the formula palette too, every button shows its keys, and a page can carry images,
 // ```plot blocks and Python plots.
 import { h, debounce, loadPref, savePref, copyText, toast, pickFiles, keepScroll } from '../services/ui.js';
+import { clamp, grip } from './grips.js';
 import { icon } from '../services/icons.js';
 import { getLang, t } from '../i18n/i18n.js';
 import { renderMarkdown, exportMarkdown } from './markdown.js';
@@ -121,7 +122,7 @@ export function headingsOf(text) {
   let math = false;
   String(text).split('\n').forEach((line, i) => {
     const s = line.trim();
-    if (/^(```|~~~)/.test(s)) { fence = !fence; return; }
+    if (!math && /^(```|~~~)/.test(s)) { fence = !fence; return; }   // "~~~" in a formula is TeX
     if (fence) return;
     if (s === '$$') { math = !math; return; }
     if (math) return;
@@ -199,6 +200,14 @@ export function mountEditor(opts) {
   // switching between writing and preview on the phone keeps the place in the preview (0.22.0)
   const preview = keepScroll(h('div', { class: 'pe-preview rd-inner' }));
   const wrapEl = h('div', { class: 'pe-panes' }, h('div', { class: 'pe-write' }, host), preview);
+  // writing and preview side by side: you choose the share of each (0.31.0), in percent of the width, on this device
+  const setSplit = (pc) => { if (pc) wrapEl.style.setProperty('--pe-cols', `minmax(0, ${pc}fr) minmax(0, ${100 - pc}fr)`); else wrapEl.style.removeProperty('--pe-cols'); wrapEl.style.setProperty('--pe-at', `${pc || 50}%`); };
+  let split = Number(loadPref('library.split', 0)) || 0;
+  setSplit(split);
+  wrapEl.append(grip({ cls: 'grip-split', label: t('library.grip'),
+    start: () => split || 50,
+    move: (v, dx) => { split = clamp(v + (dx / Math.max(1, wrapEl.clientWidth)) * 100, 20, 80); setSplit(split); },
+    done: () => savePref('library.split', split), reset: () => { split = 0; setSplit(0); } }));
   el.append(h('div', { class: 'pe-head' }, title, helpsBox), h('div', { class: 'pe-tools' }, bar, modes, status), wrapEl);
 
   // ---------------------------------------------------------------- what the completion offers

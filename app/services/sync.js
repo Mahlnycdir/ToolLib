@@ -179,8 +179,10 @@ async function run() {
       uploaded: result.uploaded || 0,
       conflicts: result.conflicts || [],
       kept: result.kept || [],
+      // what came from elsewhere; a long list counts as "everything" (null), like a first copy
+      incoming: Array.isArray(result.incoming) && result.incoming.length <= 300 ? result.incoming : null,
     };
-    savePref('sync.last', state.last);
+    savePref('sync.last', { ...state.last, incoming: undefined });
     requestPersist();
     return state.last;
   } catch (e) {
@@ -270,6 +272,8 @@ async function update(s, url, cache) {
   let kind = 'upToDate';
   const conflicts = [];
   const kept = [];
+  // the files that came from elsewhere (0.31.0): the open view is drawn again only when one of them is its own
+  let incoming = [];
 
   // A second device may upload between our fetch and our push; then fetch and combine once more.
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -286,12 +290,14 @@ async function update(s, url, cache) {
       const [base] = await git.findMergeBase({ fs, dir, oids: [local, remote], cache });
       if (!base) throw new SyncError('unrelated');
       if (base === local) { // only GitHub has news
+        incoming = [...(await changedFiles(local, remote, cache)).keys()];
         await moveTo(branch, remote, cache);
         kind = 'pulled';
         break;
       }
       if (base !== remote) { // both sides have news
         const r = await combine(s, branch, base, local, remote, cache);
+        incoming.push(...r.theirs);
         conflicts.push(...r.conflicts);
         kept.push(...r.kept);
         uploaded += r.uploaded;
@@ -309,7 +315,7 @@ async function update(s, url, cache) {
     if (kind === 'upToDate') kind = 'pushed';
     break;
   }
-  return { kind, uploaded, conflicts, kept };
+  return { kind, uploaded, conflicts, kept, incoming: [...new Set(incoming)] };
 }
 
 // Saves everything that changed on this device as one commit. Returns the number of changed files.
@@ -382,7 +388,7 @@ async function combine(s, branch, base, local, remote, cache) {
     ? `Sync from ${s.device}: kept both versions of ${conflicts.length} file(s)`
     : `Sync from ${s.device}`;
   const uploaded = await commitChanges(s, message, cache);
-  return { conflicts, kept, uploaded };
+  return { conflicts, kept, uploaded, theirs: [...theirs.keys(), ...conflicts.map((c) => c.copy)] };
 }
 
 // Files that differ between two commits: path -> blob id in the second commit, or null if deleted there.

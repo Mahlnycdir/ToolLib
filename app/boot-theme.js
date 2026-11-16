@@ -10,4 +10,6 @@
   if (bar) bar.setAttribute('content', dark ? '#0e131b' : '#f6f9fd');
   var scheme = document.querySelector('meta[name="color-scheme"]');
   if (scheme) scheme.setAttribute('content', theme);
+  // iPhone and iPad (0.31.0): the stylesheet uses the system's own text cursor there (html.ios)
+  if (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) document.documentElement.classList.add('ios');
 })();

@@ -2588,5 +2588,9 @@
   "path.level.start": { "en": "Start", "de": "Einstieg" },
   "path.level.middle": { "en": "Getting deeper", "de": "Vertiefung" },
   "path.level.advanced": { "en": "Advanced", "de": "Fortgeschritten" },
-  "path.after": { "en": "Builds on:", "de": "Baut auf:" }
+  "path.after": { "en": "Builds on:", "de": "Baut auf:" },
+  "note.tapToEdit": { "en": "Tap the text to write", "de": "Auf den Text tippen zum Schreiben" },
+  "canvas.size": { "en": "Drag to resize · double-click for the size of the content", "de": "Ziehen ändert die Größe · Doppelklick: so groß wie der Inhalt" },
+  "library.grip": { "en": "Drag to resize · double-click to reset", "de": "Ziehen ändert die Breite · Doppelklick: wie vorher" },
+  "node.emptyFolder": { "en": "An empty research folder from before projects. What you keep goes into the project now, so this folder is no longer needed.", "de": "Ein leerer Recherche-Ordner aus der Zeit vor den Projekten. Was du behältst, kommt heute ins Projekt; diesen Ordner brauchst du nicht mehr." }
 }
