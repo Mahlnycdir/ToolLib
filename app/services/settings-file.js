@@ -34,6 +34,8 @@ const KEYS = {
   'search.learned': 'json',
   // 0.26.0: how far the network may reach
   'net.maxDepth': 'number', 'net.maxNodes': 'number',
+  // 0.32.0 (Loom): whether the light breathes, and what Loom may do
+  'look.motion': 'boolean', 'loom.suggest': 'string', 'loom.attach': 'boolean', 'loom.model': 'string',
 };
 const ACCENT = /^accent\.[a-z0-9-]{1,40}$/;
 // kobra.git.*; 0.20.0: Kobras Konten (mit ihren Tokens, also geheim) und die Liste deiner Repositorys

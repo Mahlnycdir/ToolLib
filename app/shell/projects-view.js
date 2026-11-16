@@ -35,7 +35,7 @@ export { stationOf };
 const STATION_ICON = { collect: 'search', keep: 'bookmark', apply: 'play' };
 
 // Every project has its own colour, from its name: you recognise it before you read it.
-const COLOURS = ACCENTS.filter((a) => a.id !== 'yellow');
+const COLOURS = ACCENTS.filter((a) => a.id !== 'yellow' && a.id !== 'amber');   // amber is the one warm light (0.32.0)
 export function projectAccent(slug) {
   let n = 0;
   for (const c of String(slug)) n = (n * 31 + c.charCodeAt(0)) >>> 0;

@@ -2,15 +2,18 @@
 // the user can change every accent in the settings.
 import { loadPref, savePref } from '../services/prefs.js';
 
+// 0.32.0 (Loom): the accents are the colours of the one colour system (styles.css, --c-*), so they follow night and
+// mist by themselves; the shell's own accent is the warm light (amber).
 export const ACCENTS = [
-  { id: 'blue', color: '#1f63e0', ink: '#ffffff' },
-  { id: 'sky', color: '#0b7bbd', ink: '#ffffff' },
-  { id: 'teal', color: '#0f8078', ink: '#ffffff' },
-  { id: 'green', color: '#1e7e3a', ink: '#ffffff' },
-  { id: 'orange', color: '#c2410c', ink: '#ffffff' },
-  { id: 'violet', color: '#6d4aff', ink: '#ffffff' },
-  { id: 'rose', color: '#c0265e', ink: '#ffffff' },
-  { id: 'yellow', color: '#f2c94c', ink: '#0f1f3d' },
+  { id: 'amber', color: 'var(--light)', ink: 'var(--light-ink)' },
+  { id: 'blue', color: 'var(--c-blue)', ink: 'var(--on-accent)' },
+  { id: 'sky', color: 'var(--c-sky)', ink: 'var(--on-accent)' },
+  { id: 'teal', color: 'var(--c-teal)', ink: 'var(--on-accent)' },
+  { id: 'green', color: 'var(--c-green)', ink: 'var(--on-accent)' },
+  { id: 'orange', color: 'var(--c-orange)', ink: 'var(--on-accent)' },
+  { id: 'violet', color: 'var(--c-violet)', ink: 'var(--on-accent)' },
+  { id: 'rose', color: 'var(--c-rose)', ink: 'var(--on-accent)' },
+  { id: 'yellow', color: 'var(--c-yellow)', ink: 'var(--on-accent)' },
 ];
 
 // The tools of the shell, in the order of the module bar: projects hold everything together (also the pages you
@@ -39,14 +42,14 @@ export const PLANNED = MODULES.filter((m) => m.planned);
 // the module whose colour a kind of node takes
 export const moduleOfType = (type) => MODULES.find((m) => m.types.includes(type))?.id || 'shell';
 
-export const SHELL = { id: 'shell', icon: 'home', accent: 'blue' };
+export const SHELL = { id: 'shell', icon: 'home', accent: 'amber' };
 
 export const moduleById = (id) => MODULES.find((m) => m.id === id) || null;
 
 export function accentOf(id) {
   const fallback = (id === 'shell' ? SHELL : moduleById(id))?.accent ?? 'blue';
   const chosen = loadPref(`accent.${id}`, fallback);
-  return ACCENTS.find((a) => a.id === chosen) || ACCENTS[0];
+  return ACCENTS.find((a) => a.id === chosen) || ACCENTS.find((a) => a.id === fallback) || ACCENTS[0];
 }
 
 export function setAccent(id, accentId) {

@@ -117,3 +117,13 @@ Eine Zeile in `PAGES` (`app/shell/settings/index.js`), die Texte `settings.sec.<
 - `app/shell/grips.js`: `grip({ start, move, done, reset })`, eine ziehbare Linie zwischen zwei Spalten (Library, Schreiben/Vorschau).
 - `md-editor.js` `listKeys`: `emptyItemOut` (leerer Punkt eine Stufe aus) und `nextLetter` (a) → b)) vor `insertNewlineContinueMarkup`.
 - `reader.js` `parseBody`: `~~~` in einer Formel ist kein Code-Block; doppelte Abschnitte werden zusammengefasst (Highlights: der letzte).
+
+## 0.32.0 Loom: Rahmen und Heute
+
+- `app/shell/styles.css`: oben die zwei Sätze der Variablen (Morgennebel in `:root`, Waldnacht in `[data-theme="dark"]`), neu `--light` (das warme Licht), `--glass`, `--line`, `--ground`, `--bench`, `--on-accent`; ganz unten der Abschnitt „Loom (0.32.0)“, der nur umfärbt: Klassennamen bleiben. Bewegung hält an mit `html.calm` oder `prefers-reduced-motion`.
+- `app/shell/loom.js` (neu): `loomMark` (das Zeichen), `benchItems`/`benchStrip` (Werkbank aus `trail.js`), `openTabs` (Tabs der Projekte), `loomSay`/`loomVoice` (was Loom auf Heute sagt; heute nur aus deinen Projekten, eine spätere Quelle wie ein Modell kommt in `loomSay` dazu).
+- `shell.js`: `renderTabs` (Tabs in der Leiste oben), `renderTabbar` (Leiste unten am iPhone), `renderStatus` mit der Werkbank vorn.
+- `start.js`: Kopf mit Datum, Gruß und „Anordnen“ (Klasse `arranging` am Board), `focusCard`, `start-aside` mit Loom und (am iPhone) der Werkbank.
+- `services/theme.js`: Waldnacht ist Voreinstellung (`appearance` fällt auf `dark`), `calm()`/`setMotion()` für „Licht atmet“ (`look.motion`); `boot-theme.js` setzt beides vor dem ersten Bild.
+- `settings/loom.js` (neu): Seite Loom mit `loom.suggest`, `loom.attach`, `loom.model` (`none`). Ein Modell später: ein Wert mehr in `LOOM_MODELS` und eine Quelle in `loomSay`.
+- `modules.js`: Akzente als `var(--c-*)`, neuer Akzent `amber` (das warme Licht) für den Rahmen. `colors.js`: PALETTE mit denselben Werten wie die Variablen.

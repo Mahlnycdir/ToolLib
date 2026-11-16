@@ -41,6 +41,7 @@ import { CREATORS, createMenu } from './create.js';
 import { focusProject, onFocusChange, projects, startAutoLink } from '../services/projects.js';
 import { capture } from '../services/notes.js';
 import { mark } from '../services/trail.js';
+import { benchStrip, loomMark, openTabs } from './loom.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 // The view of every tool that has one. A new tool: one line here and one in MODULES (modules.js).
@@ -64,7 +65,9 @@ export function startShell(root) {
   const main = h('main', { class: 'main', tabindex: '-1' });
   const status = h('footer', { class: 'status' });
   const scrim = h('div', { class: 'scrim', onclick: () => setDrawer(false) });
-  app.append(rail, cmd, main, status, scrim);
+  // 0.32.0 (Loom): the bar at the bottom of the phone: Heute, Projekte, Bibliothek, and every tool in the drawer
+  const tabbar = h('nav', { class: 'tabbar' });
+  app.append(rail, cmd, main, status, tabbar, scrim);
   root.replaceChildren(app);
   // The research window on its own (index.html?solo=1): only the workspace, no module bar.
   const solo = new URLSearchParams(location.search).has('solo');
@@ -290,6 +293,9 @@ export function startShell(root) {
     } else renderStart(main, { go, onSync: runSync, onSetup: () => go('#/settings/sync'), focusCommand: () => input.focus() });
     app.dataset.route = route.kind;
     renderRail(route);
+    renderTabs();
+    renderTabbar(route);
+    renderStatus();
     restoreScroll(entry, token);
     // the observer reports after this task; the content drawn so far is part of the route change, not a redraw
     queueMicrotask(() => { rendering = false; });
@@ -331,7 +337,7 @@ export function startShell(root) {
   function renderRail(route = currentRoute()) {
     rail.replaceChildren();
     rail.append(h('button', { type: 'button', class: 'brand', 'aria-label': t('nav.home'), title: t('nav.home'), onclick: () => go('#/home') },
-      h('img', { src: 'icons/favicon-64.png', alt: '', width: 32, height: 32 }), h('span', { class: 'brand-name', text: t('app.name') })));
+      h('span', { class: 'brand-loom' }, loomMark(26)), h('span', { class: 'brand-name', text: t('app.name') })));
     rail.append(railButton({ id: 'home', iconName: 'home', label: t('nav.home'), active: route.kind === 'home', accentId: 'shell', onclick: () => go('#/home') }));
     const list = h('div', { class: 'rail-modules' });
     const nodeModule = route.kind === 'node' ? (route.path.startsWith('projects/') || route.path.startsWith('notes/') ? 'projects' : typeAccent(nodeByPath(route.path)?.type)) : '';
@@ -392,6 +398,21 @@ export function startShell(root) {
   // "+" creates anything from anywhere; the pill names the project in focus and leads to it
   const plusBtn = h('button', { type: 'button', class: 'icon-btn plus-btn', onclick: () => openCreate() });
   const pill = h('button', { type: 'button', class: 'focus-pill', hidden: true });
+  // 0.32.0: tabs for Heute and the projects you work on (at most three), "+" for all projects
+  const tabs = h('div', { class: 'loom-tabs', role: 'tablist', 'aria-label': t('tabs.label') });
+  function renderTabs() {
+    const route = currentRoute();
+    const here = route.kind === 'node' ? route.path : '';
+    const tab = (cls, on, label, onclick, ...inner) => h('button', { type: 'button', role: 'tab', class: `loom-tab ${cls}${on ? ' on' : ''}`, 'aria-selected': String(on), title: label, onclick }, ...inner);
+    const list = [tab('home', route.kind === 'home', t('nav.home'), () => go('#/home'), h('span', { text: t('nav.home') }))];
+    for (const p of openTabs()) {
+      const b = tab('project', here === p.path, p.title, () => go(nodeHref(p.path)), h('span', { class: 'project-dot', 'aria-hidden': 'true' }), h('span', { text: p.title }));
+      paintProject(b, p.slug);
+      list.push(b);
+    }
+    list.push(tab('plus', route.kind === 'module' && route.mod.id === 'projects', t('tabs.all'), () => go('#/m/projects'), h('span', { text: '＋' })));
+    tabs.replaceChildren(...list);
+  }
   const openCreate = () => { hideResults(); input.blur(); createMenu({ go, paint: paintAccent }); };
   function renderPill() {
     const f = focusProject();
@@ -417,9 +438,10 @@ export function startShell(root) {
     keyTitle(plusBtn, t('create.title'), 'create');
     plusBtn.setAttribute('aria-label', t('create.title'));
     if (!cmd.firstChild) {
-      cmd.append(menuBtn, h('div', { class: 'cmd-field' }, iconEl('search', 'cmd-icon'), input, kbd), plusBtn, pill, results);
+      cmd.append(menuBtn, tabs, h('div', { class: 'cmd-field' }, iconEl('search', 'cmd-icon'), input, kbd), plusBtn, pill, results);
     }
     renderPill();
+    renderTabs();
     if (app.classList.contains('cmd-open')) showResults();
   }
 
@@ -780,9 +802,21 @@ export function startShell(root) {
   }
 
   function renderStatus() {
-    status.replaceChildren(...statusItems());
+    status.replaceChildren(benchStrip({ n: 4 }), ...statusItems());
     const drawerStatus = rail.querySelector('.rail-status');
     if (drawerStatus) drawerStatus.replaceChildren(...statusItems());
+  }
+
+  // ---------------------------------------------------------------- the bar at the bottom of the phone (0.32.0)
+  function renderTabbar(route = currentRoute()) {
+    const item = (id, iconName, label, on, onclick) => h('button', { type: 'button', class: on ? 'on' : '', 'aria-current': on ? 'page' : null, dataset: { id }, onclick }, iconEl(iconName), h('span', { text: label }));
+    const isProject = route.kind === 'node' && nodeByPath(route.path)?.type === 'project';
+    tabbar.replaceChildren(
+      item('home', 'home', t('nav.home'), route.kind === 'home', () => go('#/home')),
+      item('projects', 'target', t('module.projects.name'), (route.kind === 'module' && route.mod.id === 'projects') || isProject, () => go('#/m/projects')),
+      item('shelf', 'shelf', t('module.shelf.name'), route.kind === 'module' && route.mod.id === 'shelf', () => go('#/m/shelf')),
+      item('tools', 'blocks', t('tabbar.tools'), false, () => setDrawer(true)));
+    tabbar.setAttribute('aria-label', t('tabbar.label'));
   }
 
   // ---------------------------------------------------------------- updates
@@ -855,6 +889,7 @@ export function startShell(root) {
     if (s.building) return;
     if (app.classList.contains('cmd-open')) showResults();
     renderPill();
+    renderTabs();
     const came = incoming;
     incoming = null;
     const route = currentRoute();
@@ -869,6 +904,7 @@ export function startShell(root) {
   startAutoLink();
   onFocusChange(() => {
     renderPill();
+    renderTabs();
     const route = currentRoute();
     if (route.kind === 'home' || (route.kind === 'module' && route.mod.id === 'projects')) render();
   });

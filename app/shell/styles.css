@@ -1,46 +1,63 @@
-/* Toollib shell: light palette in blue and white, one accent per module (--accent, --accent-ink). */
+/* Loom (before 0.32.0: Toollib) shell. Two sets: Waldnacht (dark, the default) and Morgennebel (light); one warm light
+   (--light) and glass (--glass) since 0.32.0, one accent per tool for kinds and tiles (--accent, --accent-ink). */
 :root {
-  --bg: #f6f9fd;
-  --panel: #ffffff;
-  --panel-2: #eef3fa;
-  --border: #d7e1ee;
-  --fg: #0f1f3d;
-  --muted: #5a6a82;
-  --blue: #1f63e0;
-  --ok: #15803d;
-  --warn: #b45309;
-  --danger: #dc2626;
+  /* Loom 0.32.0, "Morgennebel": the light set. Moss and mist, one warm light (--light). */
+  --bg: #eef1ec;
+  --panel: #fbfcfa;
+  --panel-2: #e8ede7;
+  --border: #d3dcd4;
+  --fg: #1c2a23;
+  --muted: #5d6f64;
+  --blue: #9a6a1c;
+  --ok: #2f7a45;
+  --warn: #a5630f;
+  --danger: #c23b3b;
   --accent: var(--blue);
   --accent-ink: #ffffff;
-  --radius: 12px;
+  --radius: 16px;
   --rail-w: 68px;
-  --shadow: 0 8px 28px rgba(15, 31, 61, 0.14);
-  --mix: #ffffff;          /* what accents are mixed with for tints (0.18.0: dark mode) */
-  --ink-base: #0f1f3d;     /* what accents are mixed with for text */
-  --code-bg: #f3f6fb;
+  --shadow: 0 10px 30px rgba(28, 42, 35, 0.12);
+  --mix: #fbfcfa;          /* what accents are mixed with for tints (0.18.0: dark mode) */
+  --ink-base: #1c2a23;     /* what accents are mixed with for text */
+  --code-bg: #f1f4ef;
+  /* Loom: glass, the one warm light, the ground */
+  --on-accent: #ffffff;
+  --light: #b07a2a; --light-ink: #ffffff; --light-soft: rgba(176, 122, 42, 0.12); --light-line: rgba(176, 122, 42, 0.38);
+  --glass: rgba(255, 255, 255, 0.62); --glass-2: rgba(255, 255, 255, 0.78); --line: rgba(28, 42, 35, 0.09);
+  --ground: linear-gradient(180deg, #f3f5f1 0%, #e9eee8 60%, #e3e9e2 100%);
+  --pool: rgba(214, 170, 96, 0.22); --mist: rgba(120, 150, 130, 0.12);
+  --bench: linear-gradient(180deg, rgba(232, 214, 186, 0.75), rgba(222, 202, 170, 0.8)); --bench-ink: #4a3a22;
   /* one colour system (0.25.0, app/shell/colors.js): the same nine colours for tools, kinds, areas, sections */
-  --c-blue: #1f63e0; --c-sky: #0b7bbd; --c-teal: #0f8078; --c-green: #1e7e3a; --c-orange: #c2410c;
-  --c-rose: #c0265e; --c-violet: #6d4aff; --c-yellow: #c99a06; --c-slate: #64748b; --c-indigo: #4338ca; --c-lime: #4d7c0f;
+  --c-blue: #3d6fb8; --c-sky: #2f7fa8; --c-teal: #2f7f72; --c-green: #3a7d4c; --c-orange: #b5612a;
+  --c-rose: #b04a68; --c-violet: #6e5bb5; --c-yellow: #a07c12; --c-slate: #66766c; --c-indigo: #4f57a8; --c-lime: #5a7d1f;
   color-scheme: light;
 }
 /* 0.18.0: dark mode. "System" is turned into data-theme by index.html and services/theme.js. */
 :root[data-theme="dark"] {
-  --bg: #0e131b;
-  --panel: #161c26;
-  --panel-2: #1d2531;
-  --border: #2b3646;
-  --fg: #e4eaf3;
-  --muted: #94a2b6;
-  --blue: #5b8cff;
-  --ok: #4ade80;
-  --warn: #f5b041;
-  --danger: #f87171;
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  --mix: #161c26;
-  --ink-base: #e4eaf3;
-  --code-bg: #111720;
-  --c-blue: #6b9bff; --c-sky: #38bdf8; --c-teal: #2dd4bf; --c-green: #4ade80; --c-orange: #fb923c;
-  --c-rose: #fb7185; --c-violet: #a78bfa; --c-yellow: #facc15; --c-slate: #94a3b8; --c-indigo: #818cf8; --c-lime: #a3e635;
+  /* Loom 0.32.0, "Waldnacht": moss green to black, one warm light in amber. */
+  --bg: #070b09;
+  --panel: #111a15;
+  --panel-2: #18231d;
+  --border: #25332b;
+  --fg: #e6ece7;
+  --muted: #8fa196;
+  --blue: #e9c48a;
+  --ok: #8fd19e;
+  --warn: #f0b860;
+  --danger: #f08080;
+  --accent-ink: #1d150a;
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+  --mix: #111a15;
+  --ink-base: #e6ece7;
+  --code-bg: #0c130f;
+  --on-accent: #0b130f;
+  --light: #e9c48a; --light-ink: #1d150a; --light-soft: rgba(233, 196, 138, 0.14); --light-line: rgba(233, 196, 138, 0.4);
+  --glass: rgba(22, 32, 27, 0.55); --glass-2: rgba(28, 40, 34, 0.72); --line: rgba(255, 255, 255, 0.07);
+  --ground: linear-gradient(180deg, #0b130f 0%, #070b09 55%, #050806 100%);
+  --pool: rgba(233, 196, 138, 0.15); --mist: rgba(150, 180, 165, 0.08);
+  --bench: linear-gradient(180deg, rgba(58, 44, 30, 0.62), rgba(32, 25, 18, 0.78)); --bench-ink: #efe6d6;
+  --c-blue: #a8c4f0; --c-sky: #8fc8e8; --c-teal: #8fd0c0; --c-green: #8fd19e; --c-orange: #e8b08a;
+  --c-rose: #eba2b4; --c-violet: #bba8ec; --c-yellow: #e8c86a; --c-slate: #8fa196; --c-indigo: #a6acf0; --c-lime: #bcd98a;
   color-scheme: dark;
 }
 
@@ -2684,3 +2701,164 @@ body.gripping, body.gripping * { cursor: col-resize !important; user-select: non
   .lb:not(.focus) .grip-toc { left: var(--lb-toc, 200px); }
   .lb.side-open .grip-side { right: var(--lb-side, 280px); }
 }
+
+/* ================================================================== Loom (0.32.0)
+   The look of the chosen design (J5, "Waldnacht"; light set "Morgennebel"): a dark ground from moss green to black,
+   one warm light that breathes, glass for everything that holds content, precise thin lines, the system font.
+   Everything below only restyles; class names stay, so every tool keeps working. Motion stops with
+   prefers-reduced-motion or the setting "Light breathes" (html.calm, app/services/theme.js). */
+body { background: var(--bg) var(--ground) fixed; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", Roboto, system-ui, sans-serif; }
+body::before, body::after { content: ""; position: fixed; pointer-events: none; z-index: 0; }
+body::before { left: 18%; top: -22vh; width: 70vh; height: 70vh; border-radius: 50%; background: radial-gradient(closest-side, var(--pool), transparent); animation: loom-breathe 9s ease-in-out infinite; }
+body::after { left: -10%; right: -10%; bottom: -12vh; height: 40vh; background: radial-gradient(60% 60% at 40% 80%, var(--mist), transparent 70%); animation: loom-mist 34s ease-in-out infinite; }
+@keyframes loom-breathe { 0%, 100% { opacity: 0.72; } 50% { opacity: 1; } }
+@keyframes loom-mist { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(70px); } }
+@keyframes loom-pulse { 0%, 100% { box-shadow: 0 0 0 1px var(--light-line), 0 0 28px var(--light-soft), var(--shadow); } 50% { box-shadow: 0 0 0 1px var(--light), 0 0 44px var(--light-soft), var(--shadow); } }
+@keyframes loom-wiggle { from { transform: rotate(-0.35deg); } to { transform: rotate(0.35deg); } }
+html.calm *, html.calm *::before, html.calm *::after, html.calm body::before, html.calm body::after { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) { body::before, body::after, .loom-focus, .loom-mic { animation: none !important; } .start-board.arranging .widget { animation: none !important; } }
+.app { z-index: 1; }
+::selection { background: var(--light-soft); }
+.rail-btn:focus-visible, .brand:focus-visible, .btn:focus-visible, .swatch:focus-visible, .segmented button:focus-visible, .icon-btn:focus-visible,
+.focus-pill:focus-visible, .verb:focus-visible, .resume-item:focus-visible, .create-item:focus-visible, .loom-tab:focus-visible, .tabbar a:focus-visible, .tabbar button:focus-visible { outline: 2px solid var(--light); outline-offset: 2px; }
+
+/* glass: what holds content floats over the ground */
+.card, .widget, .filter-row, .run-panel, .cr-panel, .ib-panel, .rs-hit, .choice-option {
+  background: var(--glass); border-color: var(--line);
+  -webkit-backdrop-filter: blur(20px) saturate(1.15); backdrop-filter: blur(20px) saturate(1.15);
+}
+.card { border-radius: 20px; }
+.widget { border-radius: 18px; padding: 12px 16px 16px; }
+.widget-add { border-radius: 18px; border-color: var(--line); }
+.modal, .sheet, .action-sheet, .cmd-results, .pe-suggest, .rd-selbar { background: var(--panel); border: 1px solid var(--line); }
+.modal { border-radius: 22px; }
+.btn { background: var(--glass-2); border-color: var(--line); border-radius: 11px; }
+.btn:hover { background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.btn.primary { background: var(--light); border-color: var(--light); color: var(--light-ink); font-weight: 600; }
+.btn.primary:hover { background: color-mix(in srgb, var(--light) 88%, var(--fg)); }
+.segmented { background: color-mix(in srgb, var(--fg) 6%, transparent); border: 1px solid var(--line); }
+.segmented button.on { background: color-mix(in srgb, var(--fg) 11%, transparent); box-shadow: none; }
+.icon-btn:hover { background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.field, input.field, textarea.field, select.field { background: color-mix(in srgb, var(--bg) 40%, transparent); border-color: var(--line); }
+
+/* the frame: the rail, the bar on top, the status line, all on the ground */
+.rail { background: color-mix(in srgb, var(--fg) 3%, transparent); border-right: 1px solid var(--line); }
+.rail-modules { border-top-color: var(--line); }
+.rail-btn .tile { background: transparent; color: var(--muted); }
+.rail-btn:hover { background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.rail-btn:hover .tile { color: var(--fg); }
+.rail-btn.active .tile { background: color-mix(in srgb, var(--fg) 10%, transparent); color: var(--fg); }
+.rail-btn[data-id="settings"].active .tile { background: var(--light-soft); color: var(--light); }
+.brand-loom { width: 36px; height: 36px; display: grid; place-items: center; }
+.brand-loom svg { width: 26px; height: 26px; }
+.cmd { background: transparent; border-bottom: 1px solid var(--line); }
+.cmd-field { background: color-mix(in srgb, var(--fg) 5%, transparent); border-color: var(--line); max-width: 520px; margin: 0 auto; }
+.cmd-field:focus-within { border-color: var(--light-line); box-shadow: 0 0 0 3px var(--light-soft); }
+.status { background: transparent; border-top: 1px solid var(--line); }
+.main { background: transparent; }
+.scrim { background: rgba(0, 0, 0, 0.4); }
+
+/* tabs of the open projects in the bar (0.32.0): Heute, the projects you work on, + */
+.loom-tabs { display: flex; gap: 2px; padding: 3px; border-radius: 11px; background: color-mix(in srgb, var(--fg) 4%, transparent); border: 1px solid var(--line); flex: none; min-width: 0; overflow: hidden; }
+.loom-tab { height: 30px; display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; border: 0; border-radius: 8px; background: none; color: var(--muted); font: 500 13.5px/1 inherit; font-family: inherit; cursor: pointer; white-space: nowrap; max-width: 180px; }
+.loom-tab span { overflow: hidden; text-overflow: ellipsis; }
+.loom-tab:hover { color: var(--fg); }
+.loom-tab.on { background: color-mix(in srgb, var(--fg) 10%, transparent); color: var(--fg); }
+.loom-tab .project-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+.loom-tab.plus { padding: 0 9px; font-size: 16px; }
+.loom-tabs ~ .focus-pill { display: none; }
+@media (max-width: 1099px) { .loom-tab:not(.on):not(.home):not(.plus) { display: none; } }
+
+/* the workbench (0.32.0): what lies half finished, in the status line on wide screens, on Heute on the phone */
+.bench { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; overflow: hidden; }
+.bench-title { font-size: 12px; font-weight: 600; color: var(--light); white-space: nowrap; }
+.bench-item { display: inline-flex; align-items: baseline; gap: 6px; max-width: 220px; padding: 4px 10px; border-radius: 10px; background: color-mix(in srgb, var(--bg) 45%, transparent); border: 1px solid var(--line); color: var(--fg); text-decoration: none; font-size: 12.5px; white-space: nowrap; overflow: hidden; }
+.bench-item b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.bench-item span { color: var(--muted); font-size: 11.5px; }
+.bench-item:hover { border-color: var(--light-line); }
+.status .bench { margin-right: 8px; }
+.status:has(.bench) { flex-wrap: nowrap; }
+.status:has(.bench) .st:not(.st-btn):not(.version) { display: none; }
+.bench-card { padding: 14px 16px 12px; border-radius: 18px; background: var(--bench); border: 1px solid var(--light-line); color: var(--bench-ink); }
+.bench-card .bench { flex-wrap: wrap; overflow: visible; }
+.bench-card .bench-item { background: rgba(0, 0, 0, 0.18); color: var(--bench-ink); border-color: transparent; }
+.bench-card .bench-item span { color: inherit; opacity: 0.7; }
+
+/* the bar at the bottom of the phone (0.32.0) */
+.tabbar { display: none; }
+@media (max-width: 759px) {
+  .app { grid-template-rows: minmax(0, 1fr) auto auto; grid-template-areas: "main" "cmd" "tabs"; }
+  .cmd { padding-bottom: 8px; background: color-mix(in srgb, var(--bg) 82%, transparent); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); border-top: 1px solid var(--line); }
+  .cmd .menu-btn { display: none; }
+  .cmd-field { margin: 0; max-width: none; border-radius: 23px; }
+  .tabbar { grid-area: tabs; display: flex; justify-content: space-around; padding: 4px 8px max(10px, env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--bg) 82%, transparent); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); }
+  .kb-open .tabbar { display: none; }
+  .tabbar a, .tabbar button { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 64px; padding: 4px 0; border: 0; background: none; color: var(--muted); font: 500 10.5px/1.2 inherit; font-family: inherit; text-decoration: none; cursor: pointer; }
+  .tabbar .ic { width: 21px; height: 21px; }
+  .tabbar .on { color: var(--light); }
+  .rail { background: var(--panel); }
+}
+
+/* Heute (0.32.0) */
+.main[data-view="start"] { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 0 22px; }
+.main[data-view="start"] > * { max-width: none; min-width: 0; }
+@media (min-width: 1240px) {
+  .main[data-view="start"] { grid-template-columns: minmax(0, 1fr) 320px; max-width: 1360px; }
+  .main[data-view="start"] > * { grid-column: 1; }
+  .main[data-view="start"] > .start-aside { grid-column: 2; grid-row: 1 / span 12; align-self: start; position: sticky; top: 0; }
+}
+.start-head { margin: 4px 0 18px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px 16px; }
+.start-head .verbs { grid-column: 1 / -1; }
+.start-hello { font-size: 13.5px; color: var(--muted); }
+.start-ask { margin: 2px 0 0; font-size: clamp(30px, 4vw, 38px); font-weight: 600; letter-spacing: -0.03em; }
+.start-arrange { justify-self: end; }
+.verbs { gap: 6px; }
+.verb { height: 34px; padding: 0 12px 0 9px; border-radius: 11px; background: color-mix(in srgb, var(--fg) 4%, transparent); border-color: var(--line); font-size: 13.5px; }
+.verb-search { background: color-mix(in srgb, var(--fg) 4%, transparent); border-color: var(--line); color: var(--fg); }
+.verb-search .icon { color: var(--muted); }
+.verb-search:hover { background: color-mix(in srgb, var(--fg) 8%, transparent); border-color: var(--line); }
+.loom-focus { display: flex; gap: 20px; align-items: center; margin: 0 0 18px; padding: 20px 22px; border-radius: 22px; color: var(--fg); text-decoration: none; background: color-mix(in srgb, var(--light) 9%, var(--glass)); border: 0; animation: loom-pulse 7s ease-in-out infinite; -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); cursor: pointer; text-align: left; font: inherit; width: 100%; }
+.loom-ring { flex: none; width: 64px; height: 64px; }
+.loom-focus-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.loom-focus-kicker { font-size: 12.5px; font-weight: 500; color: var(--light); }
+.loom-focus-title { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; }
+.loom-focus-sub { font-size: 13.5px; color: var(--muted); }
+.loom-go { flex: none; display: inline-flex; align-items: center; height: 40px; padding: 0 16px; border-radius: 12px; background: var(--light); color: var(--light-ink); font-weight: 600; font-size: 14px; }
+@media (max-width: 759px) { .loom-focus { padding: 15px; gap: 14px; } .loom-ring { width: 50px; height: 50px; } .loom-focus-title { font-size: 17px; } .loom-go { display: none; } }
+.start-problem { margin-bottom: 4px; }
+.start-aside { display: flex; flex-direction: column; gap: 14px; margin-bottom: 18px; }
+.loom-voice { padding: 16px 18px; border-radius: 20px; background: var(--glass); border: 1px solid var(--line); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); }
+.loom-voice-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); font-weight: 500; }
+.loom-voice-state { font-size: 11px; color: var(--ok); font-weight: 400; }
+.loom-voice p { margin: 8px 0 12px; font-size: 14.5px; line-height: 1.5; }
+.loom-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.loom-chip { font: inherit; font-size: 12.5px; padding: 6px 11px; border-radius: 11px; border: 0; background: color-mix(in srgb, var(--fg) 7%, transparent); color: var(--fg); cursor: pointer; }
+.loom-chip:first-child { background: var(--light-soft); color: color-mix(in srgb, var(--light) 70%, var(--fg)); }
+.loom-chip:hover { outline: 1px solid var(--light-line); }
+@media (min-width: 760px) { .start-aside .bench-card { display: none; } }
+.start-board.arranging .widget { animation: loom-wiggle 0.45s ease-in-out infinite alternate; outline: 1px dashed var(--light-line); outline-offset: 3px; }
+.start-board.arranging .widget:nth-child(even) { animation-delay: -0.22s; }
+.start-board:not(.arranging) .widget-menu { opacity: 0; transition: opacity 0.15s; }
+.start-board:not(.arranging) .widget:hover .widget-menu, .start-board:not(.arranging) .widget-menu:focus-visible { opacity: 1; }
+.start-board:not(.arranging) .widget-add { opacity: 0.55; }
+.start-board.arranging .widget-head { cursor: grab; }
+.start-arrange.on { background: var(--light); border-color: var(--light); color: var(--light-ink); }
+.start-foot { margin-top: 18px; }
+
+/* settings: the Loom page and the look (0.32.0) */
+.look-sets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 10px 0 4px; max-width: 520px; }
+.look-set { height: 64px; border-radius: 14px; border: 1px solid var(--line); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; display: grid; place-items: center; }
+.look-set.night { background: linear-gradient(160deg, #13201a, #050806); color: #e6ece7; }
+.look-set.mist { background: linear-gradient(160deg, #f3f5f1, #dfe6df); color: #24302a; }
+.look-set.system { background: linear-gradient(110deg, #0b130f 0 50%, #eef1ec 50% 100%); color: #8fa196; }
+.look-set.on { outline: 2px solid var(--light); outline-offset: 2px; }
+.loom-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.loom-row:first-of-type { border-top: 0; }
+.loom-row .muted { font-size: 13px; }
+
+.plus-btn { background: color-mix(in srgb, var(--fg) 6%, transparent); color: var(--light); border: 1px solid var(--line); }
+.plus-btn:hover { background: var(--light-soft); }
+@media (max-width: 759px) { .loom-tabs { display: none; } .plus-btn { border-radius: 50%; } }
+/* the Kladde in Loom's colours (0.32.0): paper of moss, the magnifier in the warm light */
+.kl { --kl-desk: #e3e9e2; --kl-lupe: var(--light); --kl-lupe-ink: #8a5c18; --kl-lupe-soft: var(--light-soft); --kl-sel: var(--light-soft); --kl-rule: rgba(60, 100, 80, 0.18); --kl-dot: rgba(60, 100, 80, 0.38); }
+[data-theme="dark"] .kl { --kl-desk: #050806; --kl-paper: #0f1713; --kl-lupe: #e9c48a; --kl-lupe-ink: #f1d9a8; --kl-rule: rgba(150, 190, 165, 0.14); --kl-dot: rgba(160, 200, 175, 0.32); --kl-ink-ink: #e6ece7; --kl-ink-blue: #a8c4f0; --kl-ink-red: #f09a90; --kl-ink-green: #8fd19e; }

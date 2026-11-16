@@ -1,22 +1,27 @@
-// Settings › Look: light or dark, and one colour per tool (the kinds of nodes follow their tool's colour).
+// Settings › Look: night or mist (Waldnacht, Morgennebel; 0.32.0), whether the light breathes, and one colour per tool
+// (the kinds of nodes follow their tool's colour).
 import { h } from '../../services/ui.js';
 import { t } from '../../i18n/i18n.js';
 import { ACCENTS, READY, SHELL, accentOf, setAccent, paintAccent } from '../modules.js';
-import { APPEARANCES, appearance, setAppearance } from '../../services/theme.js';
+import { APPEARANCES, appearance, calm, setAppearance, setMotion } from '../../services/theme.js';
 import { card, iconEl } from './parts.js';
 
-// 0.18.0: light, dark, or as the device is set
+// 0.18.0: light, dark, or as the device is set; since 0.32.0 three small pictures of the sets, and "Light breathes"
+const SET_CLASS = { dark: 'night', light: 'mist', system: 'system' };
 export function appearanceCard() {
-  const seg = h('div', { class: 'segmented', role: 'group', 'aria-label': t('settings.appearance') });
+  const sets = h('div', { class: 'look-sets', role: 'group', 'aria-label': t('settings.appearance') });
   const draw = () => {
     const now = appearance();
-    seg.replaceChildren(...APPEARANCES.map((a) => h('button', {
-      type: 'button', class: now === a ? 'on' : '', 'aria-pressed': String(now === a), dataset: { appearance: a }, text: t(`settings.appearance.${a}`),
+    sets.replaceChildren(...['dark', 'light', 'system'].filter((a) => APPEARANCES.includes(a)).map((a) => h('button', {
+      type: 'button', class: `look-set ${SET_CLASS[a]}${now === a ? ' on' : ''}`, 'aria-pressed': String(now === a), dataset: { appearance: a }, text: t(`settings.appearance.${a}`),
       onclick: () => { setAppearance(a); draw(); },
     })));
   };
   draw();
-  return card(t('settings.appearance'), seg, h('p', { class: 'muted small', text: t('settings.appearance.hint') }));
+  const motion = h('input', { type: 'checkbox', id: 'look-motion', checked: calm() ? null : true });
+  motion.addEventListener('change', () => setMotion(motion.checked));
+  return card(t('settings.appearance'), sets, h('p', { class: 'muted small', text: t('settings.appearance.hint') }),
+    h('label', { class: 'set-check', for: 'look-motion' }, motion, h('span', {}, h('b', { text: t('settings.look.motion') }), h('span', { class: 'field-hint', text: t('settings.look.motion.hint') }))));
 }
 
 export function accentsCard(onChange) {

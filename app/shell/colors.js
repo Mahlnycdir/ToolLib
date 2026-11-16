@@ -6,19 +6,19 @@
 // For Python readers: this file is a lookup table with a few helper functions, nothing more.
 import { accentOf, moduleOfType } from './modules.js';
 
-// name → [light, dark]; the light shades are the ones the board has used since 0.18.0
+// name → [light, dark]; since 0.32.0 the shades of Morgennebel and Waldnacht (same values as --c-* in styles.css)
 export const PALETTE = {
-  blue: ['#1f63e0', '#6b9bff'],
-  sky: ['#0b7bbd', '#38bdf8'],
-  teal: ['#0f8078', '#2dd4bf'],
-  green: ['#1e7e3a', '#4ade80'],
-  orange: ['#c2410c', '#fb923c'],
-  rose: ['#c0265e', '#fb7185'],
-  violet: ['#6d4aff', '#a78bfa'],
-  yellow: ['#c99a06', '#facc15'],
-  slate: ['#64748b', '#94a3b8'],
-  indigo: ['#4338ca', '#818cf8'],   // 0.26.0: two more, so the kinds of nodes in the network are told apart
-  lime: ['#4d7c0f', '#a3e635'],
+  blue: ['#3d6fb8', '#a8c4f0'],
+  sky: ['#2f7fa8', '#8fc8e8'],
+  teal: ['#2f7f72', '#8fd0c0'],
+  green: ['#3a7d4c', '#8fd19e'],
+  orange: ['#b5612a', '#e8b08a'],
+  rose: ['#b04a68', '#eba2b4'],
+  violet: ['#6e5bb5', '#bba8ec'],
+  yellow: ['#a07c12', '#e8c86a'],
+  slate: ['#66766c', '#8fa196'],
+  indigo: ['#4f57a8', '#a6acf0'],   // 0.26.0: two more, so the kinds of nodes in the network are told apart
+  lime: ['#5a7d1f', '#bcd98a'],
 };
 export const COLOURS = Object.keys(PALETTE);
 const known = (name) => (COLOURS.includes(name) ? name : 'slate');

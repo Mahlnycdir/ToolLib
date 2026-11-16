@@ -10,6 +10,9 @@
 //   and building blocks you put together (a list from a search, a note, a checklist, links, a piece of the network,
 //   a countdown; widget-blocks.js).
 // At the bottom: the knowledge, the sync, installing.
+// 0.32.0 (Loom, "Heute"): the date and a greeting on top, the light on the project in focus (focusCard), Loom's card
+// and, on the phone, the workbench beside (start-aside); "Anordnen" makes the widgets wiggle and shows their handles
+// (moving, wide, removing as before in widget-frame.js); without it they stay calm.
 //
 // For Python readers: renderStart draws the fixed parts at once and the board from the last start it read (cache),
 // then reads start.md again and draws the board anew if something changed; every change to the board writes the file
@@ -37,6 +40,7 @@ import { formatTime, syncButton } from './views.js';
 import { widgetGrid } from './widget-frame.js';
 import { BLOCK_ICON, blockBody, blockChoices, blockHasContent, blockTitle, editBlock } from './widget-blocks.js';
 import { pultProjects, pultWidget } from './pult.js';
+import { benchStrip, loomVoice } from './loom.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const originalOf = (copy) => copy.replace(/\.conflict-[a-z0-9-]+(\.[^./]+)?$/, '$1');
@@ -59,7 +63,19 @@ export function renderStart(main, { go, onSync, onSetup, focusCommand }) {
     paintAccent(b, c.accent);
     verbs.append(b);
   }
-  main.append(h('header', { class: 'start-head' }, h('p', { class: 'start-hello muted', text: greeting() }), h('h1', { class: 'start-ask', text: t('start.ask') }), verbs));
+  const today = new Date().toLocaleDateString(getLang() === 'de' ? 'de-DE' : 'en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  const arrange = h('button', { type: 'button', class: 'btn small start-arrange', 'aria-pressed': 'false' }, iconEl('blocks'), h('span', { text: t('start.arrange') }));
+  arrange.addEventListener('click', () => {
+    const on = !board.classList.contains('arranging');
+    board.classList.toggle('arranging', on);
+    arrange.classList.toggle('on', on);
+    arrange.setAttribute('aria-pressed', String(on));
+    arrange.lastChild.textContent = t(on ? 'start.arranged' : 'start.arrange');
+  });
+  main.append(h('header', { class: 'start-head' },
+    h('div', {}, h('p', { class: 'start-hello muted', text: today }), h('h1', { class: 'start-ask', text: greeting() })), arrange, verbs));
+  if (ready) { const f = focusCard({ go }); if (f) main.append(f); }
+  main.append(h('aside', { class: 'start-aside' }, loomVoice({ go }), h('div', { class: 'bench-card' }, benchStrip({ n: 4 }))));
 
   // ---------------------------------------------------------------- problem first (0.30.0): suggestions, a small step, ideas
   const problemHost = h('div', { class: 'start-problem' });
@@ -129,6 +145,32 @@ export function renderStart(main, { go, onSync, onSetup, focusCommand }) {
       foot.before(note);
     }
   })();
+}
+
+// The light of Heute (0.32.0): the project in focus, its next step and how far it is (done of all steps).
+function focusCard({ go }) {
+  const f = focusProject();
+  if (!f) return null;
+  const st = f.steps || { open: 0, done: 0, next: '' };
+  const all = st.open + st.done;
+  const part = all ? st.done / all : 0;
+  const R = 18; const C = 2 * Math.PI * R;
+  const NS = 'http://www.w3.org/2000/svg';
+  const ring = document.createElementNS(NS, 'svg');
+  ring.setAttribute('viewBox', '0 0 44 44'); ring.setAttribute('class', 'loom-ring'); ring.setAttribute('role', 'img');
+  ring.setAttribute('aria-label', t('start.focus.part', { n: Math.round(part * 100) }));
+  const circle = (stroke, dash) => { const c = document.createElementNS(NS, 'circle'); for (const [k, v] of Object.entries({ cx: 22, cy: 22, r: R, fill: 'none', stroke, 'stroke-width': 3, 'stroke-linecap': 'round', transform: 'rotate(-90 22 22)' })) c.setAttribute(k, v); if (dash) c.setAttribute('stroke-dasharray', dash); return c; };
+  ring.append(circle('var(--line)'), circle('var(--light)', `${(part * C).toFixed(1)} ${C.toFixed(1)}`));
+  const label = document.createElementNS(NS, 'text');
+  for (const [k, v] of Object.entries({ x: 22, y: 25.5, 'text-anchor': 'middle', fill: 'currentColor', 'font-size': 10, 'font-weight': 600 })) label.setAttribute(k, v);
+  label.textContent = all ? `${Math.round(part * 100)} %` : '–';
+  ring.append(label);
+  return h('button', { type: 'button', class: 'loom-focus', onclick: () => go(nodeHref(f.path)) }, ring,
+    h('span', { class: 'loom-focus-text' },
+      h('span', { class: 'loom-focus-kicker', text: t('start.focus.kicker', { title: f.title }) }),
+      h('span', { class: 'loom-focus-title', text: st.next || f.title }),
+      h('span', { class: 'loom-focus-sub', text: all ? t('start.focus.sub', { done: st.done, all }) : t('start.focus.noSteps') })),
+    h('span', { class: 'loom-go', text: t('start.focus.go') }));
 }
 
 // The widgets of Start in the shared frame.
