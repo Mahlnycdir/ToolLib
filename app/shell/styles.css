@@ -3194,3 +3194,11 @@ html.calm .lf-here { animation: none; }
 .loom-talk.listening.live-text .talk-wave { display: none; }
 .loom-talk.listening.live-text .talk-in { opacity: 1; }
 .loom-talk.listening .talk-in[readonly] { cursor: default; }
+
+/* 0.33.6: the board's scrollbar also above it (drawn by hand: a track and a thumb), staying at the top while you
+   scroll down the columns */
+.board-scroll { position: sticky; top: 0; z-index: 6; height: 12px; margin: 0 2px 8px; border-radius: 6px; background: color-mix(in srgb, var(--fg) 8%, transparent); cursor: pointer; touch-action: none; }
+.board-scroll[hidden] { display: none; }
+.board-scroll-thumb { position: absolute; left: 0; top: 2px; bottom: 2px; border-radius: 4px; background: color-mix(in srgb, var(--light) 65%, transparent); cursor: grab; }
+.board-scroll-thumb:hover, .board-scroll-thumb.held { background: var(--light); }
+.board-scroll-thumb.held { cursor: grabbing; }

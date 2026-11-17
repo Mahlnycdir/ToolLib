@@ -385,11 +385,13 @@ export function projectCanvas(p, ctx) {
   // you gave it yourself (moved or sized: state.frames). skip: a card left out (the one you drag), so a frame does
   // not follow it while it moves.
   const PAD = 22; const HEAD = 40;
-  function rects({ skip = '' } = {}) {
+  // without: sections left out entirely (while you carry a group, so its old parent does not grow around it)
+  function rects({ skip = '', without = null } = {}) {
     const board = boardOf(cur, membersOf(p.slug));
     const out = new Map();
     const order = [...board].sort((a, b) => depthOfSection(board, b.id) - depthOfSection(board, a.id));
     for (const sec of order) {
+      if (without?.has(sec.id)) continue;
       const boxes = sec.items.filter((d) => d.slug !== skip).map((d) => state.cards.get(d.slug)).filter(Boolean);
       for (const c of board) if (c.parent === sec.id && out.has(c.id)) boxes.push(out.get(c.id));
       const own = state.frames.get(sec.id);
@@ -408,6 +410,17 @@ export function projectCanvas(p, ctx) {
       if (not.has(r.id)) continue;
       // the deepest wins; among frames of one depth the smaller one (it is the more particular place)
       if (pt.x > r.x && pt.x < r.x + r.w && pt.y > r.y && pt.y < r.y + r.h && (!best || r.depth > best.depth || (r.depth === best.depth && r.w * r.h < best.w * best.h))) best = r;
+    }
+    return best;
+  }
+  // the deepest frame that holds box whole (0.33.6): a group you carry becomes a subgroup only when it lies wholly
+  // inside another frame; touching one with its name is not enough (that put groups into each other by accident)
+  function frameAround(box, all) {
+    const tol = 10;
+    let best = null;
+    for (const r of all.values()) {
+      if (!(r.x <= box.x + tol && r.y <= box.y + tol && r.x + r.w >= box.x + box.w - tol && r.y + r.h >= box.y + box.h - tol)) continue;
+      if (!best || r.depth > best.depth || (r.depth === best.depth && r.w * r.h < best.w * best.h)) best = r;
     }
     return best;
   }
@@ -658,9 +671,9 @@ export function projectCanvas(p, ctx) {
     } else if (drag.mode === 'group') {
       for (const c of drag.inside) { c.b.x = Math.round(c.ox + dx / state.k); c.b.y = Math.round(c.oy + dy / state.k); }
       for (const f of drag.frames) state.frames.set(f.id, { x: Math.round(f.ox + dx / state.k), y: Math.round(f.oy + dy / state.k), w: f.w, h: f.h });
-      const head = drag.frames.find((f) => f.id === drag.id);
-      const at = head ? { x: head.ox + dx / state.k + 20, y: head.oy + dy / state.k + 14 } : null;
-      drag.target = at ? frameAt(at, rects(), drag.tree)?.id || '' : '';
+      const mine = drag.frames.find((f) => f.id === drag.id);
+      const box = mine ? { x: mine.ox + dx / state.k, y: mine.oy + dy / state.k, w: mine.w, h: mine.h } : null;
+      drag.target = box ? frameAround(box, rects({ without: drag.tree }))?.id || '' : '';
       layout();
     } else if (drag.mode === 'csize') {
       const b = state.cards.get(drag.slug);

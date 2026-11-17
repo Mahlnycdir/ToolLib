@@ -103,6 +103,11 @@ export function keepView(slug, v) {
 }
 function cardsArea(p, members, ctx) {
   const holder = h('div', { class: 'project-cards' });
+  // 0.33.6: each view is drawn from the project as it stands now (board and canvas change it; before, a switch drew the
+  // other view from the state the page was opened with, and the canvas lost groups made on it in between)
+  const fresh = async () => {
+    try { const now = await loadProject(ctx.path || p.path); if (now) { p = now; members = projectNodes(p.links); } } catch { /* keeps what it has */ }
+  };
   const show = (v) => {
     holder.querySelector('.pc')?.cleanup?.();
     holder.querySelector('.lf')?.cleanup?.();
@@ -111,16 +116,17 @@ function cardsArea(p, members, ctx) {
     const sw = h('div', { class: 'segmented small view-switch', role: 'group', 'aria-label': t('project.view') },
       ...PROJECT_VIEWS.map((id) => {
         const b = h('button', { type: 'button', class: v === id ? 'on' : '', 'aria-pressed': String(v === id), dataset: { view: id } }, iconEl(VIEW_ICON[id]), h('span', { text: t(`project.view.${id}`) }));
-        b.addEventListener('click', () => { if (id === v) return; keepView(p.slug, id); show(id); holder.querySelector(id === 'canvas' ? '.pc' : '.board')?.focus?.({ preventScroll: true }); });
+        b.addEventListener('click', async () => { if (id === v) return; keepView(p.slug, id); await fresh(); show(id); holder.querySelector(id === 'canvas' ? '.pc' : '.board')?.focus?.({ preventScroll: true }); });
         return b;
       }));
     const top = (title) => h('div', { class: 'board-top' }, h('h2', { class: 'board-h' }, h('span', { text: title })), sw);
     if (v === 'canvas') holder.replaceChildren(canvasArea(p, ctx, sw));
     else if (v === 'board') holder.replaceChildren(board(p, members, ctx, sw));
     else if (v === 'widgets') holder.replaceChildren(h('section', { class: 'board-wrap widgets-wrap' }, top(t('project.view.widgets')), widgetsArea(p, members, ctx)));
-    else holder.replaceChildren(focusView(p, { ...ctx, members, sw, show }));
+    else holder.replaceChildren(focusView(p, { ...ctx, members, sw, show: switchTo }));
   };
-  ctx.showView = show;
+  const switchTo = async (v) => { await fresh(); show(v); };
+  ctx.showView = switchTo;
   show(viewOf(p.slug));
   return holder;
 }
@@ -196,9 +202,66 @@ function board(p, members, ctx, sw = null) {
     await addSection(path, v, SECTION_COLOURS.find((c) => !used.has(c)) || 'slate');
     redraw();
   });
-  const section = h('section', { class: 'board-wrap' }, h('div', { class: 'board-top' }, h('h2', { class: 'board-h' }, h('span', { text: t('board.title') }), h('span', { class: 'muted small board-hint', text: t(narrow() ? 'board.hint.touch' : 'board.hint') })), h('div', { class: 'board-top-end' }, sw, newSec)), wrap);
+  const section = h('section', { class: 'board-wrap' }, h('div', { class: 'board-top' }, h('h2', { class: 'board-h' }, h('span', { text: t('board.title') }), h('span', { class: 'muted small board-hint', text: t(narrow() ? 'board.hint.touch' : 'board.hint') })), h('div', { class: 'board-top-end' }, sw, newSec)), topScroller(wrap), wrap);
   boardThreads(section, wrap, p);
   return section;
+}
+
+// The scrollbar of a wide board also above it (0.33.6, ENTE: "der Scroller muss nach oben, sonst ist es viel zu
+// umständlich, wenn das Board gefüllt ist"): it stays at the top of the page while you scroll down the columns and
+// moves the board sideways like the one at its foot (both follow each other). Hidden when the board fits.
+function topScroller(boardEl) {
+  // drawn by hand (a track and a thumb), so it shows the same everywhere, also where scrollbars hide themselves
+  const thumb = h('div', { class: 'board-scroll-thumb' });
+  const bar = h('div', { class: 'board-scroll', hidden: true, role: 'scrollbar', 'aria-orientation': 'horizontal', 'aria-label': t('board.scroll') }, thumb);
+  const span = () => Math.max(1, boardEl.scrollWidth - boardEl.clientWidth);
+  const draw = () => {
+    const wide = boardEl.scrollWidth > boardEl.clientWidth + 1;
+    bar.hidden = !wide;
+    if (!wide) return;
+    const track = bar.clientWidth;
+    const w = Math.max(40, Math.round(track * (boardEl.clientWidth / boardEl.scrollWidth)));
+    thumb.style.width = `${w}px`;
+    thumb.style.transform = `translateX(${Math.round((track - w) * (boardEl.scrollLeft / span()))}px)`;
+    bar.setAttribute('aria-valuenow', String(Math.round((boardEl.scrollLeft / span()) * 100)));
+  };
+  // the thumb follows your finger or mouse; the columns do not snap meanwhile, so it does not jump back
+  thumb.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x0 = e.clientX;
+    const s0 = boardEl.scrollLeft;
+    const k = span() / Math.max(1, bar.clientWidth - thumb.offsetWidth);
+    boardEl.style.scrollSnapType = 'none';
+    thumb.classList.add('held');
+    try { thumb.setPointerCapture(e.pointerId); } catch { /* a pointer made up by a test */ }
+    const move = (ev) => { boardEl.scrollLeft = s0 + (ev.clientX - x0) * k; };
+    const up = () => {
+      thumb.removeEventListener('pointermove', move);
+      thumb.removeEventListener('pointerup', up);
+      thumb.removeEventListener('pointercancel', up);
+      thumb.classList.remove('held');
+      boardEl.style.scrollSnapType = '';
+    };
+    thumb.addEventListener('pointermove', move);
+    thumb.addEventListener('pointerup', up);
+    thumb.addEventListener('pointercancel', up);
+  });
+  // a tap on the track: one board width toward it
+  bar.addEventListener('pointerdown', (e) => {
+    if (e.target !== bar) return;
+    const r = thumb.getBoundingClientRect();
+    boardEl.scrollBy({ left: (e.clientX < r.left ? -1 : 1) * boardEl.clientWidth * 0.9, behavior: 'smooth' });
+  });
+  boardEl.addEventListener('scroll', draw, { passive: true });
+  if (typeof ResizeObserver === 'function') {
+    const ro = new ResizeObserver(() => { if (!boardEl.isConnected && bar.dataset.seen) { ro.disconnect(); return; } bar.dataset.seen = '1'; draw(); });
+    ro.observe(boardEl);
+    ro.observe(bar);
+    new MutationObserver(() => draw()).observe(boardEl, { childList: true, subtree: true });
+  }
+  requestAnimationFrame(draw);
+  return bar;
 }
 
 // ------------------------------------------------------------------ threads on the board (0.27.0)
