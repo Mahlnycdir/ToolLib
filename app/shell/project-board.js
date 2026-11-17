@@ -19,7 +19,7 @@ import {
   removeFromProject, removeLink, removeSection, saveCalc, saveProjectNotes, sectionsOf, setDue, setFocus, setPinned, setRead,
   setWidgets, updateSection, widgetsOf, SECTION_COLOURS, focusProject, projectNodes, nextUp,
   addProjectBlock, saveProjectBlock, saveProjectBlockContent, removeProjectWidget,
-  sectionTree, depthOfSection, setSectionParent, setProjectSizes, projectSnapshot, restoreProjectWidget,
+  sectionTree, depthOfSection, setSectionParent, setProjectLayout, projectSnapshot, restoreProjectWidget,
 } from '../services/projects.js';
 import { newBlockId } from '../services/widget-store.js';
 import { widgetGrid } from './widget-frame.js';
@@ -458,15 +458,14 @@ function widgetsArea(p, members, ctx) {
     scope: path,
     list,
     sizes: p.size || {},
+    col: p.col || {},
     arranging: arrangingIn.has(path),
     onArrange: (on) => { if (on) arrangingIn.add(path); else arrangingIn.delete(path); draw(); },
     tray: t('tray.project'),
     render: (id) => projectWidgetView(id, p, ctx, members),
-    save: async ({ list: next, sizes }) => {
-      let ok = false;
-      if (next.join() !== list.join()) ok = await setWidgets(path, next) || ok;
-      if (JSON.stringify(sizes) !== JSON.stringify(p.size || {})) ok = await setProjectSizes(path, sizes) || ok;
-      after(ok);
+    save: async ({ list: next, sizes, col }) => {
+      const same = next.join() === list.join() && JSON.stringify(sizes) === JSON.stringify(p.size || {}) && JSON.stringify(col || {}) === JSON.stringify(p.col || {});
+      if (!same) after(await setProjectLayout(path, { list: next, sizes, col: col || {} }));
     },
     remove: async (id) => {
       const snap = projectSnapshot(p, id);

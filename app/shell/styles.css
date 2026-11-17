@@ -3134,7 +3134,7 @@ html.calm .lf-here { animation: none; }
 /* ================================================================== 0.33.1: the phone calmer, the conversation as a half sheet */
 .widgets.sized > .widget { min-width: 0; }
 .widgets.sized > .widget > * { min-width: 0; max-width: 100%; }
-.widgets.one-col > .widget, .widgets.one-col > .widget.wide { grid-column: 1 / -1 !important; grid-row: auto !important; min-height: 0 !important; }
+.widgets.one-col > .widget, .widgets.one-col > .widget.wide { grid-column: 1 / -1 !important; min-height: 0 !important; }
 .widgets.one-col > .widget-add { grid-column: 1 / -1; }
 .widget.bare .small-card { border: 0; background: transparent; padding: 0; box-shadow: none; }
 .small-card .btn-row { flex-wrap: wrap; }
@@ -3163,10 +3163,17 @@ html.calm .lf-here { animation: none; }
 }
 /* stacked like stones (0.33.1): rows of 4 px, each widget spans what its content needs (widget-frame.js pack) */
 .widgets.sized.stacked, .start-board .widgets.sized.stacked { grid-auto-rows: 4px; row-gap: 0 !important; align-items: start; }
-.widgets.stacked > .widget, .widgets.stacked > .widget-add { grid-row-start: auto !important; align-self: start !important; }
+.widgets.stacked > .widget, .widgets.stacked > .widget-add { align-self: start !important; }
 .widgets.stacked > .widget.s-1x2, .widgets.stacked > .widget.s-2x2 { min-height: 380px; }
 .widgets.stacked > .widget.bare.s-1x2 > :not(.widget-head):not(.widget-x):not(.widget-size), .widgets.stacked > .widget.bare.s-2x2 > :not(.widget-head):not(.widget-x):not(.widget-size) { min-height: 380px; }
 
 /* 0.33.2: the language Loom listens in, beside the microphone */
 .talk-lang { flex: none; align-self: center; min-width: 34px; height: 30px; padding: 0 8px; border-radius: 15px; border: 1px solid var(--light-line); background: transparent; color: color-mix(in srgb, var(--light) 75%, var(--fg)); font: inherit; font-size: 12px; font-weight: 600; line-height: 1; letter-spacing: 0.04em; cursor: pointer; }
 .talk-lang:hover { background: var(--light-soft); }
+
+/* 0.33.2/0.33.3: laying a widget anywhere (widget-frame.js layout, freeDrag): every widget has its column and its
+   rows of 4 px; while you carry one, it floats under the pointer and a light field shows where it lands */
+.widgets.stacked { position: relative; }
+.widgets.stacked > .widget.lifted { z-index: 40; animation: none !important; transition: none !important; cursor: grabbing; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--light-line); will-change: transform; }
+.widget-ghost { align-self: start; pointer-events: none; border-radius: 18px; border: 2px dashed var(--light); background: color-mix(in srgb, var(--light) 10%, transparent); box-shadow: 0 0 22px color-mix(in srgb, var(--light) 28%, transparent); z-index: 0; }
+.widgets.one-col > .widget-ghost { grid-column: 1 / -1 !important; }

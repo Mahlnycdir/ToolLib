@@ -29,7 +29,7 @@ import { capture, inbox } from '../services/notes.js';
 import { trail } from '../services/trail.js';
 import { newBlockId } from '../services/widget-store.js';
 import {
-  DEFAULT_START, DEFAULT_THEMES, START_WIDGETS, addStartBlock, cachedStart, loadStart, onStartChange, removeStartWidget, restoreStartWidget, saveStartBlock, saveStartContent, setPult, setStartSizes,
+  DEFAULT_START, DEFAULT_THEMES, START_WIDGETS, addStartBlock, cachedStart, loadStart, onStartChange, removeStartWidget, restoreStartWidget, saveStartBlock, saveStartContent, setPult, setStartLayout,
   setStartThemes, setStartWidgets, startSnapshot,
 } from '../services/start-store.js';
 import { problemBox } from './problem-ui.js';
@@ -186,6 +186,7 @@ function startGrid(s, { go, ready, arranging, onArrange }) {
     scope: 'start',
     list: s.widgets,
     sizes: s.size || {},
+    col: s.col || {},
     arranging,
     onArrange,
     tray: t('tray.title'),
@@ -200,9 +201,9 @@ function startGrid(s, { go, ready, arranging, onArrange }) {
       const body = OWN[id]?.({ go, ready, s });
       return body && { kind: id === 'pult' ? 'pult' : `start-${id}`, title: t(`start.widget.${id}`), icon: ICON[id], body, bare: BARE.has(id) };
     },
-    save: async ({ list, sizes }) => {
-      if (list.join() !== s.widgets.join()) await setStartWidgets(list);
-      if (JSON.stringify(sizes) !== JSON.stringify(s.size || {})) await setStartSizes(sizes);
+    save: async ({ list, sizes, col }) => {
+      const same = list.join() === s.widgets.join() && JSON.stringify(sizes) === JSON.stringify(s.size || {}) && JSON.stringify(col || {}) === JSON.stringify(s.col || {});
+      if (!same) await setStartLayout({ list, sizes, col: col || {} });
     },
     remove: async (id) => {
       const snap = startSnapshot(s, id);

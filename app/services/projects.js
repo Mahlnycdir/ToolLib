@@ -218,6 +218,7 @@ function boardParts(meta, text) {
     widgets: meta.widgets == null ? null : widgetList(meta.widgets, WIDGETS),
     wide: wideList(meta.wide),   // 0.28.0: widgets two columns wide
     size: sizeMapOf(meta),       // 0.33.0: sizes of the widgets (1×1 left out; `wide` read as 2×1)
+    col: colMapOf(meta),         // 0.33.2: their columns on a board of four, `col: {"steps": 2}`
     blocks: blocksOf(meta, text, meta.widgets == null ? [] : widgetList(meta.widgets, WIDGETS)),   // building blocks (widget-store.js)
     read: asList(meta.read),
     pins: asList(meta.pins),
@@ -237,6 +238,16 @@ function sizeMapOf(meta) {
   if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { raw = null; } }
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) for (const [id, v] of Object.entries(raw)) if (/^[a-z0-9]{2,16}$/.test(id) && SIZE_NAMES.includes(v)) out[id] = v;
   for (const id of Object.keys(out)) if (out[id] === '1x1') delete out[id];
+  return out;
+}
+function colMapOf(meta) {
+  let raw = meta.col;
+  if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { raw = null; } }
+  return cleanCol(raw);
+}
+function cleanCol(raw) {
+  const out = {};
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) for (const [id, x] of Object.entries(raw)) if (/^[a-z0-9]{2,16}$/.test(id) && Number.isInteger(x) && x >= 0 && x <= 3) out[id] = x;
   return out;
 }
 export const sectionsOf = (p) => (p.sections?.length ? p.sections : DEFAULT_SECTIONS.map((s) => ({ ...s })));
@@ -370,18 +381,26 @@ export const setProjectWide = (path, wide) => setProjectSizes(path, Object.fromE
 // 0.33.0: sizes like on Heute, one line `size: {"steps": "2x1"}`; the older `wide` goes on the first save
 export const setProjectSizes = (path, sizes) => changeProject(path, (text) => removeField(setField(text, 'size',
   JSON.stringify(Object.fromEntries(Object.entries(sizes || {}).filter(([id, v]) => /^[a-z0-9]{2,16}$/.test(id) && SIZE_NAMES.includes(v) && v !== '1x1'))), ['widgets', ...AFTER_LINKS]), 'wide'));
+// 0.33.2: order, sizes and columns in one change (after you laid a widget somewhere)
+export const setProjectLayout = (path, { list, sizes, col }) => changeProject(path, (text) => {
+  let next = setField(text, 'widgets', yamlValue(widgetList(list, WIDGETS)), AFTER_LINKS);
+  next = removeField(setField(next, 'size', JSON.stringify(Object.fromEntries(Object.entries(sizes || {}).filter(([id, v]) => /^[a-z0-9]{2,16}$/.test(id) && SIZE_NAMES.includes(v) && v !== '1x1'))), ['widgets', ...AFTER_LINKS]), 'wide');
+  const cols = cleanCol(col);
+  return Object.keys(cols).length ? setField(next, 'col', JSON.stringify(cols), ['size', 'widgets', ...AFTER_LINKS]) : removeField(next, 'col');
+});
 export const addProjectBlock = (path, id, cfg) => changeProject(path, (text, p) => setField(withConfig(text, id, cfg, ['widgets', ...AFTER_LINKS]), 'widgets', yamlValue([...widgetsOf(p), id]), AFTER_LINKS));
 export const saveProjectBlock = (path, id, cfg) => changeProject(path, (text) => withConfig(text, id, cfg, ['widgets', ...AFTER_LINKS]));
 export const saveProjectBlockContent = (path, id, body) => changeProject(path, (text) => withContent(text, id, body));
 export const removeProjectWidget = (path, id) => changeProject(path, (text, p) => {
   let next = setField(text, 'widgets', yamlValue(widgetsOf(p).filter((x) => x !== id)), AFTER_LINKS);
   if (p.size[id]) { const size = { ...p.size }; delete size[id]; next = removeField(setField(next, 'size', JSON.stringify(size), ['widgets', ...AFTER_LINKS]), 'wide'); }
+  if (p.col?.[id] != null) { const col = { ...p.col }; delete col[id]; next = Object.keys(col).length ? setField(next, 'col', JSON.stringify(col), ['size', 'widgets', ...AFTER_LINKS]) : removeField(next, 'col'); }
   return withoutBlock(next, id);
 });
 // "Undo" after taking a widget away (0.33.0): place, size and a building block's config and content come back
 export function projectSnapshot(p, id) {
   const b = p.blocks?.get(id);
-  return { id, index: widgetsOf(p).indexOf(id), size: p.size?.[id] || '', cfg: b ? cleanConfig(b) : null, content: b?.content || '' };
+  return { id, index: widgetsOf(p).indexOf(id), size: p.size?.[id] || '', col: p.col?.[id] ?? null, cfg: b ? cleanConfig(b) : null, content: b?.content || '' };
 }
 export const restoreProjectWidget = (path, snap) => changeProject(path, (text, p) => {
   const list = [...widgetsOf(p)];
@@ -389,6 +408,7 @@ export const restoreProjectWidget = (path, snap) => changeProject(path, (text, p
   list.splice(snap.index < 0 ? list.length : Math.min(snap.index, list.length), 0, snap.id);
   let next = setField(text, 'widgets', yamlValue(list), AFTER_LINKS);
   if (snap.size) next = removeField(setField(next, 'size', JSON.stringify({ ...p.size, [snap.id]: snap.size }), ['widgets', ...AFTER_LINKS]), 'wide');
+  if (snap.col != null) next = setField(next, 'col', JSON.stringify(cleanCol({ ...p.col, [snap.id]: snap.col })), ['size', 'widgets', ...AFTER_LINKS]);
   if (snap.cfg) next = withConfig(next, snap.id, snap.cfg, ['size', 'widgets', ...AFTER_LINKS]);
   if (snap.content) next = withContent(next, snap.id, snap.content);
   return next;
