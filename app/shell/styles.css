@@ -3189,3 +3189,8 @@ html.calm .lf-here { animation: none; }
 .talk-send { flex: none; width: 36px; height: 36px; border-radius: 18px; border: 1px solid var(--light-line); background: var(--light-soft); color: var(--light); display: grid; place-items: center; cursor: pointer; align-self: center; }
 .talk-send[hidden] { display: none; }
 .talk-send .ic { width: 17px; height: 17px; }
+
+/* 0.33.5: the text appears while you speak; then the field shows it and the wave steps back (the ring keeps the level) */
+.loom-talk.listening.live-text .talk-wave { display: none; }
+.loom-talk.listening.live-text .talk-in { opacity: 1; }
+.loom-talk.listening .talk-in[readonly] { cursor: default; }

@@ -82,6 +82,8 @@ export function loomSpeechCard() {
   const box = h('section', { class: 'card', id: 'settings-speech' }, h('h2', { text: t('settings.loom.speech') }),
     h('p', { class: 'muted', text: t('settings.loom.speech.hint') }),
     row(t('settings.loom.speech.lang'), t('settings.loom.speech.lang.hint'), langSeg),
+    check('loom-live', 'loom.live', t('settings.loom.speech.live'), t('settings.loom.speech.live.hint'), true),
+    check('loom-autosend', 'loom.autoSend', t('settings.loom.speech.auto'), t('settings.loom.speech.auto.hint'), true),
     row(t('settings.loom.speech.mac'), t('settings.loom.speech.mac.hint'), mac),
     row(t('settings.loom.speech.here'), t('settings.loom.speech.here.hint'), h('div', { class: 'loom-row-actions' }, here, load)),
     row(t('settings.loom.speech.waiting'), t('settings.loom.speech.waiting.hint'), h('div', { class: 'loom-row-actions' }, wait, now)));

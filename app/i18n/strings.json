@@ -2819,5 +2819,11 @@
   "settings.loom.speech.waiting.n": { "en": "{n} recording(s)", "de": "{n} Aufnahme(n)" },
   "settings.loom.speech.waiting.none": { "en": "nothing", "de": "nichts" },
   "settings.loom.speech.waiting.now": { "en": "Write down now", "de": "Jetzt abschreiben" },
-  "loom.send": { "en": "Send", "de": "Senden" }
+  "loom.send": { "en": "Send", "de": "Senden" },
+  "loom.hold": { "en": "waiting until you speak again", "de": "wartet, bis du weitersprichst" },
+  "loom.autosend.in": { "en": "sends in {n} s · tap to check first", "de": "sendet in {n} s · tippen zum Prüfen" },
+  "settings.loom.speech.live": { "en": "Show the text while I speak", "de": "Text schon beim Sprechen zeigen" },
+  "settings.loom.speech.live.hint": { "en": "Loom writes along at every pause, so you see where you are.", "de": "Loom schreibt bei jeder Pause mit, so siehst du, wo du bist." },
+  "settings.loom.speech.auto": { "en": "Send after 10 s of silence", "de": "Nach 10 s Stille senden" },
+  "settings.loom.speech.auto.hint": { "en": "Say \"warte\" and Loom waits until you speak again. A tap on the microphone ends it and lets you check the text first.", "de": "Sag „warte“, dann wartet Loom, bis du weitersprichst. Ein Tipp aufs Mikrofon beendet die Aufnahme und lässt dich den Text erst prüfen." }
 }

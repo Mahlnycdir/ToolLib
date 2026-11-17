@@ -32,7 +32,8 @@ import { typeset } from './math.js';
 import { loomMark } from './loom.js';
 import { photoButton, imageLine } from './photo.js';
 import { MODULES } from './modules.js';
-import { SPEECH_LANGS, speechLang, setSpeechLang, record, isSilent, writeDown, vocabulary, keepForMac, wavOf, drain, loadHere, learnWords, MAX_SECONDS } from '../services/speech.js';
+import { SPEECH_LANGS, speechLang, setSpeechLang, record, isSilent, writeDown, vocabulary, keepForMac, wavOf, drain, loadHere, learnWords, liveEngine, liveWriter, AUTO_SECONDS, MAX_SECONDS } from '../services/speech.js';
+import { hasHelper as hasHelperNow } from '../services/research.js';
 import { saveNote } from '../services/notes.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
@@ -392,9 +393,14 @@ export function talkPanel({ go, project = '', embedded = false, onClose = null }
 
   // ---------------- speaking: the browser's speech recognition, or the keyboard's dictation
   // Speaking (0.33.4, ENTE: "wie eine Sprachnachricht … aber nicht meine Tastatur"): a tap on the microphone
-  // records, a second tap ends it (or 5 minutes); then the Mac writes it down, or this device roughly and the Mac
-  // precisely later (services/speech.js). The keyboard never opens. While recording the wave follows your voice.
+  // records, a second tap ends it (or 5 minutes); the keyboard never opens. 0.33.5 ("Text in Echtzeit", "nach 10
+  // Sekunden Stille automatisch schicken, außer ich sage warte"): what you say appears in the field while you speak
+  // (the Mac writes along, or the model on this device); after 10 s of silence it is sent by itself, unless your last
+  // word was "warte" (then Loom waits until you speak again). A tap on the microphone instead ends it and lets you check
+  // the text first. Same in "Laut denken".
   let rec = null;
+  let live = null;
+  let base = '';
   let busy = false;
   let tick = 0;
   let hintTimer = 0;
@@ -405,7 +411,8 @@ export function talkPanel({ go, project = '', embedded = false, onClose = null }
     if (ms) hintTimer = setTimeout(() => { hint.hidden = true; }, ms);
   };
   const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
-  const micIdle = () => { mic.innerHTML = icon('mic'); mic.setAttribute('aria-pressed', 'false'); mic.title = t('loom.mic'); mic.setAttribute('aria-label', t('loom.mic')); el.classList.remove('listening'); el.style.removeProperty('--level'); };
+  const micIdle = () => { mic.innerHTML = icon('mic'); mic.setAttribute('aria-pressed', 'false'); mic.title = t('loom.mic'); mic.setAttribute('aria-label', t('loom.mic')); el.classList.remove('listening', 'live-text'); el.style.removeProperty('--level'); field.readOnly = false; };
+  const autoSend = () => loadPref('loom.autoSend', true) !== false;
   // the small model on this device: asked once before it is fetched (about 230 MB)
   const mayLoad = async () => {
     if (Date.now() - Number(loadPref('loom.speech.declined', 0)) < 24 * 3600 * 1000) return false;
@@ -416,45 +423,52 @@ export function talkPanel({ go, project = '', embedded = false, onClose = null }
       return true;
     } catch (e) { console.warn('speech model', e); showHint('loom.model.failed'); return false; }
   };
-  async function heard(pcm, seconds) {
-    if (isSilent(pcm)) { showHint('loom.mic.silent', {}, 5000); return; }
-    const lang = speechLang().slice(0, 2);
-    const at = embedded ? project : placeNow().project;
-    const prompt = vocabulary({ project: at, lang });
+  // the text is there: into the field after what stood there before; sent at once when it came by itself (auto)
+  async function landed(text, { precise, later, pcm, lang, prompt, seconds, auto }) {
+    field.value = base ? `${base} ${text}` : text;
+    const keep = later && !precise && !base;
+    pending = { text: field.value, precise, later: keep, keep: keep ? { wav: wavOf(pcm), lang, prompt, seconds } : null };
+    fitField();
+    showSend();
+    if (auto) { await send(field.value); return; }
+    if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) { field.focus({ preventScroll: true }); field.setSelectionRange(field.value.length, field.value.length); }
+    if (!precise && !later) showHint('loom.mic.roughOnly', {}, 6000);
+  }
+  // written down only now (nothing wrote along): the Mac, the device, or it waits as a voice message
+  async function heard(pcm, seconds, { lang, prompt }) {
+    if (isSilent(pcm)) { field.value = base; showSend(); showHint('loom.mic.silent', {}, 5000); return; }
     const res = await writeDown(pcm, { lang, prompt, mayLoad });
-    if (res.text) {
-      // into the field, after what may stand there already; the keyboard stays closed (on a Mac the field takes the keys)
-      const before = field.value.trim();
-      field.value = before ? `${before} ${res.text}` : res.text;
-      // the Mac makes it precise later only when the field holds just this recording
-      const keep = res.later && !res.precise && !before && !pending;
-      pending = { text: field.value, precise: res.precise && (!pending || pending.precise), later: keep, keep: keep ? { wav: wavOf(pcm), lang, prompt, seconds } : null };
-      fitField();
-      showSend();
-      if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) { field.focus({ preventScroll: true }); field.setSelectionRange(field.value.length, field.value.length); }
-      if (!res.precise && !res.later) showHint('loom.mic.roughOnly', {}, 6000);
-      return;
-    }
+    if (res.text) { await landed(res.text, { precise: res.precise, later: res.later, pcm, lang, prompt, seconds, auto: false }); return; }
+    field.value = base;
+    showSend();
     if (res.later) {
-      // nothing could write it down here: it waits for the Mac as a voice message and becomes a note then
+      const at = embedded ? project : placeNow().project;
       const msg = push({ who: 'me', text: t('loom.voice.waiting', { time: clock(seconds) }), project: at, spoken: 'waiting' });
       await keepForMac({ wav: wavOf(pcm), lang, prompt, rough: '', msg, note: '', project: at, seconds });
       return;
     }
     showHint('loom.mic.nothing');
   }
-  async function finish() {
+  async function finish({ auto = false } = {}) {
     const r = rec;
+    const lw = live;
     rec = null;
+    live = null;
     clearInterval(tick);
     micIdle();
     busy = true;
     mic.disabled = true;
     state.textContent = t('loom.writing');
+    const lang = speechLang().slice(0, 2);
+    const prompt = r.prompt;
     try {
       const seconds = r.seconds();
       const pcm = await r.stop();
-      await heard(pcm, seconds);
+      const out = lw ? await lw.finish() : null;
+      if (out && !out.broken) {
+        if (out.text) await landed(out.text, { precise: lw.engine === 'mac', later: lw.engine === 'here' && !!r.canLater, pcm, lang, prompt, seconds, auto: auto && !lw.hold });
+        else { field.value = base; showSend(); showHint('loom.mic.silent', {}, 5000); }
+      } else await heard(pcm, seconds, { lang, prompt });
     } catch (e) { console.warn('speech', e); showHint('loom.mic.failed', { error: e?.name || 'stop' }); }
     busy = false;
     mic.disabled = false;
@@ -464,28 +478,62 @@ export function talkPanel({ go, project = '', embedded = false, onClose = null }
     if (busy) return;
     if (rec) { finish(); return; }
     hint.hidden = true;
+    let r;
     try {
-      rec = await record({ onLevel: (v) => el.style.setProperty('--level', v.toFixed(2)) });
+      r = await record({ onLevel: (v) => el.style.setProperty('--level', v.toFixed(2)) });
     } catch (e) {
-      rec = null;
       showHint(e?.name === 'NotAllowedError' || e?.name === 'SecurityError' ? 'loom.mic.denied' : e?.name === 'NotSupportedError' ? 'loom.mic.none' : 'loom.mic.failed', { error: e?.name || '?' });
       return;
     }
+    rec = r;
+    base = field.value.trim();
+    field.readOnly = true;
     el.classList.add('listening');
     mic.innerHTML = icon('stop');
     mic.setAttribute('aria-pressed', 'true');
     mic.title = t('loom.mic.stop');
     mic.setAttribute('aria-label', t('loom.mic.stop'));
     state.textContent = t('loom.recording', { time: '0:00' });
+    const lang = speechLang().slice(0, 2);
+    r.prompt = vocabulary({ project: embedded ? project : placeNow().project, lang });
+    // who writes along is found out while you already speak (the recording keeps everything from the start)
+    if (loadPref('loom.live', true) !== false) {
+      liveEngine().then((engine) => {
+        if (!engine || rec !== r) return;
+        r.canLater = engine === 'here' && hasHelperNow();
+        live = liveWriter(r, { engine, lang, prompt: r.prompt, onText: ({ text }) => {
+          if (rec !== r) return;
+          field.value = base ? `${base} ${text}` : text;
+          el.classList.toggle('live-text', !!field.value);
+          fitField();
+        } });
+      }).catch(() => {});
+    }
     tick = setInterval(() => {
-      if (!rec) return;
-      const sec = rec.seconds();
-      state.textContent = t('loom.recording', { time: clock(sec) });
+      if (rec !== r) return;
+      const sec = r.seconds();
+      const quiet = r.silence();
+      if (live && live.hold) state.textContent = t('loom.hold');
+      else if (live && live.said && autoSend() && quiet >= AUTO_SECONDS - 3) state.textContent = t('loom.autosend.in', { n: Math.max(1, Math.ceil(AUTO_SECONDS - quiet)) });
+      else state.textContent = t('loom.recording', { time: clock(sec) });
+      if (live && live.said && !live.hold && !live.busy && autoSend() && quiet >= AUTO_SECONDS) { finish({ auto: true }); return; }
       if (sec >= MAX_SECONDS) finish();
     }, 250);
   });
   // Escape while recording: thrown away
-  el.addEventListener('keydown', (e) => { if (e.key === 'Escape' && rec) { e.stopPropagation(); rec.cancel(); rec = null; clearInterval(tick); micIdle(); state.textContent = t('loom.ready'); } });
+  el.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !rec) return;
+    e.stopPropagation();
+    live?.cancel();
+    rec.cancel();
+    rec = null;
+    live = null;
+    clearInterval(tick);
+    micIdle();
+    field.value = base;
+    showSend();
+    state.textContent = t('loom.ready');
+  });
   redraw();
   return el;
 }

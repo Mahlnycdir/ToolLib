@@ -37,7 +37,10 @@ export function speechLang() {
 export const setSpeechLang = (v) => { if (SPEECH_LANGS.includes(v)) savePref('loom.speechLang', v); };
 
 // ------------------------------------------------------------------ recording
-// → { seconds(), stop() → Float32Array (16 kHz mono), cancel() }. onLevel(0…1) about ten times a second (the wave).
+// → { seconds(), stop() → Float32Array (16 kHz mono), cancel(), and for writing along while you speak (0.33.5):
+//     rate, samples(), silence() (seconds since your voice was last heard), voiced(from, to), slice(from, to) }.
+// onLevel(0…1) about ten times a second (the wave). Your voice is told from silence by its loudness against the
+// quietest the room has been (like a simple noise gate).
 export async function record({ onLevel } = {}) {
   if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error('no microphone'), { name: 'NotSupportedError' });
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
@@ -46,13 +49,26 @@ export async function record({ onLevel } = {}) {
   try { await ctx.resume(); } catch { /* already running */ }
   const src = ctx.createMediaStreamSource(stream);
   const proc = ctx.createScriptProcessor(4096, 1, 1);
-  const chunks = [];
+  const rate = ctx.sampleRate;
+  const chunks = [];   // [start, Float32Array]
+  const spans = [];    // [from, to]: where your voice was heard
   let n = 0;
+  let floor = null;
+  let lastVoice = -1;
   proc.onaudioprocess = (e) => {
     const d = e.inputBuffer.getChannelData(0);
-    chunks.push(new Float32Array(d));
+    chunks.push([n, new Float32Array(d)]);
+    let s = 0;
+    for (let i = 0; i < d.length; i += 4) s += d[i] * d[i];
+    const rms = Math.sqrt(s / (d.length / 4));
+    floor = floor == null ? rms : rms < floor ? rms : floor * 0.995 + rms * 0.005;
+    if (rms > Math.max(0.012, floor * 3)) {
+      const last = spans[spans.length - 1];
+      if (last && last[1] >= n) last[1] = n + d.length; else spans.push([n, n + d.length]);
+      lastVoice = n + d.length;
+    }
     n += d.length;
-    if (onLevel) { let s = 0; for (let i = 0; i < d.length; i += 8) s += d[i] * d[i]; onLevel(Math.min(1, Math.sqrt(s / (d.length / 8)) * 5)); }
+    if (onLevel) onLevel(Math.min(1, rms * 5));
   };
   src.connect(proc);
   proc.connect(ctx.destination);   // the processor only runs when it leads somewhere; it writes silence
@@ -65,16 +81,23 @@ export async function record({ onLevel } = {}) {
     for (const tr of stream.getTracks()) tr.stop();
     try { ctx.close(); } catch { /* gone */ }
   };
+  const copy = (from, to) => {
+    const out = new Float32Array(Math.max(0, to - from));
+    for (const [at, c] of chunks) {
+      if (at + c.length <= from || at >= to) continue;
+      const a = Math.max(from, at); const b = Math.min(to, at + c.length);
+      out.set(c.subarray(a - at, b - at), a - from);
+    }
+    return out;
+  };
   return {
+    rate,
     seconds: () => (Date.now() - started) / 1000,
-    async stop() {
-      const rate = ctx.sampleRate;
-      close();
-      const all = new Float32Array(n);
-      let at = 0;
-      for (const c of chunks) { all.set(c, at); at += c.length; }
-      return resample(all, rate);
-    },
+    samples: () => n,
+    silence: () => (n - Math.max(0, lastVoice)) / rate,
+    voiced: (from, to = n) => spans.some(([a, b]) => b > from && a < to),
+    slice: (from, to = n) => resample(copy(from, to), rate),
+    async stop() { close(); return resample(copy(0, n), rate); },
     cancel: close,
   };
 }
@@ -309,6 +332,78 @@ export async function writeDown(pcm, { lang = speechLang().slice(0, 2), prompt =
     try { return { text: clean(await onHere(pcm, { lang })), precise: false, later: canLater }; } catch (e) { console.warn('speech: here', e); }
   }
   return { text: '', precise: false, later: canLater };
+}
+
+// ------------------------------------------------------------------ writing along while you speak (0.33.5)
+// ENTE: "Text in Echtzeit, dann sieht man, wo man ist". The recording is cut where you pause (0.7 s); each piece is
+// written down once you paused (final) and, while you still speak, every second or so as it stands (shown, then
+// replaced). Each piece gets your words and the end of what you said before as a hint, so the pieces join up.
+// "warte" at the end of a piece holds: the text keeps it out, and nothing is sent until you speak again.
+// For Python readers: a small loop (every 0.3 s) over a growing buffer, one request at a time.
+export const AUTO_SECONDS = 10;
+const WAIT_WORD = { de: /(^|[\s,.;:!?…–-])warte(\s+mal)?[\s.,!?…]*$/i, en: /(^|[\s,.;:!?…–-])(wait|hold on)[\s.,!?…]*$/i };
+export function waitWord(text, lang = 'de') {
+  const m = String(text || '').match(WAIT_WORD[lang] || WAIT_WORD.de);
+  if (!m) return { text: String(text || ''), hold: false };
+  return { text: text.slice(0, m.index + m[1].length).replace(/[\s,;:–-]+$/, '').trim(), hold: true };
+}
+// which engine writes along: 'mac', 'here' or '' (none: the recording is written down when it ends)
+export async function liveEngine() {
+  if ((await macState()).ok) return 'mac';
+  const hs = await hereState();
+  return hs.cached || hs.ready ? 'here' : '';
+}
+export function liveWriter(rec, { engine, lang = speechLang().slice(0, 2), prompt = '', onText = () => {} }) {
+  const R = rec.rate;
+  const run = engine === 'mac' ? onMac : onHere;
+  const finals = [];
+  let seg = 0;
+  let interim = '';
+  let busy = false;
+  let broken = false;
+  let hold = false;
+  let lastInterim = 0;
+  const hint = () => { const tail = finals.join(' ').slice(-240); return (tail ? `${prompt}${prompt ? '. ' : ''}${tail}` : prompt).slice(-800); };
+  const show = () => onText({ text: [...finals, interim].filter(Boolean).join(' '), hold });
+  const write = async (from, to) => clean(await run(await rec.slice(from, to), { lang, prompt: hint() }));
+  async function finalize(cut) {
+    const from = seg;
+    seg = cut;
+    if (!rec.voiced(from, cut) || cut - from < R * 0.3) { interim = ''; show(); return; }
+    const w = waitWord(await write(from, cut), lang);
+    if (w.hold) hold = true; else if (w.text) hold = false;
+    if (w.text) finals.push(w.text);
+    interim = '';
+    show();
+  }
+  async function step() {
+    if (busy || broken) return;
+    busy = true;
+    try {
+      const now = rec.samples();
+      const quiet = rec.silence();
+      const open = (now - seg) / R;
+      const voiced = rec.voiced(seg, now);
+      if (voiced && (quiet >= 0.7 || open >= 25)) await finalize(quiet >= 0.7 ? Math.max(seg, now - Math.floor((quiet - 0.25) * R)) : now);
+      else if (voiced && open >= 1 && Date.now() - lastInterim > 1100) { lastInterim = Date.now(); interim = (await write(seg, now)).replace(WAIT_WORD[lang] || WAIT_WORD.de, '$1').trim(); show(); }
+      else if (!voiced && open > 2) seg = now - Math.floor(0.3 * R);
+    } catch (e) { console.warn('speech: live', e); broken = true; } finally { busy = false; }
+  }
+  const timer = setInterval(step, 300);
+  return {
+    engine,
+    get hold() { return hold; },
+    get said() { return finals.length > 0; },
+    get busy() { return busy; },
+    get broken() { return broken; },
+    async finish() {
+      clearInterval(timer);
+      while (busy) await new Promise((r) => setTimeout(r, 40));
+      if (!broken) { try { await finalize(rec.samples()); } catch (e) { console.warn('speech: live end', e); broken = true; } }
+      return { text: finals.join(' '), broken };
+    },
+    cancel() { clearInterval(timer); broken = true; },
+  };
 }
 
 // ------------------------------------------------------------------ recordings that wait for the Mac
