@@ -93,6 +93,15 @@ export function pathSection(node, { go }) {
       h('span', { class: 'meter' }, h('span', { style: { width: `${d.steps.length ? Math.round((done / d.steps.length) * 100) : 0}%` } })),
       h('span', { class: 'small', text: done === d.steps.length && done ? t('path.finished') : t('path.progress', { done, n: d.steps.length }) }),
       left && done < d.steps.length ? h('span', { class: 'muted small', text: t('path.left', { min: left }) }) : null));
+    // 0.33.0 (Loom): the way as a trail, like the rabbit hole of a project; the step you are at in the light
+    const trail = h('nav', { class: 'path-trail lf-trail', 'aria-label': t('path.trail') });
+    d.steps.forEach((s, i) => {
+      if (i) trail.append(h('span', { class: 'lf-arrow', 'aria-hidden': 'true', text: '↘' }));
+      const on = next?.id === s.id;
+      trail.append(h('button', { type: 'button', class: `lf-level s-${states[i].status}${on ? ' on' : ''}`, style: `--i:${Math.min(i, 6)}`, onclick: () => { opened.set(d.slug, s.id); draw(); box.querySelector(`[data-step="${CSS.escape(s.id)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } },
+        h('span', { class: 'lf-level-n', text: t('path.stepN', { n: i + 1 }) }), h('span', { class: 'lf-level-t', text: s.title })));
+    });
+    parts.push(trail);
     // the steps
     parts.push(h('ol', { class: 'path-steps' }, ...d.steps.map((s, i) => stepRow(s, i, states[i], states))));
     box.replaceChildren(...parts);

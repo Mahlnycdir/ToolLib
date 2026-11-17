@@ -4,7 +4,8 @@
 // Obsidian's Canvas uses, so the file can be opened there too:
 //   { "nodes": [ { "id", "type": "file" | "group", "x", "y", "width", "height", "file"?, "label"?, "color"? } ],
 //     "edges": [ { "id", "fromNode", "toNode", "color"?, "label"? } ] }
-// Only places and groups are read back. The lines are written for Obsidian's sake, but the truth about what is
+// Only places and groups are read back. Since 0.33.0 a group is a section of the project (its id is the section's);
+// a frame Loom drew around the cards by itself carries "auto": true and is not read back as a place you set. The lines are written for Obsidian's sake, but the truth about what is
 // linked stays in the knowledge (relations.js: a thread you draw is a link in the node), and the red thread stays in
 // the project (`thread:`). So a canvas can never contradict the knowledge.
 //
@@ -31,7 +32,7 @@ export async function loadCanvas(projectPath) {
     const box = { x: num(n.x), y: num(n.y), w: Math.max(80, num(n.width, 230)), h: Math.max(40, num(n.height, 110)) };
     if (n.sized === true) box.sized = true;   // a size you gave the card (0.31.0); otherwise its height follows the content
     if (n.type === 'file') out.cards.set(n.id, box);
-    else if (n.type === 'group') out.groups.push({ id: n.id, ...box, label: typeof n.label === 'string' ? n.label.slice(0, 120) : '', color: typeof n.color === 'string' ? n.color.slice(0, 9) : '' });
+    else if (n.type === 'group') out.groups.push({ id: n.id, ...box, label: typeof n.label === 'string' ? n.label.slice(0, 120) : '', color: typeof n.color === 'string' ? n.color.slice(0, 9) : '', auto: n.auto === true });
   }
   return out;
 }
@@ -43,7 +44,7 @@ export async function saveCanvas(projectPath, { cards, groups, files, edges = []
   const file = `${KNOWLEDGE}/${path}`;
   const had = await exists(file);
   const nodes = [
-    ...groups.map((g) => ({ id: g.id, type: 'group', x: num(g.x), y: num(g.y), width: num(g.w), height: num(g.h), label: g.label || '', ...(g.color ? { color: g.color } : {}) })),
+    ...groups.map((g) => ({ id: g.id, type: 'group', x: num(g.x), y: num(g.y), width: num(g.w), height: num(g.h), label: g.label || '', ...(g.color ? { color: g.color } : {}), ...(g.auto ? { auto: true } : {}) })),
     ...[...cards].filter(([slug]) => files(slug)).map(([slug, b]) => ({ id: slug, type: 'file', file: files(slug), x: num(b.x), y: num(b.y), width: num(b.w), height: num(b.h), ...(b.sized ? { sized: true } : {}) })),
   ];
   const ids = new Set(nodes.map((n) => n.id));

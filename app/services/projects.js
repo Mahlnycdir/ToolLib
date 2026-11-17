@@ -20,7 +20,7 @@ import { announce } from './channel.js';
 import { loadPref, savePref } from './prefs.js';
 import { removeCanvas } from './canvas-store.js';
 import { keepInPart, partText, setPart } from './md-parts.js';
-import { blocksOf, widgetList, wideList, withConfig, withContent, withoutBlock } from './widget-store.js';
+import { blocksOf, cleanConfig, widgetList, wideList, withConfig, withContent, withoutBlock } from './widget-store.js';
 
 const q = (v) => JSON.stringify(String(v));
 // the steps under "## Next" and their lights (0.28.0)
@@ -167,18 +167,36 @@ export const WIDGETS = ['steps', 'ahead', 'reading', 'pins', 'calc', 'timer', 'd
 export const DEFAULT_WIDGETS = ['steps', 'ahead', 'pages', 'reading', 'notes'];
 
 // "id|title|colour" → { id, title, colour }; when the sync joined two versions of one section, the later one wins.
+// 0.33.0: a section can sit inside another ("id|title|colour|parent"): a subgroup, on the board and on the canvas
+// (board and canvas share one structure of groups since 0.33.0). A parent that is missing, or a ring, is dropped.
 export function parseSections(list) {
   const out = [];
   for (const raw of asList(list)) {
-    const [id, title = '', color = ''] = String(raw).split('|');
+    const [id, title = '', color = '', parent = ''] = String(raw).split('|');
     if (!/^[a-z0-9-]{1,40}$/.test(id || '')) continue;
-    const s = { id, title: title.trim(), color: SECTION_COLOURS.includes(color) ? color : 'slate' };
+    const s = { id, title: title.trim(), color: SECTION_COLOURS.includes(color) ? color : 'slate', parent: /^[a-z0-9-]{1,40}$/.test(parent) && parent !== id ? parent : '' };
     const i = out.findIndex((x) => x.id === id);
     if (i >= 0) out[i] = s; else out.push(s);
   }
+  const ids = new Set(out.map((x) => x.id));
+  for (const x of out) {
+    if (!ids.has(x.parent)) { x.parent = ''; continue; }
+    // no rings and at most three levels
+    const seen = new Set([x.id]);
+    let up = x.parent; let depth = 1;
+    while (up) { if (seen.has(up) || depth > 2) { x.parent = ''; break; } seen.add(up); up = out.find((y) => y.id === up)?.parent || ''; depth += 1; }
+  }
   return out;
 }
-const sectionLine = (s) => `${s.id}|${String(s.title || '').replace(/\|/g, '/')}|${s.color || ''}`;
+const sectionLine = (s) => `${s.id}|${String(s.title || '').replace(/\|/g, '/')}|${s.color || ''}${s.parent ? `|${s.parent}` : ''}`;
+// The sections inside `id`, all levels down (for moving a group with everything in it).
+export function sectionTree(secs, id) {
+  const out = [];
+  const walk = (pid) => { for (const s of secs) if (s.parent === pid && !out.includes(s.id)) { out.push(s.id); walk(s.id); } };
+  walk(id);
+  return out;
+}
+export const depthOfSection = (secs, id) => { let d = 0; let s = secs.find((x) => x.id === id); while (s?.parent && d < 4) { d += 1; s = secs.find((x) => x.id === s.parent); } return d; };
 const isDate = (v) => /^\d{4}-\d\d-\d\d$/.test(String(v || ''));
 
 function boardParts(meta, text) {
@@ -199,6 +217,7 @@ function boardParts(meta, text) {
     board,
     widgets: meta.widgets == null ? null : widgetList(meta.widgets, WIDGETS),
     wide: wideList(meta.wide),   // 0.28.0: widgets two columns wide
+    size: sizeMapOf(meta),       // 0.33.0: sizes of the widgets (1×1 left out; `wide` read as 2×1)
     blocks: blocksOf(meta, text, meta.widgets == null ? [] : widgetList(meta.widgets, WIDGETS)),   // building blocks (widget-store.js)
     read: asList(meta.read),
     pins: asList(meta.pins),
@@ -209,6 +228,16 @@ function boardParts(meta, text) {
     calc: partText(text, 'Calc'),
     time,
   };
+}
+const SIZE_NAMES = ['1x1', '2x1', '1x2', '2x2'];
+function sizeMapOf(meta) {
+  const out = {};
+  for (const id of wideList(meta.wide)) out[id] = '2x1';
+  let raw = meta.size;
+  if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { raw = null; } }
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) for (const [id, v] of Object.entries(raw)) if (/^[a-z0-9]{2,16}$/.test(id) && SIZE_NAMES.includes(v)) out[id] = v;
+  for (const id of Object.keys(out)) if (out[id] === '1x1') delete out[id];
+  return out;
 }
 export const sectionsOf = (p) => (p.sections?.length ? p.sections : DEFAULT_SECTIONS.map((s) => ({ ...s })));
 export const widgetsOf = (p) => (p.widgets == null ? DEFAULT_WIDGETS : p.widgets);
@@ -276,15 +305,31 @@ const freeId = (title, taken) => {
   const base = slugify(String(title)).slice(0, 30) || 'section';
   for (let n = 1; ; n++) { const id = n === 1 ? base : `${base}-${n}`; if (!taken.includes(id)) return id; }
 };
-export async function addSection(path, title, color = 'slate') {
+export async function addSection(path, title, color = 'slate', parent = '') {
   let id = '';
   await changeProject(path, (text, p) => {
     const secs = sectionsOf(p);
     id = freeId(title, secs.map((s) => s.id));
-    return writeSections(text, [...secs, { id, title: String(title).trim(), color }]);
+    const s = { id, title: String(title).trim(), color, parent: secs.some((x) => x.id === parent) ? parent : '' };
+    // a subgroup comes right after the last section inside its parent
+    if (s.parent) {
+      const inside = [s.parent, ...sectionTree(secs, s.parent)];
+      const at = Math.max(...inside.map((x) => secs.findIndex((y) => y.id === x))) + 1;
+      return writeSections(text, [...secs.slice(0, at), s, ...secs.slice(at)]);
+    }
+    return writeSections(text, [...secs, s]);
   });
   return id;
 }
+// A section into another (a subgroup) or out to the top (parent ''); never into itself or one of its own.
+export const setSectionParent = (path, id, parent) => changeProject(path, (text, p) => {
+  const secs = sectionsOf(p);
+  const s = secs.find((x) => x.id === id);
+  if (!s || (parent && (parent === id || sectionTree(secs, id).includes(parent) || !secs.some((x) => x.id === parent)))) return null;
+  if ((s.parent || '') === (parent || '')) return null;
+  s.parent = parent || '';
+  return writeSections(text, secs);
+});
 export const updateSection = (path, id, change) => changeProject(path, (text, p) => {
   const secs = sectionsOf(p);
   const s = secs.find((x) => x.id === id);
@@ -293,35 +338,60 @@ export const updateSection = (path, id, change) => changeProject(path, (text, p)
   if (change.color && SECTION_COLOURS.includes(change.color)) s.color = change.color;
   return writeSections(text, secs);
 });
-// A section goes; its cards go back to the section of their kind. The last section stays.
+// A section goes; its cards go back to the section of their kind. The last section stays. Its subgroups move up
+// to its parent (0.33.0).
 export const removeSection = (path, id) => changeProject(path, (text, p) => {
   const secs = sectionsOf(p);
-  if (secs.length < 2 || !secs.some((s) => s.id === id)) return null;
-  return removeField(writeSections(text, secs.filter((s) => s.id !== id)), `board_${id}`);
+  const gone = secs.find((s) => s.id === id);
+  if (secs.length < 2 || !gone) return null;
+  const rest = secs.filter((s) => s.id !== id).map((s) => (s.parent === id ? { ...s, parent: gone.parent || '' } : s));
+  return removeField(writeSections(text, rest), `board_${id}`);
 });
+// A section to the place before index `before` (as the sections stand); its subgroups go along (0.33.0).
 export const moveSectionTo = (path, id, before) => changeProject(path, (text, p) => {
   const secs = sectionsOf(p);
   const from = secs.findIndex((s) => s.id === id);
   if (from < 0) return null;
-  let at = before < 0 || before > secs.length ? secs.length : before;
-  if (at === from || at === from + 1) return null;
-  const [s] = secs.splice(from, 1);
-  if (at > from) at -= 1;
-  secs.splice(at, 0, s);
-  return writeSections(text, secs);
+  const block = new Set([id, ...sectionTree(secs, id)]);
+  const anchor = before < 0 || before >= secs.length ? null : secs[before];
+  if (anchor && block.has(anchor.id)) return null;
+  const moving = secs.filter((s) => block.has(s.id));
+  const rest = secs.filter((s) => !block.has(s.id));
+  const at = anchor ? rest.indexOf(anchor) : rest.length;
+  const next = [...rest.slice(0, at), ...moving, ...rest.slice(at)];
+  if (next.every((s, i) => s === secs[i])) return null;
+  return writeSections(text, next);
 });
 
 // ------------------------------------------------------------------ widgets and their data
 export const setWidgets = (path, list) => changeProject(path, (text) => setField(text, 'widgets', yamlValue(widgetList(list, WIDGETS)), AFTER_LINKS));
 // 0.28.0: wide widgets and building blocks (widget-store.js) in a project, like on Start
-export const setProjectWide = (path, wide) => changeProject(path, (text) => setField(text, 'wide', yamlValue(wideList(wide)), ['widgets', ...AFTER_LINKS]));
+export const setProjectWide = (path, wide) => setProjectSizes(path, Object.fromEntries(wideList(wide).map((id) => [id, '2x1'])));
+// 0.33.0: sizes like on Heute, one line `size: {"steps": "2x1"}`; the older `wide` goes on the first save
+export const setProjectSizes = (path, sizes) => changeProject(path, (text) => removeField(setField(text, 'size',
+  JSON.stringify(Object.fromEntries(Object.entries(sizes || {}).filter(([id, v]) => /^[a-z0-9]{2,16}$/.test(id) && SIZE_NAMES.includes(v) && v !== '1x1'))), ['widgets', ...AFTER_LINKS]), 'wide'));
 export const addProjectBlock = (path, id, cfg) => changeProject(path, (text, p) => setField(withConfig(text, id, cfg, ['widgets', ...AFTER_LINKS]), 'widgets', yamlValue([...widgetsOf(p), id]), AFTER_LINKS));
 export const saveProjectBlock = (path, id, cfg) => changeProject(path, (text) => withConfig(text, id, cfg, ['widgets', ...AFTER_LINKS]));
 export const saveProjectBlockContent = (path, id, body) => changeProject(path, (text) => withContent(text, id, body));
 export const removeProjectWidget = (path, id) => changeProject(path, (text, p) => {
   let next = setField(text, 'widgets', yamlValue(widgetsOf(p).filter((x) => x !== id)), AFTER_LINKS);
-  if (p.wide.includes(id)) next = setField(next, 'wide', yamlValue(p.wide.filter((x) => x !== id)), ['widgets', ...AFTER_LINKS]);
+  if (p.size[id]) { const size = { ...p.size }; delete size[id]; next = removeField(setField(next, 'size', JSON.stringify(size), ['widgets', ...AFTER_LINKS]), 'wide'); }
   return withoutBlock(next, id);
+});
+// "Undo" after taking a widget away (0.33.0): place, size and a building block's config and content come back
+export function projectSnapshot(p, id) {
+  const b = p.blocks?.get(id);
+  return { id, index: widgetsOf(p).indexOf(id), size: p.size?.[id] || '', cfg: b ? cleanConfig(b) : null, content: b?.content || '' };
+}
+export const restoreProjectWidget = (path, snap) => changeProject(path, (text, p) => {
+  const list = [...widgetsOf(p)];
+  if (list.includes(snap.id)) return null;
+  list.splice(snap.index < 0 ? list.length : Math.min(snap.index, list.length), 0, snap.id);
+  let next = setField(text, 'widgets', yamlValue(list), AFTER_LINKS);
+  if (snap.size) next = removeField(setField(next, 'size', JSON.stringify({ ...p.size, [snap.id]: snap.size }), ['widgets', ...AFTER_LINKS]), 'wide');
+  if (snap.cfg) next = withConfig(next, snap.id, snap.cfg, ['size', 'widgets', ...AFTER_LINKS]);
+  if (snap.content) next = withContent(next, snap.id, snap.content);
+  return next;
 });
 const toggleIn = (key) => (path, slug, on) => changeProject(path, (text, p) => {
   const list = p[key];

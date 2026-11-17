@@ -12,8 +12,12 @@ import {
   STATES, addToProject, deleteProject, focusPath, loadProject, projectNodes, projects, projectsWith, setFocus, setProjectField, touchProject, stationOf,
   boardOf, parseSections, repoLabel, repoUrl,
 } from '../services/projects.js';
-import { projectBody, sectionTitle } from './project-board.js';
+import { projectBody, sectionTitle, keepView } from './project-board.js';
+import { stepsEditor } from './steps-ui.js';
+import { talkPanel } from './loom-talk.js';
+import { diveOf, onDiveChange } from '../services/dive.js';
 import { colourVar } from './colors.js';
+import { nextUp } from '../services/projects.js';
 import { capture, deleteNote, inbox, loadNote, saveNote } from '../services/notes.js';
 import { nodeHref, nodeLead, nodeTitle, typeLabel, typeTile } from './node-view.js';
 import { renderMarkdown } from './markdown.js';
@@ -26,6 +30,7 @@ import { dissolveFolder } from '../services/research-store.js';
 import { queueSearch } from './research-view.js';
 import { cardDialog } from './card-dialog.js';
 import { createCard } from '../services/reader-cards.js';
+import { connect } from '../services/relations.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 
@@ -209,7 +214,10 @@ export async function renderProject(main, path, ctx) {
     toast(t('project.deleted'), 'ok');
     go('#/m/projects');
   });
-  box.append(h('header', { class: 'project-top' }, h('div', { class: 'project-names' }, title, p.state !== 'active' ? h('span', { class: 'chip', text: stateLabel(p.state) }) : null), h('div', { class: 'project-actions' }, focus, more)));
+  // 0.33.0: this project beside the page you are on (Mac; the tab can be pulled to the right edge too)
+  const beside = h('button', { type: 'button', class: 'icon-btn project-beside', 'aria-label': t('side.open'), title: t('side.open'), html: icon('split') });
+  beside.addEventListener('click', () => window.dispatchEvent(new CustomEvent('loom:side', { detail: nodeHref(path) })));
+  box.append(h('header', { class: 'project-top' }, h('div', { class: 'project-names' }, title, p.state !== 'active' ? h('span', { class: 'chip', text: stateLabel(p.state) }) : null), h('div', { class: 'project-actions' }, focus, beside, more)));
   const goal = h('button', { type: 'button', class: `project-goal-btn${p.goal ? '' : ' muted'}`, text: p.goal || t('project.goal.add') });
   goal.addEventListener('click', async () => {
     const v = await promptDialog(t('project.goal'), { value: p.goal, placeholder: t('project.goalHint') });
@@ -219,9 +227,12 @@ export async function renderProject(main, path, ctx) {
   if (p.repo) box.append(repoRow(p.repo, go));
   if (inFocus) box.append(h('p', { class: 'focus-note small' }, iconEl('target'), h('span', { text: t('project.focus.note') })));
 
-  // the board (0.18.0): actions, widgets, sections with their cards
+  // 0.33.0 (Loom, entwurf J5): the structure on the left, the views in the middle (Fokus, Board, Leinwand, Widgets),
+  // the project, its steps and the conversation with Loom on the right
   const fields = {};
-  box.append(...projectBody(p, { path, go, redraw, fields, refocus: { set: (v) => { refocus = v; } } }));
+  const ctx2 = { path, go, redraw, fields, refocus: { set: (v) => { refocus = v; } } };
+  const center = h('section', { class: 'lp-center' }, ...projectBody(p, ctx2));
+  box.append(h('div', { class: 'lp' }, projectStructure(p, ctx2), center, projectSide(p, ctx2)));
 
   // a station tapped on a card elsewhere: go to its section; after adding a step or a note the field keeps the focus
   const want = loadPref('project.station', null);
@@ -299,17 +310,41 @@ export async function renderNote(main, path, ctx) {
     toast(t('note.filed', { title: nodeByPath(target)?.title || '' }), 'ok');
     go(nodeHref(path));
   };
-  const toCard = async () => {
-    const values = await cardDialog({ text: area.value });
+  // 0.33.0 (P35): a card from the note or from what you selected in it; the note stays, the two stay linked
+  // (the note points to the card), and the card joins the projects of the note.
+  const selected = () => {
+    const sel = window.getSelection();
+    const text = String(sel || '').trim();
+    return text && sel.anchorNode && box.contains(sel.anchorNode) ? text : '';
+  };
+  const toCard = async (from = '') => {
+    const values = await cardDialog({ text: from || selected() || area.value });
     if (!values || !d) return;
     try {
       const made = await createCard({ ...values, section: '', work: null, clipSlug: '' });
-      for (const p of inProjects) await addToProject(p.path, [made.slice(made.lastIndexOf('/') + 1).replace(/\.md$/, '')]);
-      await deleteNote(path);
-      toast(t('reader.card.made', { title: values.title }), 'ok');
-      go(nodeHref(made));
+      const slug = made.slice(made.lastIndexOf('/') + 1).replace(/\.md$/, '');
+      for (const p of inProjects) await addToProject(p.path, [slug]);
+      await connect(d.slug, slug).catch(() => false);
+      toast(t('note.card.made', { title: values.title }), 'ok', 6000, { label: t('note.card.open'), run: () => go(nodeHref(made)) });
+      go(nodeHref(path));
     } catch { toast(t('reader.card.failed'), 'error', 5000); }
   };
+  // a small button beside what you select in the note
+  const selBtn = h('button', { type: 'button', class: 'btn small primary note-sel-card', hidden: true }, iconEl('vars'), h('span', { text: t('note.selToCard') }));
+  selBtn.addEventListener('mousedown', (e) => e.preventDefault());
+  selBtn.addEventListener('click', () => { const text = selected(); selBtn.hidden = true; toCard(text); });
+  const onSel = () => {
+    if (!box.isConnected) { document.removeEventListener('selectionchange', onSel); return; }
+    const text = selected();
+    const sel = window.getSelection();
+    if (!text || !view.contains(sel.anchorNode)) { selBtn.hidden = true; return; }
+    const r = sel.getRangeAt(0).getBoundingClientRect();
+    const b = box.getBoundingClientRect();
+    selBtn.hidden = false;
+    selBtn.style.left = `${Math.max(0, Math.min(b.width - 160, r.left - b.left))}px`;
+    selBtn.style.top = `${r.bottom - b.top + 6}px`;
+  };
+  document.addEventListener('selectionchange', onSel);
   const remove = async () => {
     if (!(await confirmDialog(t('note.delete'), t('note.delete.confirm'), { okLabel: t('note.delete'), danger: true }))) return;
     await deleteNote(path);
@@ -317,12 +352,104 @@ export async function renderNote(main, path, ctx) {
     if (history.length > 1) history.back(); else go('#/home');
   };
   const btn = (key, iconName, fn, cls = '') => h('button', { type: 'button', class: `btn small ${cls}`, onclick: fn }, iconEl(iconName), h('span', { text: t(key) }));
-  box.append(view, host, h('div', { class: 'btn-row note-actions' }, edit, saved),
+  box.append(view, selBtn, host, h('div', { class: 'btn-row note-actions' }, edit, saved),
     h('h2', { text: t('note.then') }),
     h('div', { class: 'btn-row note-next' },
       btn('note.toProject', 'target', file, 'note-file'),
-      btn('note.toCard', 'vars', toCard, 'note-card'),
+      btn('note.toCard', 'vars', () => toCard(), 'note-card'),
       btn('note.toSnippet', 'code', () => newSnippet({ go, code: area.value, title: n.title }), 'note-snippet'),
       btn('note.toSearch', 'search', () => { queueSearch(n.title || area.value.slice(0, 80)); go('#/m/scraper'); }, 'note-search'),
       btn('note.delete', 'trash', remove, 'note-delete')));
+}
+
+// ------------------------------------------------------------------ the project page around its views (0.33.0)
+// Left: the structure, always in sight while you dive deep (J5): the ring, the sections with their subgroups and
+// counts, and under the section you dived from the trail of the rabbit hole.
+function ringSvg(part, size = 44) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 44 44'); svg.setAttribute('width', String(size)); svg.setAttribute('height', String(size)); svg.setAttribute('class', 'loom-ring');
+  svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', t('start.focus.part', { n: Math.round(part * 100) }));
+  const R = 18; const C = 2 * Math.PI * R;
+  for (const [stroke, dash] of [['var(--line)', ''], ['var(--light)', `${(part * C).toFixed(1)} ${C.toFixed(1)}`]]) {
+    const c = document.createElementNS(NS, 'circle');
+    for (const [k, v] of Object.entries({ cx: 22, cy: 22, r: R, fill: 'none', stroke, 'stroke-width': 3.5, 'stroke-linecap': 'round', transform: 'rotate(-90 22 22)' })) c.setAttribute(k, v);
+    if (dash) c.setAttribute('stroke-dasharray', dash);
+    svg.append(c);
+  }
+  const label = document.createElementNS(NS, 'text');
+  for (const [k, v] of Object.entries({ x: 22, y: 26, 'text-anchor': 'middle', fill: 'currentColor', 'font-size': 10.5, 'font-weight': 600 })) label.setAttribute(k, v);
+  label.textContent = `${Math.round(part * 100)} %`;
+  svg.append(label);
+  return svg;
+}
+const partOf = (p) => { const all = (p.steps || []).length; return all ? (p.steps || []).filter((x) => x.done).length / all : 0; };
+const daysLeft = (p) => (p.due ? Math.ceil((new Date(`${p.due}T23:59:59`).getTime() - Date.now()) / 86400000) : null);
+
+function projectStructure(p, ctx) {
+  const { path } = ctx;
+  const lang = getLang();
+  const aside = h('aside', { class: 'lp-struct', 'aria-label': t('lp.structure', { title: p.title }) });
+  const draw = () => {
+    const secs = boardOf(p, projectNodes(p.links));
+    const d = diveOf(path);
+    const left = daysLeft(p);
+    const kids = (pid) => secs.filter((x) => (x.parent || '') === pid);
+    const total = (x) => x.items.length + kids(x.id).reduce((n, c) => n + total(c), 0);
+    const list = h('ol', { class: 'lp-secs' });
+    const row = (s, depth) => {
+      const li = h('li', { class: `lp-sec${d.from === s.id && d.trail.length ? ' here' : ''}`, style: `--d:${depth}` });
+      li.style.setProperty('--sec', colourVar(s.color));
+      const b = h('button', { type: 'button', class: 'lp-sec-btn', onclick: () => {
+        keepView(p.slug, 'board');
+        ctx.showView?.('board');
+        requestAnimationFrame(() => document.getElementById(`station-${s.id}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+      } }, h('span', { class: 'board-dot' }), h('span', { class: 'lp-sec-t', text: sectionTitle(s) }), h('span', { class: 'lp-sec-n', text: String(total(s)) }));
+      li.append(b);
+      if (d.from === s.id && d.trail.length) {
+        li.append(h('div', { class: 'lp-sub-trail' }, d.trail.map((x, i) => {
+          const n = nodeByPath(x);
+          return h('span', { class: i === d.trail.length - 1 ? 'on' : '', style: `--i:${i}`, text: `↘ ${n ? nodeTitle(n, lang) : x}` });
+        })));
+      }
+      list.append(li);
+      for (const c of kids(s.id)) row(c, depth + 1);
+    };
+    for (const s of kids('')) row(s, 0);
+    aside.replaceChildren(
+      h('span', { class: 'lp-kicker', text: t('lp.project') }),
+      h('div', { class: 'lp-struct-head' }, ringSvg(partOf(p), 40), h('div', {}, h('b', { class: 'lp-struct-title', text: p.title }),
+        h('span', { class: 'muted small', text: [`${Math.round(partOf(p) * 100)} %`, left != null ? t(left >= 0 ? 'lp.daysLeft' : 'lp.overdue', { n: Math.abs(left) }) : ''].filter(Boolean).join(' · ') }))),
+      list,
+      h('p', { class: 'lp-struct-foot muted small', text: t('lp.structure.hint') }));
+  };
+  draw();
+  const off = onDiveChange((pp) => { if (!aside.isConnected) { off(); return; } if (pp === path) draw(); });
+  return aside;
+}
+
+// Right: the project with its ring and next step ("Weiter" starts a quarter of an hour on its clock), the steps with
+// their lights, the conversation with Loom for this project ("Laut gedacht"), and the other projects.
+function projectSide(p, ctx) {
+  const { path, go } = ctx;
+  const next = nextUp(p.steps || []);
+  const left = daysLeft(p);
+  const card = h('section', { class: 'lp-card' },
+    h('div', { class: 'lp-card-head' }, ringSvg(partOf(p), 52), h('div', {}, h('h2', { text: p.title }), h('p', { class: 'muted small', text: [p.goal, left != null ? t(left >= 0 ? 'lp.daysLeft' : 'lp.overdue', { n: Math.abs(left) }) : ''].filter(Boolean).join(' · ') }))));
+  if (next) {
+    const goOn = h('button', { type: 'button', class: 'btn primary lp-go' }, iconEl('play'), h('span', { text: t('lp.go', { min: 15 }) }));
+    goOn.addEventListener('click', () => {
+      if (!loadPref('timer', null)) savePref('timer', { path, start: Date.now(), minutes: 15 });
+      toast(t('lp.go.started', { step: next.text }), 'ok', 4000);
+    });
+    card.append(h('div', { class: 'lp-next' }, h('span', { class: 'lp-next-k', text: t('lp.next') }), h('p', { class: 'lp-next-t', text: next.text }), goOn));
+  }
+  card.append(stepsEditor(p, ctx));
+  const others = projects().filter((x) => x.path !== path && x.state !== 'done').slice(0, 3);
+  const more = others.length ? h('div', { class: 'lp-others' }, others.map((x) => {
+    const a = h('a', { class: 'lp-other', href: nodeHref(x.path) }, h('span', { class: 'project-dot', 'aria-hidden': 'true' }), h('b', { text: x.title }), h('span', { class: 'muted small', text: x.steps?.next || t(`project.state.${x.state}`) }));
+    paintProject(a, x.slug);
+    return a;
+  })) : null;
+  return h('aside', { class: 'lp-side' }, card, talkPanel({ go, project: path, embedded: true }), more);
 }

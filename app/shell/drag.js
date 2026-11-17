@@ -16,10 +16,13 @@ export function dropZone(el, opts) {
   return el;
 }
 
-export function draggable(el, { data, label = '' }) {
+// when(e) (0.33.0): whether this press may start a drag at all (a widget on Heute: only by its head, or anywhere
+// while you arrange); hold(e): milliseconds a finger has to rest first (default HOLD_MS)
+export function draggable(el, { data, label = '', when = null, hold = null }) {
   el.classList.add('drag-item');
   el.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || active || e.target.closest('input, textarea, [contenteditable="true"], .no-drag')) return;
+    if (when && !when(e)) return;
     const touch = e.pointerType === 'touch' || e.pointerType === 'pen';
     const start = { x: e.clientX, y: e.clientY };
     let timer = 0;
@@ -62,7 +65,7 @@ export function draggable(el, { data, label = '' }) {
     window.addEventListener('pointercancel', up);
     window.addEventListener('touchmove', noScroll, { passive: false });
     window.addEventListener('keydown', key, true);
-    if (touch) timer = setTimeout(() => begin(start.x, start.y), HOLD_MS);
+    if (touch) timer = setTimeout(() => begin(start.x, start.y), hold ?? HOLD_MS);
   });
   // no callout or text selection on a long press
   el.addEventListener('contextmenu', (e) => { if (active) e.preventDefault(); });

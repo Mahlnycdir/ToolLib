@@ -12,6 +12,7 @@ import { cardDialog } from './card-dialog.js';
 import { parseStart } from '../services/crawl.js';
 import { indexState } from '../services/search.js';
 import { nodeHref } from './node-view.js';
+import { photoButton, imageLine } from './photo.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 
@@ -19,7 +20,9 @@ const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(
 export function noteDialog({ text = '', title = t('create.note'), target = '' } = {}) {
   const area = h('textarea', { class: 'field note-text', rows: '5', placeholder: t('note.placeholder'), 'aria-label': t('note.placeholder') });
   area.value = text;
-  const body = h('div', { class: 'form' }, area, target ? h('p', { class: 'muted small', text: target }) : null);
+  // 0.33.0: a photo into the note (P33)
+  const photo = photoButton({ cls: 'small', onPath: (img) => { area.value = `${area.value.trim()}\n\n${imageLine(img)}`.trim(); area.focus(); } });
+  const body = h('div', { class: 'form' }, area, h('div', { class: 'note-dialog-foot' }, photo, target ? h('p', { class: 'muted small', text: target }) : null));
   return modal({
     title, body,
     actions: [

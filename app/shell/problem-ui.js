@@ -70,7 +70,9 @@ async function wishPath(theme = '', text = '') {
 }
 
 // ------------------------------------------------------------------ Start: the question, a small step, ideas
-export function problemBox({ go, themes = THEMES.map((x) => x.id), saveThemes }) {
+// only (0.33.0, every part a widget of its own on Heute): 'field' the question and its suggestions, 'step' one small
+// step, 'ideas' ideas by theme; without it all three as before.
+export function problemBox({ go, themes = THEMES.map((x) => x.id), saveThemes, only = '' }) {
   const lang = getLang();
   const box = h('section', { class: 'problem' });
   const input = h('input', { class: 'field problem-in', type: 'search', placeholder: t('problem.placeholder'), 'aria-label': t('problem.label'), value: st.query, enterkeyhint: 'search', autocomplete: 'off' });
@@ -83,7 +85,7 @@ export function problemBox({ go, themes = THEMES.map((x) => x.id), saveThemes })
   const show = () => {
     st.query = input.value;
     const q = input.value.trim();
-    rest.hidden = q.length >= 2;
+    if (rest.parentNode) rest.hidden = q.length >= 2;
     if (q.length < 2) { results.replaceChildren(); current = []; return; }
     current = suggest(q, { lang, limit: 8 });
     if (!current.length) {
@@ -166,7 +168,10 @@ export function problemBox({ go, themes = THEMES.map((x) => x.id), saveThemes })
     return sec;
   }
 
-  rest.append(smallCard(), ideas());
+  if (only === 'step') return smallCard();
+  if (only === 'ideas') return ideas();
+  if (only !== 'field') rest.append(smallCard(), ideas());
+  else rest.remove();
   if (st.query.trim().length >= 2) show();
   return box;
 }

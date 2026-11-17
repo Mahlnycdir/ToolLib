@@ -7,6 +7,8 @@
 // the red thread.
 // 0.28.0: the widgets sit in the same frame as on Start (widget-frame.js), can be wide, and include building blocks
 // you put together yourself (widget-blocks.js); the next steps have lights (steps-ui.js).
+// 0.33.0: four views (Fokus, Board, Leinwand, Widgets; Fokus is project-focus.js), sections with subgroups shared
+// by board and canvas, widgets arranged like on Heute.
 import { h, toast, promptDialog, confirmDialog, actionSheet, debounce, loadPref, savePref, modal, copyText, openSheet } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
@@ -16,7 +18,8 @@ import {
   WIDGETS, addLink, addSection, addTime, addToProject, boardOf, focusPath, loadProject, moveSectionTo, placeItem, projectWorks,
   removeFromProject, removeLink, removeSection, saveCalc, saveProjectNotes, sectionsOf, setDue, setFocus, setPinned, setRead,
   setWidgets, updateSection, widgetsOf, SECTION_COLOURS, focusProject, projectNodes, nextUp,
-  setProjectWide, addProjectBlock, saveProjectBlock, saveProjectBlockContent, removeProjectWidget,
+  addProjectBlock, saveProjectBlock, saveProjectBlockContent, removeProjectWidget,
+  sectionTree, depthOfSection, setSectionParent, setProjectSizes, projectSnapshot, restoreProjectWidget,
 } from '../services/projects.js';
 import { newBlockId } from '../services/widget-store.js';
 import { widgetGrid } from './widget-frame.js';
@@ -37,6 +40,8 @@ import { PALETTE, colourVar, typeColour } from './colors.js';
 import { graph, onRelationsChange } from '../services/relations.js';
 import { projectCanvas } from './project-canvas.js';
 import { aheadBody } from './problem-ui.js';
+import { focusView } from './project-focus.js';
+import { photoButton, imageLine } from './photo.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const narrow = () => window.matchMedia('(max-width: 899px)').matches;
@@ -74,30 +79,48 @@ export function projectBody(p, ctx) {
       act('create.note', 'edit', async () => { if (await newNote({ project: path })) redraw(); }),
       act('create.snippet', 'code', () => here(() => newSnippet({ go })))));
 
-  return [actions, widgetsArea(p, members, ctx), cardsArea(p, members, ctx)];
+  // 0.33.0: a photo goes into a quick note of the project (P33)
+  const photo = photoButton({ cls: 'small', onPath: async (img) => {
+    try { await capture(`${imageLine(img)}\n\n${quick.value.trim()}`.trim(), { project: path }); quick.value = ''; toast(t('note.kept'), 'ok'); redraw(); } catch { toast(t('create.failed'), 'error', 5000); }
+  } });
+  const quickRow = h('div', { class: 'project-quick' });
+  quick.before(quickRow);
+  quickRow.append(quick, photo);
+  return [actions, cardsArea(p, members, ctx)];
 }
 
-// ------------------------------------------------------------------ board or canvas (0.27.0)
-// The choice is kept per project (pref project.view: { slug: 'canvas' }); switching does not draw the page again.
-const viewOf = (slug) => (loadPref('project.view', {})[slug] === 'canvas' ? 'canvas' : 'board');
-function keepView(slug, v) {
+// ------------------------------------------------------------------ the views of a project (0.27.0, four since 0.33.0)
+// Fokus (the rabbit hole, project-focus.js), Board, Leinwand (canvas) and Widgets, switched above and kept per project
+// (pref project.view: { slug: 'board' | 'canvas' | 'widgets' }, Fokus when nothing is kept); switching does not
+// draw the page again.
+export const PROJECT_VIEWS = ['focus', 'board', 'canvas', 'widgets'];
+const VIEW_ICON = { focus: 'target', board: 'board', canvas: 'canvas', widgets: 'blocks' };
+export const viewOf = (slug) => { const v = loadPref('project.view', {})[slug]; return PROJECT_VIEWS.includes(v) ? v : 'focus'; };
+export function keepView(slug, v) {
   const all = loadPref('project.view', {});
-  if (v === 'canvas') all[slug] = v; else delete all[slug];
+  if (v !== 'focus' && PROJECT_VIEWS.includes(v)) all[slug] = v; else delete all[slug];
   savePref('project.view', Object.fromEntries(Object.entries(all).slice(-100)));
 }
 function cardsArea(p, members, ctx) {
   const holder = h('div', { class: 'project-cards' });
   const show = (v) => {
     holder.querySelector('.pc')?.cleanup?.();
+    holder.querySelector('.lf')?.cleanup?.();
     document.body.classList.remove('pc-full-open');
+    holder.dataset.view = v;
     const sw = h('div', { class: 'segmented small view-switch', role: 'group', 'aria-label': t('project.view') },
-      ...[['board', 'board'], ['canvas', 'canvas']].map(([id, ic]) => {
-        const b = h('button', { type: 'button', class: v === id ? 'on' : '', 'aria-pressed': String(v === id), dataset: { view: id } }, iconEl(ic), h('span', { text: t(`project.view.${id}`) }));
+      ...PROJECT_VIEWS.map((id) => {
+        const b = h('button', { type: 'button', class: v === id ? 'on' : '', 'aria-pressed': String(v === id), dataset: { view: id } }, iconEl(VIEW_ICON[id]), h('span', { text: t(`project.view.${id}`) }));
         b.addEventListener('click', () => { if (id === v) return; keepView(p.slug, id); show(id); holder.querySelector(id === 'canvas' ? '.pc' : '.board')?.focus?.({ preventScroll: true }); });
         return b;
       }));
-    holder.replaceChildren(v === 'canvas' ? canvasArea(p, ctx, sw) : board(p, members, ctx, sw));
+    const top = (title) => h('div', { class: 'board-top' }, h('h2', { class: 'board-h' }, h('span', { text: title })), sw);
+    if (v === 'canvas') holder.replaceChildren(canvasArea(p, ctx, sw));
+    else if (v === 'board') holder.replaceChildren(board(p, members, ctx, sw));
+    else if (v === 'widgets') holder.replaceChildren(h('section', { class: 'board-wrap widgets-wrap' }, top(t('project.view.widgets')), widgetsArea(p, members, ctx)));
+    else holder.replaceChildren(focusView(p, { ...ctx, members, sw, show }));
   };
+  ctx.showView = show;
   show(viewOf(p.slug));
   return holder;
 }
@@ -107,48 +130,64 @@ function canvasArea(p, ctx, sw) {
 }
 
 // ------------------------------------------------------------------ the board
+// 0.33.0: board and canvas share one structure of groups (the sections of the project). A section can hold
+// subgroups (up to three levels); they sit inside its column, move with it, and take cards like any section. Drag a
+// section by its head onto another head: it takes that place; onto the body of another: it becomes its subgroup.
 function board(p, members, ctx, sw = null) {
   const { path, redraw } = ctx;
   const lang = getLang();
   const secs = boardOf(p, members);
   const collapsed = new Set(loadPref('board.collapsed', []));
   const wrap = h('div', { class: 'board', role: 'list', 'aria-label': t('board.title') });
-  secs.forEach((s, si) => {
-    const col = h('section', { class: `board-col station station-${s.id}${collapsed.has(`${p.slug}:${s.id}`) ? ' collapsed' : ''}`, id: `station-${s.id}`, dataset: { sec: s.id }, role: 'listitem' });
-    paintSection(col, s.color);
+  const kids = (pid) => secs.filter((x) => (x.parent || '') === pid);
+  const total = (x) => x.items.length + kids(x.id).reduce((n, c) => n + total(c), 0);
+  const inTree = (id, other) => other === id || sectionTree(secs, id).includes(other);
+  const after = (id) => Math.max(...[id, ...sectionTree(secs, id)].map((x) => secs.findIndex((y) => y.id === x))) + 1;
+  function sectionEl(sec, depth) {
+    const key = `${p.slug}:${sec.id}`;
+    const col = h('section', { class: `${depth ? 'board-sub' : 'board-col station'} station-${sec.id}${collapsed.has(key) ? ' collapsed' : ''}`, id: `station-${sec.id}`, dataset: { sec: sec.id, depth: String(depth) }, role: depth ? null : 'listitem' });
+    paintSection(col, sec.color);
     const menu = h('button', { type: 'button', class: 'icon-btn board-menu no-drag', 'aria-label': t('board.section.menu'), title: t('board.section.menu'), html: icon('more') });
-    menu.addEventListener('click', () => sectionMenu(p, s, si, secs.length, ctx));
+    menu.addEventListener('click', () => sectionMenu(p, sec, secs, ctx));
     const fold = h('button', { type: 'button', class: 'board-title', 'aria-expanded': String(!col.classList.contains('collapsed')) },
-      h('span', { class: 'board-dot' }), h('span', { class: 'board-name', text: sectionTitle(s) }), h('span', { class: 'count', text: String(s.items.length) }));
+      h('span', { class: 'board-dot' }), h('span', { class: 'board-name', text: sectionTitle(sec) }), h('span', { class: 'count', text: String(total(sec)) }));
     fold.addEventListener('click', () => {
-      const key = `${p.slug}:${s.id}`;
       if (collapsed.has(key)) collapsed.delete(key); else collapsed.add(key);
       savePref('board.collapsed', [...collapsed].slice(-200));
       col.classList.toggle('collapsed');
       fold.setAttribute('aria-expanded', String(!col.classList.contains('collapsed')));
     });
     const head = h('header', { class: 'board-head' }, fold, menu);
-    draggable(head, { data: { kind: 'section', id: s.id, project: path }, label: sectionTitle(s) });
-    // A section dropped on another takes its place (0.19.0): from the right it goes in front, from the left behind it.
-    const takePlace = (x) => (secs.findIndex((y) => y.id === x.id) > si ? 'before' : 'after');
-    const moveHere = async (x, place) => { if (await moveSectionTo(path, x.id, place === 'before' ? si : si + 1)) redraw(); };
+    draggable(head, { data: { kind: 'section', id: sec.id, project: path }, label: sectionTitle(sec) });
+    // A section dropped on another head takes its place (0.19.0): from the right it goes in front, from the left behind
+    // it; from another group it moves into this one's group (0.33.0).
+    const takePlace = (x) => (secs.findIndex((y) => y.id === x.id) > secs.indexOf(sec) ? 'before' : 'after');
     dropZone(head, {
-      accept: (x) => (x.kind === 'section' && x.project === path && x.id !== s.id) || (x.kind === 'card' && x.project === path),
+      accept: (x) => (x.kind === 'section' && x.project === path && !inTree(x.id, sec.id)) || (x.kind === 'card' && x.project === path),
       place: (x) => (x.kind === 'card' ? 'into' : takePlace(x)),
       drop: async (x, place) => {
-        if (x.kind === 'card') { if (await placeItem(path, x.slug, s.id, -1)) redraw(); return; }
-        await moveHere(x, place);
+        if (x.kind === 'card') { if (await placeItem(path, x.slug, sec.id, -1)) redraw(); return; }
+        let changed = await setSectionParent(path, x.id, sec.parent || '');
+        changed = (await moveSectionTo(path, x.id, place === 'before' ? secs.indexOf(sec) : after(sec.id))) || changed;
+        if (changed) redraw();
       },
     });
-    dropZone(col, { accept: (x) => x.kind === 'section' && x.project === path && x.id !== s.id, place: takePlace, drop: moveHere });
-    const list = h('ul', { class: 'board-cards members' }, ...s.items.map((n, k) => cardRow(n, k, s, p, ctx, lang)));
-    if (!s.items.length) list.append(h('li', { class: 'board-empty muted small', text: t('board.empty') }));
-    dropZone(list, { accept: (x) => x.kind === 'card' && x.project === path, place: () => 'into', drop: async (x) => { if (await placeItem(path, x.slug, s.id, -1)) redraw(); } });
+    const list = h('ul', { class: 'board-cards members' }, ...sec.items.map((n, k) => cardRow(n, k, sec, p, ctx, lang)));
+    if (!sec.items.length && !kids(sec.id).length) list.append(h('li', { class: 'board-empty muted small', text: t('board.empty') }));
+    dropZone(list, { accept: (x) => x.kind === 'card' && x.project === path, place: () => 'into', drop: async (x) => { if (await placeItem(path, x.slug, sec.id, -1)) redraw(); } });
     const add = h('button', { type: 'button', class: 'btn small board-add' }, iconEl('plus'), h('span', { text: t('board.add') }));
-    add.addEventListener('click', () => addToSection(p, s, ctx));
-    col.append(head, h('div', { class: 'board-body' }, list, add));
-    wrap.append(col);
-  });
+    add.addEventListener('click', () => addToSection(p, sec, ctx));
+    const body = h('div', { class: 'board-body' }, list, ...kids(sec.id).map((c) => sectionEl(c, depth + 1)), add);
+    // a section dropped on the body of another becomes its subgroup
+    dropZone(body, {
+      accept: (x) => x.kind === 'section' && x.project === path && !inTree(x.id, sec.id) && depth < 2 && x.id !== sec.id,
+      place: () => 'into',
+      drop: async (x) => { if (await setSectionParent(path, x.id, sec.id)) { toast(t('board.sub.moved', { title: sectionTitle(sec) }), 'ok'); redraw(); } },
+    });
+    col.append(head, body);
+    return col;
+  }
+  for (const sec of kids('')) wrap.append(sectionEl(sec, 0));
   const newSec = h('button', { type: 'button', class: 'btn small board-new', id: 'board-new-section' }, iconEl('plus'), h('span', { text: t('board.section.new') }));
   newSec.addEventListener('click', async () => {
     const v = await promptDialog(t('board.section.new'), { label: t('board.section.name'), validate: (x) => (x.trim() ? '' : t('project.needTitle')) });
@@ -310,17 +349,28 @@ function cardRow(n, index, s, p, ctx, lang) {
   return li;
 }
 
-async function sectionMenu(p, s, si, count, ctx) {
+async function sectionMenu(p, s, secs, ctx) {
   const { path, redraw } = ctx;
+  const sibs = secs.filter((x) => (x.parent || '') === (s.parent || ''));
+  const si = sibs.indexOf(s);
+  const depth = depthOfSection(secs, s.id);
+  const own = new Set([s.id, ...sectionTree(secs, s.id)]);
+  const homes = secs.filter((x) => !own.has(x.id) && x.id !== s.parent && depthOfSection(secs, x.id) < 2);
   const pick = await actionSheet(sectionTitle(s), [
     { label: t('board.section.rename'), value: 'rename', icon: 'edit' },
     { label: t('board.section.colour'), value: 'colour', icon: 'palette' },
     ...(si > 1 ? [{ label: t('board.section.first'), value: 'first', icon: 'arrowLeft' }] : []),
     { label: t('board.section.left'), value: 'left', icon: 'arrowLeft', disabled: si === 0 },
-    { label: t('board.section.right'), value: 'right', icon: 'arrowRight', disabled: si === count - 1 },
+    { label: t('board.section.right'), value: 'right', icon: 'arrowRight', disabled: si === sibs.length - 1 },
     '-',
-    { label: t('board.section.delete'), value: 'delete', icon: 'trash', danger: true, disabled: count < 2 },
+    ...(depth < 2 ? [{ label: t('board.sub.new'), value: 'sub', icon: 'plus' }] : []),
+    ...(homes.length ? [{ label: t('board.sub.into'), value: 'into', icon: 'blocks' }] : []),
+    ...(s.parent ? [{ label: t('board.sub.out'), value: 'out', icon: 'arrowUp' }] : []),
+    '-',
+    { label: t('board.section.delete'), value: 'delete', icon: 'trash', danger: true, disabled: secs.length < 2 },
   ]);
+  const idx = (id) => secs.findIndex((x) => x.id === id);
+  const afterTree = (id) => Math.max(...[id, ...sectionTree(secs, id)].map(idx)) + 1;
   if (pick === 'rename') {
     const v = await promptDialog(t('board.section.rename'), { value: sectionTitle(s), validate: (x) => (x.trim() ? '' : t('project.needTitle')) });
     if (v == null || v.trim() === sectionTitle(s)) return;
@@ -330,9 +380,18 @@ async function sectionMenu(p, s, si, count, ctx) {
     const c = await actionSheet(t('board.section.colour'), SECTION_COLOURS.map((id) => ({ label: t(`colour.${id}`), value: id, icon: 'dot', color: COLOUR_HEX[id] })));
     if (c && await updateSection(path, s.id, { color: c })) redraw();
   } else if (pick === 'first') {
-    if (await moveSectionTo(path, s.id, 0)) redraw();
+    if (await moveSectionTo(path, s.id, idx(sibs[0].id))) redraw();
   } else if (pick === 'left' || pick === 'right') {
-    if (await moveSectionTo(path, s.id, pick === 'left' ? si - 1 : si + 2)) redraw();
+    if (await moveSectionTo(path, s.id, pick === 'left' ? idx(sibs[si - 1].id) : afterTree(sibs[si + 1].id))) redraw();
+  } else if (pick === 'sub') {
+    const v = await promptDialog(t('board.sub.new'), { label: t('board.section.name'), validate: (x) => (x.trim() ? '' : t('project.needTitle')) });
+    if (v && await addSection(path, v, s.color, s.id)) redraw();
+  } else if (pick === 'into') {
+    const to = await actionSheet(t('board.sub.into'), homes.map((x) => ({ label: sectionTitle(x), value: x.id, icon: 'dot', color: COLOUR_HEX[x.color] })));
+    if (to && await setSectionParent(path, s.id, to)) redraw();
+  } else if (pick === 'out') {
+    const up = secs.find((x) => x.id === s.parent);
+    if (await setSectionParent(path, s.id, up?.parent || '')) redraw();
   } else if (pick === 'delete') {
     if (!(await confirmDialog(t('board.section.delete'), t('board.section.delete.confirm', { title: sectionTitle(s), n: s.items.length }), { okLabel: t('board.section.delete'), danger: true }))) return;
     if (await removeSection(path, s.id)) redraw();
@@ -388,22 +447,32 @@ function knowledgePicker(p, ctx, section = null) {
 // ------------------------------------------------------------------ widgets
 // The project's widgets in the shared frame (widget-frame.js): the ones Toollib brings (WIDGET_BODY below) and
 // building blocks you put together (widget-blocks.js), kept in the project file.
+// 0.33.0: arranged like Heute (×, corner, tray, long press); whether a project is being arranged stays while it redraws
+const arrangingIn = new Set();
 function widgetsArea(p, members, ctx) {
-  const { path, go, redraw } = ctx;
+  const { path, redraw } = ctx;
   const list = widgetsOf(p);
   const after = (ok) => { if (ok) redraw(); };
-  return widgetGrid({
+  const host = h('div', { class: 'project-widgets' });
+  const draw = () => host.replaceChildren(widgetGrid({
     scope: path,
     list,
-    wide: p.wide || [],
+    sizes: p.size || {},
+    arranging: arrangingIn.has(path),
+    onArrange: (on) => { if (on) arrangingIn.add(path); else arrangingIn.delete(path); draw(); },
+    tray: t('tray.project'),
     render: (id) => projectWidgetView(id, p, ctx, members),
-    save: async ({ list: next, wide }) => {
+    save: async ({ list: next, sizes }) => {
       let ok = false;
       if (next.join() !== list.join()) ok = await setWidgets(path, next) || ok;
-      if (wide.join() !== (p.wide || []).join()) ok = await setProjectWide(path, wide) || ok;
+      if (JSON.stringify(sizes) !== JSON.stringify(p.size || {})) ok = await setProjectSizes(path, sizes) || ok;
       after(ok);
     },
-    remove: async (id) => after(await removeProjectWidget(path, id)),
+    remove: async (id) => {
+      const snap = projectSnapshot(p, id);
+      after(await removeProjectWidget(path, id));
+      return async () => after(await restoreProjectWidget(path, snap));
+    },
     edit: async (id) => { const cfg = await editBlock(p.blocks.get(id)); if (cfg) after(await saveProjectBlock(path, id, cfg)); },
     choices: () => {
       const own = WIDGETS.filter((w) => !list.includes(w)).map((w) => ({ label: t(`widget.${w}`), value: w, icon: WIDGET_ICON[w], detail: t(`widget.${w}.hint`) }));
@@ -414,7 +483,9 @@ function widgetsArea(p, members, ctx) {
       const cfg = await editBlock({ kind: value.slice(6), title: '' });
       if (cfg) after(await addProjectBlock(path, newBlockId(), cfg));
     },
-  });
+  }));
+  draw();
+  return host;
 }
 
 // The body of one of the project's own widgets, for the control panel on Start (timer, date).

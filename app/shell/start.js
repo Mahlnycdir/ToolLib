@@ -10,9 +10,9 @@
 //   and building blocks you put together (a list from a search, a note, a checklist, links, a piece of the network,
 //   a countdown; widget-blocks.js).
 // At the bottom: the knowledge, the sync, installing.
-// 0.32.0 (Loom, "Heute"): the date and a greeting on top, the light on the project in focus (focusCard), Loom's card
-// and, on the phone, the workbench beside (start-aside); "Anordnen" makes the widgets wiggle and shows their handles
-// (moving, wide, removing as before in widget-frame.js); without it they stay calm.
+// 0.32.0 (Loom, "Heute"): the date and a greeting on top, the light on the project in focus (focusCard), Loom's card.
+// 0.33.0: everything below the head is a widget (focus, loom, problem, step, themes, bench join the others) and
+// "Anordnen" arranges them like a phone's home screen (widget-frame.js: ×, corner, tray, long press; Esc ends it).
 //
 // For Python readers: renderStart draws the fixed parts at once and the board from the last start it read (cache),
 // then reads start.md again and draws the board anew if something changed; every change to the board writes the file
@@ -24,12 +24,13 @@ import { PLANNED, READY, paintAccent } from './modules.js';
 import { indexState, nodeByPath } from '../services/search.js';
 import { isConfigured, knowledgeStats, syncState } from '../services/sync.js';
 import { isStandalone, platform } from '../services/pwa.js';
-import { focusProject, projects } from '../services/projects.js';
+import { focusProject, projects, setFocus } from '../services/projects.js';
 import { capture, inbox } from '../services/notes.js';
 import { trail } from '../services/trail.js';
 import { newBlockId } from '../services/widget-store.js';
 import {
-  DEFAULT_THEMES, START_WIDGETS, addStartBlock, cachedStart, loadStart, onStartChange, removeStartWidget, saveStartBlock, saveStartContent, setPult, setStartThemes, setStartWide, setStartWidgets,
+  DEFAULT_START, DEFAULT_THEMES, START_WIDGETS, addStartBlock, cachedStart, loadStart, onStartChange, removeStartWidget, restoreStartWidget, saveStartBlock, saveStartContent, setPult, setStartSizes,
+  setStartThemes, setStartWidgets, startSnapshot,
 } from '../services/start-store.js';
 import { problemBox } from './problem-ui.js';
 import { CREATORS } from './create.js';
@@ -40,11 +41,13 @@ import { formatTime, syncButton } from './views.js';
 import { widgetGrid } from './widget-frame.js';
 import { BLOCK_ICON, blockBody, blockChoices, blockHasContent, blockTitle, editBlock } from './widget-blocks.js';
 import { pultProjects, pultWidget } from './pult.js';
-import { benchStrip, loomVoice } from './loom.js';
+import { benchStrip, loomWidget } from './loom.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const originalOf = (copy) => copy.replace(/\.conflict-[a-z0-9-]+(\.[^./]+)?$/, '$1');
-const ICON = { pult: 'target', resume: 'history', inbox: 'inbox', projects: 'folder', tools: 'blocks' };
+const ICON = { pult: 'target', resume: 'history', inbox: 'inbox', projects: 'folder', tools: 'blocks', focus: 'target', loom: 'sparkle', problem: 'route', step: 'play', themes: 'sparkle', bench: 'edit' };
+// widgets that bring their own surface (no frame; the head shows only while you arrange)
+const BARE = new Set(['focus', 'loom', 'problem', 'step', 'themes', 'bench']);
 
 function greeting() {
   const hr = new Date().getHours();
@@ -55,7 +58,7 @@ export function renderStart(main, { go, onSync, onSetup, focusCommand }) {
   main.dataset.view = 'start';
   const ready = indexState().ready;
 
-  // ---------------------------------------------------------------- the question and the ways to answer it (fixed)
+  // ---------------------------------------------------------------- the head (fixed): the date, a greeting, arrange, create
   const verbs = h('div', { class: 'verbs', role: 'group', 'aria-label': t('create.title') });
   verbs.append(h('button', { type: 'button', class: 'verb verb-search', onclick: focusCommand }, iconEl('search'), h('span', { text: t('start.search') })));
   for (const c of CREATORS.filter((x) => x.start !== false)) {
@@ -65,31 +68,21 @@ export function renderStart(main, { go, onSync, onSetup, focusCommand }) {
   }
   const today = new Date().toLocaleDateString(getLang() === 'de' ? 'de-DE' : 'en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
   const arrange = h('button', { type: 'button', class: 'btn small start-arrange', 'aria-pressed': 'false' }, iconEl('blocks'), h('span', { text: t('start.arrange') }));
-  arrange.addEventListener('click', () => {
-    const on = !board.classList.contains('arranging');
+  // 0.33.0: arranging is a state of the page; the board is drawn anew with ×, corners and the tray
+  let arranging = false;
+  const setArranging = (on) => {
+    if (on === arranging) return;
+    arranging = on;
     board.classList.toggle('arranging', on);
     arrange.classList.toggle('on', on);
     arrange.setAttribute('aria-pressed', String(on));
     arrange.lastChild.textContent = t(on ? 'start.arranged' : 'start.arrange');
-  });
+    document.body.classList.toggle('arranging-now', on);
+    draw(cachedStart() || { ...DEFAULT_START, pult: null, themes: DEFAULT_THEMES, blocks: new Map(), size: DEFAULT_START.size }, true);
+  };
+  arrange.addEventListener('click', () => setArranging(!arranging));
   main.append(h('header', { class: 'start-head' },
     h('div', {}, h('p', { class: 'start-hello muted', text: today }), h('h1', { class: 'start-ask', text: greeting() })), arrange, verbs));
-  if (ready) { const f = focusCard({ go }); if (f) main.append(f); }
-  main.append(h('aside', { class: 'start-aside' }, loomVoice({ go }), h('div', { class: 'bench-card' }, benchStrip({ n: 4 }))));
-
-  // ---------------------------------------------------------------- problem first (0.30.0): suggestions, a small step, ideas
-  const problemHost = h('div', { class: 'start-problem' });
-  let themesShown = '';
-  const drawProblem = (themes) => {
-    if (!ready) return;
-    const key = themes.join();
-    if (key === themesShown && problemHost.firstChild) return;
-    if (problemHost.contains(document.activeElement)) return;   // you are typing: keep the field
-    themesShown = key;
-    problemHost.replaceChildren(problemBox({ go, themes, saveThemes: (list) => setStartThemes(list) }));
-  };
-  main.append(problemHost);
-  drawProblem(cachedStart()?.themes || DEFAULT_THEMES);
 
   if (!isConfigured() || indexState().hasKnowledge === false) {
     main.append(h('section', { class: 'card start-setup' }, h('h2', { text: t('home.knowledge.title') }),
@@ -97,25 +90,30 @@ export function renderStart(main, { go, onSync, onSetup, focusCommand }) {
       isConfigured() ? syncButton(onSync) : h('button', { type: 'button', class: 'btn primary', onclick: onSetup }, iconEl('settings'), h('span', { text: t('action.setup') }))));
   }
 
-  // ---------------------------------------------------------------- your board
+  // ---------------------------------------------------------------- your board: everything else is a widget (0.33.0)
   const board = h('div', { class: 'start-board' });
   main.append(board);
   let shown = '';
-  const draw = (s) => {
-    const key = JSON.stringify([s.widgets, s.wide, s.pult, [...s.blocks].map(([id, b]) => [id, b])]);
-    if (key === shown && board.firstChild) return;
+  function draw(s, force = false) {
+    const key = JSON.stringify([s.widgets, s.size, s.pult, s.themes, arranging, [...s.blocks].map(([id, b]) => [id, b])]);
+    if (!force && key === shown && board.firstChild) return;
     shown = key;
-    board.replaceChildren(startGrid(s, { go, ready }));
-  };
+    board.replaceChildren(startGrid(s, { go, ready, arranging, onArrange: setArranging }));
+  }
   if (cachedStart()) draw(cachedStart());
-  loadStart().then((s) => { if (board.isConnected) { draw(s); drawProblem(s.themes || DEFAULT_THEMES); } });
+  loadStart().then((s) => { if (board.isConnected) draw(s); });
   const stop = onStartChange(() => {
     if (!board.isConnected) { stop(); return; }
     // while you type in a widget the board waits, so the field keeps its text and its focus
     if (board.contains(document.activeElement) && document.activeElement.matches('input, textarea')) return;
     draw(cachedStart());
-    drawProblem(cachedStart()?.themes || DEFAULT_THEMES);
   });
+  // Escape ends arranging (when no dialog is open)
+  const esc = (e) => {
+    if (!board.isConnected) { document.removeEventListener('keydown', esc); document.body.classList.remove('arranging-now'); return; }
+    if (e.key === 'Escape' && arranging && !document.querySelector('.modal-backdrop, .sheet-backdrop')) setArranging(false);
+  };
+  document.addEventListener('keydown', esc);
 
   // ---------------------------------------------------------------- the bottom line: knowledge, sync, install
   const foot = h('footer', { class: 'start-foot muted small' });
@@ -173,12 +171,24 @@ function focusCard({ go }) {
     h('span', { class: 'loom-go', text: t('start.focus.go') }));
 }
 
+// No project in focus: the light waits for one.
+function noFocus({ go }) {
+  const list = projects().filter((p) => p.state === 'active').slice(0, 4);
+  return h('section', { class: 'loom-focus none' },
+    h('span', { class: 'loom-focus-text' }, h('span', { class: 'loom-focus-kicker', text: t('start.focus.none') }),
+      h('span', { class: 'loom-focus-sub', text: t('start.focus.noneHint') }),
+      list.length ? h('span', { class: 'loom-chips' }, list.map((p) => h('button', { type: 'button', class: 'loom-chip', text: p.title, onclick: () => { setFocus(p.path); go(nodeHref(p.path)); } }))) : null));
+}
+
 // The widgets of Start in the shared frame.
-function startGrid(s, { go, ready }) {
+function startGrid(s, { go, ready, arranging, onArrange }) {
   return widgetGrid({
     scope: 'start',
     list: s.widgets,
-    wide: s.wide,
+    sizes: s.size || {},
+    arranging,
+    onArrange,
+    tray: t('tray.title'),
     render: (id) => {
       const block = s.blocks.get(id);
       if (block) {
@@ -186,13 +196,17 @@ function startGrid(s, { go, ready }) {
         return body && { kind: `block-${block.kind}`, title: blockTitle(block), icon: BLOCK_ICON[block.kind], body, editable: true, hasContent: blockHasContent(block) };
       }
       const body = OWN[id]?.({ go, ready, s });
-      return body && { kind: id === 'pult' ? 'pult' : `start-${id}`, title: t(`start.widget.${id}`), icon: ICON[id], body };
+      return body && { kind: id === 'pult' ? 'pult' : `start-${id}`, title: t(`start.widget.${id}`), icon: ICON[id], body, bare: BARE.has(id) };
     },
-    save: async ({ list, wide }) => {
+    save: async ({ list, sizes }) => {
       if (list.join() !== s.widgets.join()) await setStartWidgets(list);
-      if (wide.join() !== s.wide.join()) await setStartWide(wide);
+      if (JSON.stringify(sizes) !== JSON.stringify(s.size || {})) await setStartSizes(sizes);
     },
-    remove: (id) => removeStartWidget(id),
+    remove: async (id) => {
+      const snap = startSnapshot(s, id);
+      await removeStartWidget(id);
+      return () => restoreStartWidget(snap);
+    },
     edit: async (id) => { const cfg = await editBlock(s.blocks.get(id)); if (cfg) await saveStartBlock(id, cfg); },
     choices: () => {
       const own = START_WIDGETS.filter((w) => !s.widgets.includes(w)).map((w) => ({ label: t(`start.widget.${w}`), value: w, icon: ICON[w], detail: t(`start.widget.${w}.hint`) }));
@@ -208,6 +222,14 @@ function startGrid(s, { go, ready }) {
 
 // ------------------------------------------------------------------ the widgets Start brings
 const OWN = {
+  // 0.33.0: the pieces that stood fixed on Heute until 0.32
+  focus: ({ go, ready }) => (ready ? focusCard({ go }) || noFocus({ go }) : null),
+  loom: ({ go }) => loomWidget({ go }),
+  problem: ({ go, ready, s }) => (ready ? problemBox({ go, themes: s.themes || DEFAULT_THEMES, saveThemes: (list) => setStartThemes(list), only: 'field' }) : null),
+  step: ({ go, ready, s }) => (ready ? problemBox({ go, themes: s.themes || DEFAULT_THEMES, only: 'step' }) : null),
+  themes: ({ go, ready, s }) => (ready ? problemBox({ go, themes: s.themes || DEFAULT_THEMES, saveThemes: (list) => setStartThemes(list), only: 'ideas' }) : null),
+  bench: () => h('div', { class: 'bench-card' }, benchStrip({ n: 6 })),
+
   // the control panel
   pult: ({ go, s }) => pultWidget({ go, pult: s.pult, savePult: setPult }),
 

@@ -24,6 +24,7 @@ export const ACTIONS = [
   { id: 'project.drawer', area: 'global', keys: ['Alt+B'] },
   { id: 'node.link', area: 'global', keys: ['Alt+L'] },          // 0.25.0: link the node on screen with another
   { id: 'theme.toggle', area: 'global', keys: ['Alt+D'] },       // 0.25.0: light ↔ dark
+  { id: 'loom.talk', area: 'global', keys: ['Alt+T'] },          // 0.33.0: talk with Loom
   { id: 'jump', area: 'global', keys: ['Alt+1…9'], fixed: true },
   { id: 'cmd.note', area: 'cmd', keys: ['Mod+Enter'] },
   { id: 'cmd.copy', area: 'cmd', keys: ['Shift+Enter'] },

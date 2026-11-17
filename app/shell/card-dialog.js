@@ -4,6 +4,7 @@ import { h, loadPref, modal, savePref, toast } from '../services/ui.js';
 import { getLang, t } from '../i18n/i18n.js';
 import { CARD_KINDS, createCard, guessKind, guessLang, guessTitle, knownTopics } from '../services/reader-cards.js';
 import { keepWork } from '../services/research-store.js';
+import { photoButton, imageLine } from './photo.js';
 
 // opts: { text, section, kind, workTitle, lang } → { kind, title, topic, text, lang } or null
 export async function cardDialog({ text = '', section = '', kind = '', workTitle = '', lang = '' } = {}) {
@@ -21,7 +22,10 @@ export async function cardDialog({ text = '', section = '', kind = '', workTitle
   const form = h('div', { class: 'rd-card-form' },
     row('reader.card.type', sel), row('reader.card.title', title), row('reader.card.topic', topic),
     h('datalist', { id: 'rd-topics' }, ...topics.slice(0, 40).map((x) => h('option', { value: x }))),
-    row('reader.card.text', body), row('reader.card.lang', langSel),
+    row('reader.card.text', body),
+    // 0.33.0: a photo (a board, a sketch, a page) goes into the card's text
+    h('div', { class: 'rd-card-photo' }, photoButton({ cls: 'small', onPath: (img) => { body.value = `${body.value.trim()}\n\n${imageLine(img)}`.trim(); } }), h('span', { class: 'muted small', text: t('photo.hint') })),
+    row('reader.card.lang', langSel),
     from ? h('p', { class: 'muted small', text: from }) : null);
   return modal({
     title: t('reader.card.new'), body: form, wide: true,

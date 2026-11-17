@@ -127,3 +127,16 @@ Eine Zeile in `PAGES` (`app/shell/settings/index.js`), die Texte `settings.sec.<
 - `services/theme.js`: Waldnacht ist Voreinstellung (`appearance` fällt auf `dark`), `calm()`/`setMotion()` für „Licht atmet“ (`look.motion`); `boot-theme.js` setzt beides vor dem ersten Bild.
 - `settings/loom.js` (neu): Seite Loom mit `loom.suggest`, `loom.attach`, `loom.model` (`none`). Ein Modell später: ein Wert mehr in `LOOM_MODELS` und eine Quelle in `loomSay`.
 - `modules.js`: Akzente als `var(--c-*)`, neuer Akzent `amber` (das warme Licht) für den Rahmen. `colors.js`: PALETTE mit denselben Werten wie die Variablen.
+
+
+## 0.33.0 Loom spricht · Projekt
+
+- `app/shell/widget-frame.js`: der Rahmen kann jetzt anordnen (`arranging`, `onArrange`, `tray`): × mit Rückgängig (`remove` gibt eine Funktion zurück), Größe an der Ecke (`resizable`, rastet auf 1×1/2×1/1×2/2×2), Ziehen am ganzen Widget (`draggable` in `drag.js` hat dafür `when` und `hold`), langes Drücken (`longPress`). Spalten setzt ein ResizeObserver als `--cols`. Größen kommen als `sizes` (`sizesOf` liest auch das alte `wide`).
+- `app/services/start-store.js`: `START_WIDGETS` mit focus, loom, problem, step, themes, bench; `size:` statt `wide:`; `migrated()` legt die neuen Widgets einmal vorn dazu (Merker `loom: 1`); `startSnapshot`/`restoreStartWidget` für „Rückgängig“. `projects.js` dasselbe für Projekte (`setProjectSizes`, `projectSnapshot`, `restoreProjectWidget`).
+- `app/services/loom-mind.js`: versteht, was du sagst (`understand`: reguläre Ausdrücke je Absicht), findet Antworten in deinen Knoten (`answerFrom`: Suche, dann der beste Satz je Knoten, `near` vergleicht Wörter über Deutsch und Englisch) und Vorschläge mit Grund (`suggestions`). Kein Sprachmodell; ein Modell käme als weitere Quelle dazu (`loomModel` in settings/loom.js).
+- `app/shell/loom-talk.js`: das Gespräch (`talkPanel`, `openTalk`, `toggleTalk`), `respond` handelt je Absicht, die Spracherkennung des Browsers (`webkitSpeechRecognition`) oder das Diktat. Verlauf in `loom.talk` (Gerät).
+- `app/services/dive.js`: der Weg ins Rabbit Hole je Projekt (pref `dive`: trail, from, finds, since); `app/shell/project-focus.js` zeichnet die Ansicht Fokus.
+- `app/shell/projects-view.js`: die Projektseite mit `projectStructure` (links) und `projectSide` (rechts); `project-board.js` die vier Ansichten (`PROJECT_VIEWS`, Vorgabe Fokus), das Board mit Untergruppen (`sectionEl` rekursiv).
+- Abschnitte mit Elternteil: `"id|Titel|Farbe|parent"` (`parseSections`, `sectionTree`, `setSectionParent`; `moveSectionTo` nimmt Untergruppen mit). `project-canvas.js`: die Rahmen der Leinwand sind die Abschnitte (`rects()` rechnet sie aus den Karten und den gesetzten Rahmen `state.frames`); in der .canvas-Datei tragen von Loom gezeichnete Rahmen `"auto": true`.
+- Nebeneinander: `shell.js` `openSide` lädt die App als `index.html?side=1#…` in einem iframe (`app.side-frame`: ohne Leisten, ohne Sync).
+- `app/shell/photo.js`: ein Knopf für Fotos beim Anlegen (`saveImage` aus assets.js).

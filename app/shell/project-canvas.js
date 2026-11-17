@@ -10,7 +10,11 @@
 //   red thread "Red thread": tap the cards in the order you want (definition → formula → snippet …); they get
 //              numbers, a glowing red line joins them, the board shows the numbers, every card offers back / next.
 //              "Suggest" orders them along their derivations first (0.27.1); you change it by tapping.
-//   groups     frames with a name and a colour; dragging the name moves the cards inside along
+//   groups     0.33.0: the groups are the sections of the project, the same as on the board (one structure for both,
+//              with subgroups): every card lies in the frame of its section, the frame grows with its cards.
+//              Drop a card into another frame and it moves to that section; drag a frame by its name and its cards
+//              and subgroups move along; drop it inside another frame and it becomes a subgroup there. Groups of a
+//              canvas from before 0.33.0 become sections the first time it opens.
 //   notes      double-click the empty surface (or "Note"): what you type becomes a note of the project, right there
 //
 // Places and groups live in projects/<name>.canvas (canvas-store.js, JSON Canvas like Obsidian), the red thread in
@@ -26,7 +30,7 @@ import { t, getLang } from '../i18n/i18n.js';
 import { nodeBySlug, onNodesChange } from '../services/search.js';
 import { getNode } from '../services/nodes.js';
 import { connect, disconnect, graph, isDrawn, onRelationsChange } from '../services/relations.js';
-import { boardOf, loadProject, setThread, suggestThread } from '../services/projects.js';
+import { addSection, boardOf, depthOfSection, loadProject, placeItem, removeSection, sectionTree, sectionsOf, setSectionParent, setThread, suggestThread, updateSection } from '../services/projects.js';
 import { capture } from '../services/notes.js';
 import { loadCanvas, saveCanvas, canvasPathOf } from '../services/canvas-store.js';
 import { onAnnounce } from '../services/channel.js';
@@ -59,7 +63,9 @@ function membersOf(projectSlug) {
 export function projectCanvas(p, ctx) {
   const { path, go } = ctx;
   const lang = getLang();
-  const state = { cards: new Map(), groups: [], k: 1, tx: 40, ty: 40, thread: [...(p.thread || [])], mode: '', selected: null, hover: null, loaded: false, fitted: false, auto: false };
+  let cur = p;   // the project as it stands now (its sections change while the canvas is open)
+  const secName = (x) => x.title || (['collect', 'keep', 'apply'].includes(x.id) ? t(`station.${x.id}`) : x.id);
+  const state = { cards: new Map(), frames: new Map(), k: 1, tx: 40, ty: 40, thread: [...(p.thread || [])], mode: '', selected: null, hover: null, loaded: false, fitted: false, auto: false };
   const wrap = h('section', { class: 'pc', tabindex: '0', 'aria-label': t('canvas.title') });
   const world = h('div', { class: 'pc-world' });
   const lines = svg('svg', { class: 'pc-lines', 'aria-hidden': 'true' });
@@ -143,7 +149,7 @@ export function projectCanvas(p, ctx) {
   }
   // everything in sight, not larger than 1.2 (before the cards are known it waits: sync() calls it again)
   function fit() {
-    const boxes = [...state.cards.values(), ...state.groups];
+    const boxes = [...state.cards.values(), ...rects().values()];
     const r = wrap.getBoundingClientRect();
     if (!boxes.length || !r.width) { state.k = 1; state.tx = 40; state.ty = 70; applyView(); return; }
     const x0 = Math.min(...boxes.map((b) => b.x)); const y0 = Math.min(...boxes.map((b) => b.y));
@@ -374,19 +380,49 @@ export function projectCanvas(p, ctx) {
     for (const [slug, el] of els) { el.classList.toggle('near', !!lit && near.has(slug) && slug !== lit); el.classList.toggle('far', !!lit && !near.has(slug) && slug !== lit); }
   }
 
-  // ---------------------------------------------------------------- groups
+  // ---------------------------------------------------------------- groups = the sections (0.33.0)
+  // The frame of a section holds the boxes of its cards and of its subgroups (with room for the name above) and what
+  // you gave it yourself (moved or sized: state.frames). skip: a card left out (the one you drag), so a frame does
+  // not follow it while it moves.
+  const PAD = 22; const HEAD = 40;
+  function rects({ skip = '' } = {}) {
+    const board = boardOf(cur, membersOf(p.slug));
+    const out = new Map();
+    const order = [...board].sort((a, b) => depthOfSection(board, b.id) - depthOfSection(board, a.id));
+    for (const sec of order) {
+      const boxes = sec.items.filter((d) => d.slug !== skip).map((d) => state.cards.get(d.slug)).filter(Boolean);
+      for (const c of board) if (c.parent === sec.id && out.has(c.id)) boxes.push(out.get(c.id));
+      const own = state.frames.get(sec.id);
+      if (!boxes.length && !own) continue;
+      let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+      for (const b of boxes) { x0 = Math.min(x0, b.x - PAD); y0 = Math.min(y0, b.y - HEAD); x1 = Math.max(x1, b.x + b.w + PAD); y1 = Math.max(y1, b.y + b.h + PAD); }
+      if (own) { x0 = Math.min(x0, own.x); y0 = Math.min(y0, own.y); x1 = Math.max(x1, own.x + own.w); y1 = Math.max(y1, own.y + own.h); }
+      out.set(sec.id, { id: sec.id, x: Math.round(x0), y: Math.round(y0), w: Math.round(x1 - x0), h: Math.round(y1 - y0), sec, depth: depthOfSection(board, sec.id) });
+    }
+    return out;
+  }
+  // the deepest frame at a point of the surface, leaving out the ones in `not`
+  function frameAt(pt, all, not = new Set()) {
+    let best = null;
+    for (const r of all.values()) {
+      if (not.has(r.id)) continue;
+      // the deepest wins; among frames of one depth the smaller one (it is the more particular place)
+      if (pt.x > r.x && pt.x < r.x + r.w && pt.y > r.y && pt.y < r.y + r.h && (!best || r.depth > best.depth || (r.depth === best.depth && r.w * r.h < best.w * best.h))) best = r;
+    }
+    return best;
+  }
   // the frame lies below the cards; its name (to drag it) and its corner (to resize it) lie above them, so a card
   // placed on the edge never hides them
-  function drawGroups() {
+  function drawGroups(all = drag?.rects || rects()) {
     const frames = []; const heads = [];
-    for (const gr of state.groups) {
-      const colour = colourVar(nameOf(gr.color));
-      const frame = h('div', { class: 'pc-group', dataset: { id: gr.id } });
+    for (const gr of all.values()) {
+      const colour = colourVar(gr.sec.color);
+      const frame = h('div', { class: `pc-group${drag?.target === gr.id ? ' target' : ''}`, dataset: { id: gr.id, depth: String(gr.depth) } });
       frame.style.cssText = `transform: translate(${gr.x}px, ${gr.y}px); width: ${gr.w}px; height: ${gr.h}px;`;
       frame.style.setProperty('--g', colour);
       const menu = h('button', { type: 'button', class: 'icon-btn small pc-group-menu', 'aria-label': t('canvas.group.menu'), title: t('canvas.group.menu'), html: icon('more') });
-      menu.addEventListener('click', () => groupMenu(gr));
-      const head = h('div', { class: 'pc-group-head', dataset: { id: gr.id } }, h('span', { class: 'pc-group-label', text: gr.label || t('canvas.group.untitled') }), menu);
+      menu.addEventListener('click', () => groupMenu(gr.sec));
+      const head = h('div', { class: 'pc-group-head', dataset: { id: gr.id } }, h('span', { class: 'pc-group-label', text: secName(gr.sec) }), h('span', { class: 'pc-group-n', text: String(gr.sec.items.length) }), menu);
       head.style.cssText = `transform: translate(${gr.x}px, ${gr.y}px); max-width: ${Math.max(60, gr.w - 12)}px;`;
       head.style.setProperty('--g', colour);
       const size = h('span', { class: 'pc-group-size', dataset: { id: gr.id }, title: t('canvas.group.size') });
@@ -394,34 +430,66 @@ export function projectCanvas(p, ctx) {
       size.style.setProperty('--g', colour);
       frames.push(frame); heads.push(head, size);
     }
-    groupLayer.replaceChildren(...frames);
+    groupLayer.replaceChildren(...frames.sort((a, b) => Number(a.dataset.depth) - Number(b.dataset.depth)));
     headLayer.replaceChildren(...heads);
   }
-  async function addGroup() {
-    const label = await promptDialog(t('canvas.group'), { label: t('canvas.group.name'), placeholder: t('canvas.group.placeholder') });
-    if (label == null) return;
+  // a new group is a new section, its frame where you look
+  async function addGroup(parent = '') {
+    const label = await promptDialog(parent ? t('board.sub.new') : t('canvas.group'), { label: t('canvas.group.name'), placeholder: t('canvas.group.placeholder') });
+    if (!label || !label.trim()) return;
     const r = wrap.getBoundingClientRect();
     const c = toWorld(r.width / 2, r.height / 2);
-    const used = new Set(state.groups.map((g) => nameOf(g.color)));
-    state.groups.push({ id: `g-${Date.now().toString(36)}`, x: Math.round(c.x - 240), y: Math.round(c.y - 160), w: 480, h: 320, label: label.trim().slice(0, 120), color: hexOf(GROUP_COLOURS.find((x) => !used.has(x)) || 'slate') });
-    layout();
+    const used = new Set(sectionsOf(cur).map((x) => x.color));
+    const up = parent ? rects().get(parent) : null;
+    const id = await addSection(path, label.trim().slice(0, 120), GROUP_COLOURS.find((x) => !used.has(x)) || 'slate', parent);
+    if (!id) return;
+    state.frames.set(id, up ? { x: up.x + 30, y: up.y + up.h - 10, w: 300, h: 200 } : { x: Math.round(c.x - 200), y: Math.round(c.y - 130), w: 400, h: 260 });
+    await reloadProject();
     scheduleSave();
   }
-  async function groupMenu(gr) {
-    const pick = await actionSheet(gr.label || t('canvas.group.untitled'), [
+  async function groupMenu(sec) {
+    const board = sectionsOf(cur);
+    const pick = await actionSheet(secName(sec), [
       { label: t('canvas.group.rename'), value: 'rename', icon: 'edit' },
       ...GROUP_COLOURS.map((c) => ({ label: t(`colour.${c}`), value: `c:${c}`, icon: 'dot', color: hexOf(c) })), '-',
-      { label: t('canvas.group.delete'), value: 'delete', icon: 'trash', danger: true },
+      ...(depthOfSection(board, sec.id) < 2 ? [{ label: t('board.sub.new'), value: 'sub', icon: 'plus' }] : []),
+      ...(sec.parent ? [{ label: t('board.sub.out'), value: 'out', icon: 'arrowUp' }] : []),
+      { label: t('canvas.group.delete'), value: 'delete', icon: 'trash', danger: true, disabled: board.length < 2 },
     ]);
     if (!pick) return;
     if (pick === 'rename') {
-      const v = await promptDialog(t('canvas.group.rename'), { value: gr.label, label: t('canvas.group.name') });
-      if (v == null) return;
-      gr.label = v.trim().slice(0, 120);
-    } else if (pick === 'delete') state.groups = state.groups.filter((g) => g !== gr);
-    else if (pick.startsWith('c:')) gr.color = hexOf(pick.slice(2));
-    layout();
+      const v = await promptDialog(t('canvas.group.rename'), { value: secName(sec), label: t('canvas.group.name') });
+      if (v == null || !v.trim()) return;
+      await updateSection(path, sec.id, { title: v.trim().slice(0, 120) });
+    } else if (pick === 'sub') { await addGroup(sec.id); return; }
+    else if (pick === 'out') { const up = board.find((x) => x.id === sec.parent); await setSectionParent(path, sec.id, up?.parent || ''); }
+    else if (pick === 'delete') { if (await removeSection(path, sec.id)) state.frames.delete(sec.id); }
+    else if (pick.startsWith('c:')) await updateSection(path, sec.id, { color: pick.slice(2) });
+    await reloadProject();
     scheduleSave();
+  }
+  async function reloadProject() {
+    try { const fresh = await loadProject(path); if (fresh) { cur = fresh; state.thread = [...fresh.thread]; } } catch { /* keeps the old one */ }
+    layout();
+  }
+  // Groups from a canvas of before 0.33.0 (frames of their own) become sections, with the cards inside them.
+  async function adoptOldGroups(old) {
+    const known = new Set(sectionsOf(cur).map((x) => x.id));
+    for (const g of old) if (known.has(g.id) && !g.auto) state.frames.set(g.id, { x: g.x, y: g.y, w: g.w, h: g.h });
+    // only a canvas written before 0.33.0 (no frame of a section, none drawn by Loom) has groups of its own; a frame
+    // of a section removed elsewhere is not brought back
+    const before033 = old.length && !old.some((g) => g.auto || known.has(g.id));
+    const strange = before033 ? old : [];
+    if (!strange.length) { if (state.frames.size) layout(); return; }
+    for (const g of strange) {
+      const id = await addSection(path, (g.label || t('canvas.group.untitled')).slice(0, 120), nameOf(g.color));
+      if (!id) continue;
+      state.frames.set(id, { x: g.x, y: g.y, w: g.w, h: g.h });
+      for (const [slug, b] of state.cards) { const c = centre(b); if (c.x > g.x && c.x < g.x + g.w && c.y > g.y && c.y < g.y + g.h) await placeItem(path, slug, id, -1); }
+    }
+    await reloadProject();
+    scheduleSave();
+    toast(t(strange.length === 1 ? 'canvas.groups.adopted.one' : 'canvas.groups.adopted', { n: strange.length }), 'ok', 6000);
   }
 
   // ---------------------------------------------------------------- a note written on the canvas: a note of the project
@@ -537,15 +605,19 @@ export function projectCanvas(p, ctx) {
       rubber = { a: centre(state.cards.get(card.dataset.slug)), b: toWorld(s.x, s.y) };
     } else if (card) {
       const b = state.cards.get(card.dataset.slug);
-      drag = { mode: 'card', slug: card.dataset.slug, sx: s.x, sy: s.y, ox: b.x, oy: b.y, moved: false };
+      drag = { mode: 'card', slug: card.dataset.slug, sx: s.x, sy: s.y, ox: b.x, oy: b.y, moved: false, rects: rects({ skip: card.dataset.slug }) };
     } else if (groupSize) {
-      const gr = state.groups.find((g) => g.id === groupSize.dataset.id);
-      drag = { mode: 'size', gr, sx: s.x, sy: s.y, ow: gr.w, oh: gr.h, moved: false };
+      const r = rects().get(groupSize.dataset.id);
+      if (r) drag = { mode: 'size', id: r.id, x: r.x, y: r.y, sx: s.x, sy: s.y, ow: r.w, oh: r.h, moved: false };
     } else if (groupHead) {
-      const gr = state.groups.find((g) => g.id === groupHead.dataset.id);
-      // the cards whose middle lies inside the frame move along
-      const inside = [...state.cards.values()].filter((b) => { const c = centre(b); return c.x > gr.x && c.x < gr.x + gr.w && c.y > gr.y && c.y < gr.y + gr.h; }).map((b) => ({ b, ox: b.x, oy: b.y }));
-      drag = { mode: 'group', gr, inside, sx: s.x, sy: s.y, ox: gr.x, oy: gr.y, moved: false };
+      // the section, its subgroups, their cards and the frames you set move along
+      const id = groupHead.dataset.id;
+      const all = rects();
+      const tree = new Set([id, ...sectionTree(sectionsOf(cur), id)]);
+      const slugs = boardOf(cur, membersOf(p.slug)).filter((x) => tree.has(x.id)).flatMap((x) => x.items.map((d) => d.slug));
+      const inside = slugs.map((slug) => state.cards.get(slug)).filter(Boolean).map((b) => ({ b, ox: b.x, oy: b.y }));
+      const frames = [...tree].map((x) => [x, all.get(x)]).filter(([, r]) => r).map(([x, r]) => ({ id: x, ox: r.x, oy: r.y, w: r.w, h: r.h }));
+      drag = { mode: 'group', id, tree, inside, frames, sx: s.x, sy: s.y, moved: false };
     } else if (hit) {
       drag = { mode: 'hit', from: hit.dataset.from, to: hit.dataset.to, both: hit.dataset.both === '1', sx: s.x, sy: s.y, moved: false };
     } else {
@@ -581,10 +653,14 @@ export function projectCanvas(p, ctx) {
       const b = state.cards.get(drag.slug);
       b.x = Math.round(drag.ox + dx / state.k); b.y = Math.round(drag.oy + dy / state.k);
       els.get(drag.slug)?.classList.add('dragging');
+      drag.target = frameAt(centre(b), drag.rects)?.id || '';
       layout();
     } else if (drag.mode === 'group') {
-      drag.gr.x = Math.round(drag.ox + dx / state.k); drag.gr.y = Math.round(drag.oy + dy / state.k);
       for (const c of drag.inside) { c.b.x = Math.round(c.ox + dx / state.k); c.b.y = Math.round(c.oy + dy / state.k); }
+      for (const f of drag.frames) state.frames.set(f.id, { x: Math.round(f.ox + dx / state.k), y: Math.round(f.oy + dy / state.k), w: f.w, h: f.h });
+      const head = drag.frames.find((f) => f.id === drag.id);
+      const at = head ? { x: head.ox + dx / state.k + 20, y: head.oy + dy / state.k + 14 } : null;
+      drag.target = at ? frameAt(at, rects(), drag.tree)?.id || '' : '';
       layout();
     } else if (drag.mode === 'csize') {
       const b = state.cards.get(drag.slug);
@@ -593,7 +669,7 @@ export function projectCanvas(p, ctx) {
       b.sized = true;
       layout();
     } else if (drag.mode === 'size') {
-      drag.gr.w = Math.max(180, Math.round(drag.ow + dx / state.k)); drag.gr.h = Math.max(120, Math.round(drag.oh + dy / state.k));
+      state.frames.set(drag.id, { x: drag.x, y: drag.y, w: Math.max(180, Math.round(drag.ow + dx / state.k)), h: Math.max(120, Math.round(drag.oh + dy / state.k)) });
       drawGroups();
     } else if (drag.mode === 'link') {
       rubber.b = toWorld(s.x, s.y);
@@ -623,10 +699,32 @@ export function projectCanvas(p, ctx) {
     }
     if (d.mode === 'card') {
       els.get(d.slug)?.classList.remove('dragging');
-      if (d.moved) scheduleSave(); else tapCard(d.slug);
+      if (!d.moved) { tapCard(d.slug); return; }
+      // into another frame: the card moves to that section (on the board too)
+      const now = boardOf(cur, membersOf(p.slug)).find((x) => x.items.some((y) => y.slug === d.slug));
+      if (d.target && now && d.target !== now.id && await placeItem(path, d.slug, d.target, -1)) {
+        const to = sectionsOf(cur).find((x) => x.id === d.target);
+        toast(t('canvas.card.moved', { title: to ? secName(to) : '' }), 'ok');
+        await reloadProject();
+      } else layout();
+      scheduleSave();
       return;
     }
-    if (d.mode === 'group' || d.mode === 'size' || d.mode === 'csize') { if (d.moved) scheduleSave(); return; }
+    if (d.mode === 'group') {
+      if (!d.moved) return;
+      // dropped inside another frame: a subgroup there; outside every frame: back to the top
+      const secs = sectionsOf(cur);
+      const sec = secs.find((x) => x.id === d.id);
+      const want = d.target && depthOfSection(secs, d.target) < 2 ? d.target : '';
+      if (sec && (sec.parent || '') !== want && await setSectionParent(path, d.id, want)) {
+        const to = secs.find((x) => x.id === want);
+        toast(want ? t('board.sub.moved', { title: secName(to) }) : t('board.sub.top'), 'ok');
+        await reloadProject();
+      } else layout();
+      scheduleSave();
+      return;
+    }
+    if (d.mode === 'size' || d.mode === 'csize') { if (d.moved) scheduleSave(); return; }
     if (d.mode === 'hit' && !d.moved) { const s = local(e); threadPop(d.from, d.to, s.x, s.y, d.both); return; }
     if (d.mode === 'pan' && !d.moved && state.selected) { state.selected = null; layout(); }
   });
@@ -700,7 +798,9 @@ export function projectCanvas(p, ctx) {
     try {
       const out = edges.map((e) => ({ from: e.from, to: e.to }));
       state.thread.forEach((s, i) => { if (state.thread[i + 1]) out.push({ from: s, to: state.thread[i + 1], color: '1', label: String(i + 1) }); });
-      await saveCanvas(path, { cards: state.cards, groups: state.groups, files, edges: out });
+      // every frame goes into the file (for Obsidian); the ones you did not set are marked auto and not read back
+      const groups = [...rects().values()].map((r) => ({ id: r.id, x: r.x, y: r.y, w: r.w, h: r.h, label: secName(r.sec), color: hexOf(r.sec.color), auto: !state.frames.has(r.id) }));
+      await saveCanvas(path, { cards: state.cards, groups, files, edges: out });
     } catch (err) { console.warn('canvas save', err); toast(t('canvas.saveFailed'), 'error', 5000); }
   }, 700);
   // every save follows something you did: from then on the places are yours and stay as they are
@@ -712,10 +812,12 @@ export function projectCanvas(p, ctx) {
     try { c = await loadCanvas(path); } catch { c = { cards: new Map(), groups: [] }; }
     if (drag) return;
     state.cards = c.cards;
-    state.groups = c.groups;
+    state.frames = new Map();
+    const old = c.groups;
     state.auto = !c.found;
     state.loaded = true;
     sync();
+    adoptOldGroups(old).catch((e) => console.warn('canvas groups', e));
     if (keepView) return;
     const seen = views.get(path);
     if (seen) { Object.assign(state, seen, { fitted: true }); applyView(); } else requestAnimationFrame(() => fit());
@@ -729,7 +831,7 @@ export function projectCanvas(p, ctx) {
     // a note on the canvas was written: its text on the card follows
     for (const [slug, el] of els) { const d = nodeBySlug(slug); if (d?.type === 'note' && paths.includes(d.path)) noteText(d, el.querySelector('.pc-card-body')); }
     // the red thread changed in the project (here, on the board, in another window): take it over
-    if (paths.includes(path)) loadProject(path).then((fresh) => { if (fresh && !drag) { state.thread = [...fresh.thread]; layout(); } }).catch(() => {});
+    if (paths.includes(path)) loadProject(path).then((fresh) => { if (fresh && !drag) { cur = fresh; state.thread = [...fresh.thread]; layout(); } }).catch(() => {});
   });
   const stopWin = onAnnounce((msg) => { if (msg?.kind === 'canvas' && msg.path === canvasPathOf(path) && wrap.isConnected && !drag) load({ keepView: true }); });
   function stopAll() { stopRel(); stopNodes(); stopWin(); ro?.disconnect(); document.body.classList.remove('pc-full-open'); }

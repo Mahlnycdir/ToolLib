@@ -83,6 +83,10 @@ const P = {
   target: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/>',
   inbox: '<path d="M4 13.5 6.5 5.5h11l2.5 8v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M4 13.5h4.5a3.5 3.5 0 0 0 7 0H20"/>',
   // 0.17.0: images in pages, keyboard shortcuts, keys and addresses, writing
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',   // 0.33.0: speaking to Loom
+  camera: '<path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13.5" r="3.5"/>',   // 0.33.0: a photo when you create something
+  surface: '<path d="M12 19V6M6 11l6-6 6 6M5 3h14"/>',   // 0.33.0: up out of the rabbit hole
+  split: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M12 4.5v15"/>',   // 0.33.0: two side by side
   image: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m3.5 16.5 5-4.5 4 3.5 2.5-2 5.5 4.5"/>',
   keyboard: '<rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M9.5 10h.01M13 10h.01M16.5 10h.01M6 13.5h.01M18 13.5h.01M9 14.5h6"/>',
   key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 8.5-8.5M16.5 6.5l2.5 2.5M14 9l2 2"/>',

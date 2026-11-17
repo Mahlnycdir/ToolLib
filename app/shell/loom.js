@@ -6,6 +6,8 @@
 //   benchStrip(o)     the strip itself: a title and up to n chips; in the status line on wide screens, on Heute on the phone
 //   openTabs()        the projects shown as tabs in the bar: the one in focus and the ones you used last, at most three
 //   loomVoice(o)      Loom's card on Heute: what is open today, as a sentence and one chip per thing to start with.
+//   loomWidget(o)     0.33.0: the widget "Loom" on Heute: that card, the suggestions with their reasons and a line to
+//                     speak or type to Loom (the conversation opens beside, loom-talk.js)
 //                     No language model (decided 16.11.): the sentence is made from your projects and their next steps.
 //                     A model can be added later as one more source of what Loom says (see loomSay below).
 //
@@ -17,6 +19,10 @@ import { trail } from '../services/trail.js';
 import { nodeByPath } from '../services/search.js';
 import { focusProject, projects, setFocus } from '../services/projects.js';
 import { nodeHref, nodeTitle } from './node-view.js';
+import { icon } from '../services/icons.js';
+import { suggestions } from '../services/loom-mind.js';
+import { loomSuggest } from './settings/loom.js';
+import { openTalk, sendToLoom, suggestRow } from './loom-talk.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 
@@ -114,4 +120,24 @@ export function loomVoice({ go }) {
   return h('section', { class: 'loom-voice', 'aria-label': 'Loom' },
     h('div', { class: 'loom-voice-head' }, h('span', { text: 'Loom' }), h('span', { class: 'loom-voice-state', text: t('loom.state') })),
     h('p', { text: say.text }), say.chips.length ? chips : null);
+}
+
+// 0.33.0: the widget on Heute. Speaking opens the conversation beside (Mac) or over the page (iPhone).
+export function loomWidget({ go }) {
+  const card = loomVoice({ go });
+  const mode = loomSuggest();
+  const host = h('div', { class: 'loom-sugs' });
+  const draw = () => {
+    const dismissed = loadPref('loom.dismissed', []);
+    const list = mode === 'off' ? [] : suggestions({ max: mode === 'more' ? 3 : 1, dismissed: Array.isArray(dismissed) ? dismissed : [] });
+    host.replaceChildren(...list.map((x) => suggestRow(x, { go, redraw: draw })));
+  };
+  draw();
+  const field = h('input', { class: 'loom-ask', type: 'text', placeholder: t('loom.talk.placeholder'), 'aria-label': t('loom.talk.placeholder'), enterkeyhint: 'send' });
+  field.addEventListener('keydown', (e) => { if (e.key === 'Enter' && field.value.trim()) { e.preventDefault(); const v = field.value; field.value = ''; sendToLoom(v, { go }); } });
+  const mic = h('button', { type: 'button', class: 'talk-mic small', 'aria-label': t('loom.mic'), title: t('loom.mic'), html: icon('mic') });
+  mic.addEventListener('click', () => { const panel = openTalk({ go }); panel.querySelector('.talk-mic')?.click(); });
+  card.append(host, h('div', { class: 'loom-ask-row' }, field, mic));
+  card.querySelector('.loom-voice-state').textContent = t('loom.state.listen');
+  return card;
 }

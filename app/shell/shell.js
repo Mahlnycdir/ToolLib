@@ -30,7 +30,7 @@ import { startAutoSync } from '../services/autosync.js';
 import { parseStart, resumeInterrupted } from '../services/crawl.js';
 import { watchInbox } from '../services/pdf-inbox.js';
 import { startBackground } from '../services/background.js';
-import { savePref } from '../services/prefs.js';
+import { loadPref, savePref } from '../services/prefs.js';
 import { getNode } from '../services/nodes.js';
 import { renderStart } from './start.js';
 import { renderSource } from './source-editor.js';
@@ -42,6 +42,8 @@ import { focusProject, onFocusChange, projects, startAutoLink } from '../service
 import { capture } from '../services/notes.js';
 import { mark } from '../services/trail.js';
 import { benchStrip, loomMark, openTabs } from './loom.js';
+import { toggleTalk } from './loom-talk.js';
+import { draggable, dropZone } from './drag.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 // The view of every tool that has one. A new tool: one line here and one in MODULES (modules.js).
@@ -75,6 +77,9 @@ export function startShell(root) {
     app.classList.add('solo');
     if (!location.hash || location.hash === '#/' || location.hash === '#/home') history.replaceState(history.state, '', '#/m/scraper');
   }
+  // 0.33.0: the page beside (index.html?side=1): a second Loom in the right half, without its own bars or sync
+  const side = new URLSearchParams(location.search).has('side');
+  if (side) app.classList.add('solo', 'side-frame');
   paintAccent(document.documentElement, 'shell');
 
   // ---------------------------------------------------------------- routing
@@ -301,6 +306,32 @@ export function startShell(root) {
     queueMicrotask(() => { rendering = false; });
   }
 
+  // ---------------------------------------------------------------- side by side (0.33.0, Mac)
+  // A second page beside the first: another project or a tool, in a frame of its own (the same app on the same
+  // knowledge, so both see every change; only this window syncs). Pull a tab to the right edge, or "Daneben öffnen".
+  const sidePane = h('aside', { class: 'side-pane', hidden: true, 'aria-label': t('side.label') });
+  const sideDrop = h('div', { class: 'side-drop', 'aria-hidden': 'true' }, iconEl('split'), h('span', { text: t('side.drop') }));
+  dropZone(sideDrop, { accept: (x) => x.kind === 'tab', place: () => 'into', drop: (x) => openSide(x.hash) });
+  function openSide(hash) {
+    if (side || window.innerWidth < 1100) { go(hash); return; }
+    const src = `${location.pathname}?side=1${hash}`;
+    const frame = h('iframe', { class: 'side-frame-el', src, title: t('side.label') });
+    const close = h('button', { type: 'button', class: 'icon-btn small side-close', 'aria-label': t('side.close'), title: t('side.close'), html: icon('close'), onclick: closeSide });
+    const swap = h('button', { type: 'button', class: 'icon-btn small side-swap', 'aria-label': t('side.swap'), title: t('side.swap'), html: icon('arrowLeft'), onclick: () => { let at = hash; try { at = frame.contentWindow.location.hash || hash; } catch { /* another origin */ } closeSide(); go(at); } });
+    sidePane.replaceChildren(h('div', { class: 'side-bar' }, h('span', { class: 'muted small', text: t('side.label') }), swap, close), frame);
+    sidePane.hidden = false;
+    app.classList.add('side-open');
+    savePref('side.route', hash);
+  }
+  function closeSide() {
+    sidePane.hidden = true;
+    sidePane.replaceChildren();
+    app.classList.remove('side-open');
+    savePref('side.route', '');
+  }
+  window.addEventListener('loom:side', (e) => openSide(String(e.detail || '#/home')));
+  if (!side) app.append(sidePane, sideDrop);
+
   // A project and a note have views of their own; every other node shows in the node view. What you open is
   // remembered, so Start can offer to go on with it.
   async function renderAnyNode(path, ctx) {
@@ -397,6 +428,9 @@ export function startShell(root) {
   if (!hasKeyboard()) kbd.hidden = true;
   // "+" creates anything from anywhere; the pill names the project in focus and leads to it
   const plusBtn = h('button', { type: 'button', class: 'icon-btn plus-btn', onclick: () => openCreate() });
+  // 0.33.0: Loom, the second voice: the conversation beside the page (Alt+T); on the phone a round button above the bar
+  const talkBtn = h('button', { type: 'button', class: 'icon-btn talk-btn', onclick: () => toggleTalk({ go }) });
+  const fab = h('button', { type: 'button', class: 'loom-fab', onclick: () => toggleTalk({ go }) });
   const pill = h('button', { type: 'button', class: 'focus-pill', hidden: true });
   // 0.32.0: tabs for Heute and the projects you work on (at most three), "+" for all projects
   const tabs = h('div', { class: 'loom-tabs', role: 'tablist', 'aria-label': t('tabs.label') });
@@ -408,6 +442,8 @@ export function startShell(root) {
     for (const p of openTabs()) {
       const b = tab('project', here === p.path, p.title, () => go(nodeHref(p.path)), h('span', { class: 'project-dot', 'aria-hidden': 'true' }), h('span', { text: p.title }));
       paintProject(b, p.slug);
+      // 0.33.0: a tab pulled to the right edge opens beside the page (Mac)
+      if (!side) draggable(b, { data: { kind: 'tab', hash: nodeHref(p.path), title: p.title }, label: p.title, when: () => window.innerWidth >= 1100 });
       list.push(b);
     }
     list.push(tab('plus', route.kind === 'module' && route.mod.id === 'projects', t('tabs.all'), () => go('#/m/projects'), h('span', { text: '＋' })));
@@ -438,8 +474,14 @@ export function startShell(root) {
     keyTitle(plusBtn, t('create.title'), 'create');
     plusBtn.setAttribute('aria-label', t('create.title'));
     if (!cmd.firstChild) {
-      cmd.append(menuBtn, tabs, h('div', { class: 'cmd-field' }, iconEl('search', 'cmd-icon'), input, kbd), plusBtn, pill, results);
+      cmd.append(menuBtn, tabs, h('div', { class: 'cmd-field' }, iconEl('search', 'cmd-icon'), input, kbd), talkBtn, plusBtn, pill, results);
+      app.append(fab);
     }
+    talkBtn.replaceChildren(loomMark(18), iconEl('mic', 'talk-btn-mic'));
+    keyTitle(talkBtn, t('loom.talk'), 'loom.talk');
+    talkBtn.setAttribute('aria-label', t('loom.talk'));
+    fab.replaceChildren(loomMark(22));
+    fab.setAttribute('aria-label', t('loom.talk'));
     renderPill();
     renderTabs();
     if (app.classList.contains('cmd-open')) showResults();
@@ -675,6 +717,7 @@ export function startShell(root) {
       linkFrom(d);
     },
     'project.drawer': () => { if (document.querySelector('.modal-backdrop, .sheet-backdrop')) return false; const r = currentRoute(); openProjectDrawer({ go, current: r.kind === 'node' ? r.path : '' }); },
+    'loom.talk': () => { if (document.querySelector('.modal-backdrop, .sheet-backdrop')) return false; toggleTalk({ go }); },
   });
   document.addEventListener('keydown', (e) => {
     const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
@@ -873,8 +916,8 @@ export function startShell(root) {
     if (route.kind === 'node' && msg.paths.includes(route.path)) render();
   });
 
-  // Sync by itself (0.14.1.1): quiet, only a clash is reported
-  startAutoSync({ onDone: (r) => { if (r.conflicts.length) toast(t('sync.done.conflicts', { count: r.conflicts.length }), 'error', 6000); } });
+  // Sync by itself (0.14.1.1): quiet, only a clash is reported. The page beside (0.33.0) leaves it to this window.
+  if (!side) startAutoSync({ onDone: (r) => { if (r.conflicts.length) toast(t('sync.done.conflicts', { count: r.conflicts.length }), 'error', 6000); } });
 
   window.addEventListener('online', renderStatus);
   window.addEventListener('offline', renderStatus);
@@ -926,6 +969,9 @@ export function startShell(root) {
   buildIndex();
   refreshPending(); // changes from an earlier visit that are not uploaded yet
   // a run through a website the app was closed in (0.14.3) goes on
+  if (side) return;
+  // the page beside opened before (0.33.0) comes back
+  { const was = loadPref('side.route', ''); if (was && typeof was === 'string' && was.startsWith('#/')) openSide(was); }
   resumeInterrupted().then((title) => { if (title) toast(t('crawl.resumed', { title }), 'info', 4000); }).catch((e) => console.warn('Crawl not resumed', e));
   // the Toollib in the Mac helper (0.14.4 part 2): runs that devices hand to the Mac
   startBackground();
