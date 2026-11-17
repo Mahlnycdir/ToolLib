@@ -1,0 +1,5 @@
+# Speech → text for the Toollib Mac helper (0.33.4), only with: bash install.sh --sprache (Mac with Apple silicon)
+# Its own environment (~/.toollib-helper/speech-venv); versions at least two weeks old; pip picks what they need
+# (numpy, torch, numba, tiktoken, huggingface_hub, scipy)
+mlx==0.32.4
+mlx-whisper==0.4.3

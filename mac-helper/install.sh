@@ -4,14 +4,16 @@
 # your keychain), and a start at every login (launchd).
 #   cd ~/ToolLib/mac-helper && bash install.sh              (bash install.sh --ohne-suche: without SearXNG)
 #   bash install.sh --handschrift                            also reads handwriting as LaTeX (Kladde; once ~120 MB)
+#   bash install.sh --sprache                                also writes down what you say to Loom (Apple silicon; once ~2.5 GB)
 # Running it again updates the helper and keeps token, certificate and settings.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
-NO_SEARCH=""; INK=""
+NO_SEARCH=""; INK=""; SPEECH=""
 for a in "$@"; do
   case "$a" in
     --ohne-suche) NO_SEARCH=1 ;;
     --handschrift) INK=1 ;;
+    --sprache) SPEECH=1 ;;
   esac
 done
 DEST="${TOOLLIB_HELPER_HOME:-$HOME/.toollib-helper}"
@@ -76,6 +78,21 @@ if [ -n "$INK" ] || [ -x "$DEST/ink-venv/bin/python" ]; then
     echo "  Bereit: Kladde › ⋯ › Handschrift lesen. Der Leser startet erst bei Bedarf und endet nach fünf Minuten Ruhe."
   else
     echo "  Handschrift lesen ließ sich nicht einrichten; der Helfer läuft ohne. Später: bash install.sh --handschrift"
+  fi
+fi
+# Speech → text (Loom): its own environment with MLX and a large German Whisper, only on request (Apple silicon)
+if [ -n "$SPEECH" ] || [ -x "$DEST/speech-venv/bin/python" ]; then
+  if [ "$(uname -m)" != "arm64" ]; then
+    echo "  Sprache braucht einen Mac mit Apple-Chip (M1 oder neuer); übersprungen."
+  else
+    echo "› Sprache: eigene Umgebung (MLX) und deutsches Whisper (einmal etwa 2,5 GB, ein paar Minuten)"
+    if [ ! -x "$DEST/speech-venv/bin/python" ]; then "$PY" -m venv "$DEST/speech-venv"; fi
+    "$DEST/speech-venv/bin/python" -m pip install -q --upgrade pip
+    if "$DEST/speech-venv/bin/python" -m pip install -q -r "$HERE/requirements-speech.txt" && "$DEST/venv/bin/python" "$DEST/helper.py" speech-setup; then
+      echo "  Bereit: In Loom aufs Mikrofon tippen. Das Modell startet erst bei Bedarf und endet nach fünf Minuten Ruhe."
+    else
+      echo "  Sprache ließ sich nicht einrichten; der Helfer läuft ohne. Später: bash install.sh --sprache"
+    fi
   fi
 fi
 "$DEST/venv/bin/python" "$DEST/helper.py" setup

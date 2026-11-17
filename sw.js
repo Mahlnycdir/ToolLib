@@ -1,7 +1,7 @@
 // Service worker: keeps the whole app in a cache so Toollib starts without a network, keeps Python in a cache of
 // its own and carries input() from the Python worker to the page (the synchronous channel, from Kobra's sw.js).
 // Raise VERSION with every release; the shell then offers "Reload" for the update.
-const VERSION = '0.33.3';
+const VERSION = '0.33.4';
 const CACHE = `toollib-${VERSION}`;
 // Python (vendor/pyodide) is big and changes only with a new Pyodide version, so its cache survives app updates.
 // Keep PYODIDE equal to "pyodide" in vendor/pyodide/toollib-bundle.json.
@@ -11,6 +11,10 @@ const PY_CACHE = `toollib-python-${PYODIDE}`;
 // Keep PDFJS equal to "pdfjs-dist" in tools/build-vendor/package.json.
 const PDFJS = '6.4.299';
 const PDF_CACHE = `toollib-pdfjs-${PDFJS}`;
+// Transformers.js and ONNX Runtime (vendor/speech, 27 MB, only fetched when the iPhone writes down speech itself, 0.33.4)
+// likewise. Keep SPEECH equal to "@huggingface/transformers" in tools/build-vendor/package.json.
+const SPEECH = '4.3.2';
+const SPEECH_CACHE = `toollib-speech-${SPEECH}`;
 
 const FILES = [
   './',
@@ -96,6 +100,8 @@ const FILES = [
   './app/shell/photo.js',
   './app/services/loom-mind.js',
   './app/services/dive.js',
+  './app/services/speech.js',
+  './app/services/speech-worker.js',
   './app/shell/projects-view.js',
   './app/shell/project-board.js',
   './app/shell/project-canvas.js',
@@ -205,7 +211,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     // Only Toollib's own old caches are removed; Kobra's caches on the same domain stay untouched.
     for (const key of await caches.keys()) {
-      if (key.startsWith('toollib-') && key !== CACHE && key !== PY_CACHE && key !== PDF_CACHE) await caches.delete(key);
+      if (key.startsWith('toollib-') && key !== CACHE && key !== PY_CACHE && key !== PDF_CACHE && key !== SPEECH_CACHE) await caches.delete(key);
     }
     await self.clients.claim();
   })());
@@ -302,8 +308,9 @@ self.addEventListener('fetch', (event) => {
   }
   if (req.method !== 'GET') return;
 
-  // Python and pdf.js: from their own cache, otherwise from the server, and then into the cache.
-  const big = url.pathname.startsWith(`${scope}vendor/pyodide/`) ? PY_CACHE : url.pathname.startsWith(`${scope}vendor/pdfjs/`) ? PDF_CACHE : null;
+  // Python, pdf.js and the speech runtime: from their own cache, otherwise from the server, and then into the cache.
+  const big = url.pathname.startsWith(`${scope}vendor/pyodide/`) ? PY_CACHE : url.pathname.startsWith(`${scope}vendor/pdfjs/`) ? PDF_CACHE
+    : url.pathname.startsWith(`${scope}vendor/speech/`) ? SPEECH_CACHE : null;
   if (big) {
     event.respondWith((async () => {
       const cache = await caches.open(big);

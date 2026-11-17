@@ -9,6 +9,7 @@ import { h } from '../../services/ui.js';
 import { t } from '../../i18n/i18n.js';
 import { loadPref, savePref } from '../../services/prefs.js';
 import { card, check } from './parts.js';
+import { SPEECH_LANGS, speechLang, setSpeechLang, macState, hereState, loadHere, waiting, onWaitingChange } from '../../services/speech.js';
 
 export const LOOM_SUGGEST = ['quiet', 'more', 'off'];
 export const LOOM_MODELS = ['none'];
@@ -39,4 +40,52 @@ export function loomModelCard() {
     LOOM_MODELS.map((v) => h('option', { value: v, selected: loomModel() === v ? true : null, text: t(`settings.loom.model.${v}`) })));
   select.addEventListener('change', () => savePref('loom.model', select.value));
   return card(t('settings.loom.model'), h('p', { class: 'muted', text: t('settings.loom.model.hint') }), select);
+}
+
+// Speaking (0.33.4): who writes down what you say, the small model on this device, what waits for the Mac.
+export function loomSpeechCard() {
+  const langSeg = h('div', { class: 'segmented small', role: 'group', 'aria-label': t('settings.loom.speech.lang') });
+  const drawLang = () => {
+    const now = speechLang();
+    langSeg.replaceChildren(...SPEECH_LANGS.map((v) => h('button', { type: 'button', class: now === v ? 'on' : '', 'aria-pressed': String(now === v), dataset: { lang: v }, text: v.slice(0, 2).toUpperCase(), onclick: () => { setSpeechLang(v); drawLang(); } })));
+  };
+  drawLang();
+  const mac = h('span', { class: 'chip muted', id: 'speech-mac', text: '…' });
+  const here = h('span', { class: 'chip muted', id: 'speech-here', text: '…' });
+  const load = h('button', { type: 'button', class: 'btn small', id: 'speech-load', hidden: true, text: t('settings.loom.speech.here.load') });
+  const wait = h('span', { class: 'chip muted', id: 'speech-waiting', text: '…' });
+  const now = h('button', { type: 'button', class: 'btn small', id: 'speech-now', hidden: true, text: t('settings.loom.speech.waiting.now') });
+  const draw = async () => {
+    const m = await macState({ fresh: true });
+    mac.textContent = t(m.ok ? 'settings.loom.speech.mac.ok' : `settings.loom.speech.mac.${m.reason}`);
+    mac.classList.toggle('ok', !!m.ok);
+    const hs = await hereState();
+    here.textContent = t(hs.cached || hs.ready ? 'settings.loom.speech.here.cached' : 'settings.loom.speech.here.none');
+    load.hidden = !!(hs.cached || hs.ready);
+    const list = await waiting();
+    wait.textContent = list.length ? t('settings.loom.speech.waiting.n', { n: list.length }) : t('settings.loom.speech.waiting.none');
+    now.hidden = !list.length || !m.ok;
+  };
+  load.addEventListener('click', async () => {
+    load.disabled = true;
+    try { await loadHere((share) => { here.textContent = t('settings.loom.speech.here.loading', { n: Math.round((share || 0) * 100) }); }); } catch (e) { here.textContent = t('settings.loom.speech.here.failed'); console.warn(e); }
+    load.disabled = false;
+    draw();
+  });
+  now.addEventListener('click', async () => {
+    now.disabled = true;
+    const { writeWaiting } = await import('../loom-talk.js');
+    await writeWaiting().catch(() => 0);
+    now.disabled = false;
+    draw();
+  });
+  const box = h('section', { class: 'card', id: 'settings-speech' }, h('h2', { text: t('settings.loom.speech') }),
+    h('p', { class: 'muted', text: t('settings.loom.speech.hint') }),
+    row(t('settings.loom.speech.lang'), t('settings.loom.speech.lang.hint'), langSeg),
+    row(t('settings.loom.speech.mac'), t('settings.loom.speech.mac.hint'), mac),
+    row(t('settings.loom.speech.here'), t('settings.loom.speech.here.hint'), h('div', { class: 'loom-row-actions' }, here, load)),
+    row(t('settings.loom.speech.waiting'), t('settings.loom.speech.waiting.hint'), h('div', { class: 'loom-row-actions' }, wait, now)));
+  const off = onWaitingChange(() => { if (box.isConnected) draw(); else off(); });
+  draw();
+  return box;
 }

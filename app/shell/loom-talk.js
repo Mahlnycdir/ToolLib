@@ -16,7 +16,7 @@
 // The conversation is kept on this device (pref loom.talk, the last 60 lines); nothing leaves the device.
 // For Python readers: respond() is a dispatcher (like a dict of handlers keyed by intent); every handler returns the
 // message Loom answers with, which is stored and drawn.
-import { h, toast, actionSheet, loadPref, savePref } from '../services/ui.js';
+import { h, toast, actionSheet, loadPref, savePref, confirmDialog } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
 import { nodeByPath, searchNodes } from '../services/search.js';
@@ -32,23 +32,14 @@ import { typeset } from './math.js';
 import { loomMark } from './loom.js';
 import { photoButton, imageLine } from './photo.js';
 import { MODULES } from './modules.js';
+import { SPEECH_LANGS, speechLang, setSpeechLang, record, isSilent, writeDown, vocabulary, keepForMac, wavOf, drain, loadHere, learnWords, MAX_SECONDS } from '../services/speech.js';
+import { saveNote } from '../services/notes.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const KEY = 'loom.talk';
 const slugOf = (path) => path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '');
-const SR = () => window.SpeechRecognition || window.webkitSpeechRecognition || null;
-// The language Loom listens in (0.33.2): its own, not the language of the surface. ENTE reads Loom in English and
-// speaks German; an English recognizer then got every second word wrong. First the pref, then the languages of the
-// device (German if it has German at all), then the surface.
-export const SPEECH_LANGS = ['de-DE', 'en-US'];
-export function speechLang() {
-  const v = loadPref('loom.speechLang', '');
-  if (SPEECH_LANGS.includes(v)) return v;
-  const device = (navigator.languages?.length ? navigator.languages : [navigator.language || '']).map((x) => String(x).toLowerCase());
-  if (device.some((x) => x.startsWith('de'))) return 'de-DE';
-  if (device.some((x) => x.startsWith('en'))) return 'en-US';
-  return getLang() === 'de' ? 'de-DE' : 'en-US';
-}
+// the language Loom listens in, recording and writing down: services/speech.js (0.33.4)
+export { SPEECH_LANGS, speechLang } from '../services/speech.js';
 
 // ------------------------------------------------------------------ where you are (the project and the card deep in it)
 let placeHint = { project: '', at: 0 };
@@ -66,10 +57,55 @@ function placeNow() {
 const history = () => { const v = loadPref(KEY, []); return Array.isArray(v) ? v : []; };
 const panels = new Set();
 function push(msg) {
-  const all = [...history(), { id: `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, at: Date.now(), ...msg }].slice(-60);
+  const id = `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+  const all = [...history(), { id, at: Date.now(), ...msg }].slice(-60);
   savePref(KEY, all);
-  for (const p of [...panels]) { if (p.isConnected) p.redraw(); else panels.delete(p); }
+  redrawAll();
+  return id;
 }
+const redrawAll = () => { for (const p of [...panels]) { if (p.isConnected) p.redraw(); else panels.delete(p); } };
+// a message written down roughly first, precisely later (0.33.4)
+function editMsg(id, patch) {
+  const all = history();
+  const m = all.find((x) => x.id === id);
+  if (!m) return false;
+  Object.assign(m, patch);
+  savePref(KEY, all);
+  redrawAll();
+  return true;
+}
+// The Mac writes down what waited (0.33.4): the precise text replaces the quick one, in the conversation and in the
+// note it became; a voice message that waited becomes a note now, where you spoke it.
+async function applyPrecise(item, text) {
+  if (!text) { if (item.msg) editMsg(item.msg, { spoken: 'mac' }); return; }
+  if (item.rough) {
+    if (item.msg) editMsg(item.msg, { text, spoken: 'mac' });
+    if (item.note) {
+      const n = await loadNote(item.note).catch(() => null);
+      if (n && n.text.includes(item.rough)) await saveNote(item.note, n.text.replace(item.rough, text));
+    }
+    return;
+  }
+  const path = await capture(text, { project: item.project || '' });
+  if (item.msg) editMsg(item.msg, { text, spoken: 'mac', made: { label: text.slice(0, 60), href: nodeHref(path) } });
+}
+export const writeWaiting = () => drain(applyPrecise);
+// whenever the Mac may be in reach again: on start, when the page comes back, online again, every five minutes
+let drainTimer = 0;
+function drainSoon(ms = 3000) {
+  clearTimeout(drainTimer);
+  drainTimer = setTimeout(async () => {
+    const n = await writeWaiting().catch(() => 0);
+    if (n) toast(t('loom.voice.done', { n }), 'ok', 5000);
+  }, ms);
+}
+if (typeof window !== 'undefined' && new URLSearchParams(location.search).get('side') !== '1') {
+  window.addEventListener('online', () => drainSoon());
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') drainSoon(); });
+  setInterval(() => drainSoon(0), 5 * 60 * 1000);
+  drainSoon(8000);
+}
+
 let lastMade = '';   // the note or card Loom made last: "als Karte", "häng das an …" mean it
 
 // ------------------------------------------------------------------ what Loom does
@@ -251,11 +287,13 @@ export function talkPanel({ go, project = '', embedded = false, onClose = null }
   const field = h('textarea', { class: 'talk-in', rows: '1', placeholder: t('loom.talk.placeholder'), 'aria-label': t('loom.talk.placeholder'), enterkeyhint: 'send' });
   const wave = h('div', { class: 'talk-wave', 'aria-hidden': 'true' }, ...Array.from({ length: 22 }, (_, i) => h('span', { style: `--i:${i}` })));
   const mic = h('button', { type: 'button', class: 'talk-mic', 'aria-label': t('loom.mic'), title: t('loom.mic'), html: icon('mic') });
+  // what you said lands in the field first (0.33.4): you check it, change it if you like, then send
+  const sendBtn = h('button', { type: 'button', class: 'talk-send', hidden: true, 'aria-label': t('loom.send'), title: t('loom.send'), html: icon('arrowUp') });
   // DE / EN beside the microphone: tap to switch the language Loom listens in
   const langBtn = h('button', { type: 'button', class: 'talk-lang', title: t('loom.mic.lang'), 'aria-label': t('loom.mic.lang') });
   const showLang = () => { langBtn.textContent = speechLang().slice(0, 2).toUpperCase(); };
   showLang();
-  langBtn.addEventListener('click', () => { const i = SPEECH_LANGS.indexOf(speechLang()); savePref('loom.speechLang', SPEECH_LANGS[(i + 1) % SPEECH_LANGS.length]); showLang(); });
+  langBtn.addEventListener('click', () => { const i = SPEECH_LANGS.indexOf(speechLang()); setSpeechLang(SPEECH_LANGS[(i + 1) % SPEECH_LANGS.length]); showLang(); });
   const aloud = h('button', { type: 'button', class: 'chip talk-aloud', 'aria-pressed': String(!!loadPref('loom.aloud', false)), title: t('loom.aloud.hint') }, iconEl('wave'), h('span', { text: t('loom.aloud') }));
   const state = h('span', { class: 'talk-state', text: t('loom.ready') });
   const close = onClose ? h('button', { type: 'button', class: 'icon-btn small talk-close', 'aria-label': t('action.close'), title: t('action.close'), html: icon('close'), onclick: onClose }) : null;
@@ -264,7 +302,7 @@ export function talkPanel({ go, project = '', embedded = false, onClose = null }
   // the phone (0.33.1): a handle on top; tap it to switch between the whole screen and the lower half
   const grab = embedded ? null : h('button', { type: 'button', class: 'talk-grab', 'aria-label': t('loom.half'), title: t('loom.half'), onclick: () => el.classList.toggle('half') });
   const hint = h('p', { class: 'talk-hint', hidden: true });
-  el.append(...[grab, head, list, hint, h('div', { class: 'talk-bar' }, wave, field, photo, langBtn, mic)].filter(Boolean));
+  el.append(...[grab, head, list, hint, h('div', { class: 'talk-bar' }, wave, field, photo, langBtn, sendBtn, mic)].filter(Boolean));
   field.addEventListener('focus', () => el.classList.remove('half'));
 
   aloud.addEventListener('click', () => {
@@ -277,6 +315,8 @@ export function talkPanel({ go, project = '', embedded = false, onClose = null }
   function drawMsg(m) {
     const me = m.who === 'me';
     const box = h('div', { class: `talk-msg ${me ? 'me' : 'loom'}` }, h('p', { class: 'talk-bubble', text: m.text }));
+    // spoken and written down roughly here, or waiting: the Mac makes it precise later (0.33.4)
+    if (m.spoken === 'here' || m.spoken === 'waiting') box.append(h('span', { class: 'talk-rough', text: t(m.spoken === 'here' ? 'loom.voice.rough' : 'loom.voice.wait') }));
     if (m.items?.length) {
       box.append(h('div', { class: 'talk-items' }, m.items.map((it) => {
         const a = h('a', { class: 'talk-item', href: nodeHref(it.path) }, h('span', { class: 'talk-kind', text: typeLabel(it.type) }), h('b', { text: it.title }));
@@ -308,77 +348,144 @@ export function talkPanel({ go, project = '', embedded = false, onClose = null }
   el.redraw = redraw;
   panels.add(el);
 
-  async function send(value) {
+  // → { msg, note, project }: the id of your message, the note it became (if any), where you were (0.33.4)
+  let pending = null;   // what was spoken into the field: { text, precise, later, keep }
+  async function send(value, { spoken = '' } = {}) {
     const text = String(value || '').trim();
-    if (!text) return;
+    if (!text) return null;
     field.value = '';
     fitField();
+    showSend();
+    // spoken text you corrected: Loom learns the words; unchanged rough text waits for the Mac to make it precise
+    const said = pending;
+    pending = null;
+    if (said && !spoken) {
+      const changed = said.text.trim() !== text;
+      if (changed) learnWords(said.text, text);
+      spoken = said.precise ? 'mac' : said.later && !changed ? 'here' : 'device';
+    }
     const at = embedded ? project : placeNow().project;
     if (embedded && project) setTalkPlace(project);
-    push({ who: 'me', text, project: at });
+    const msg = push({ who: 'me', text, project: at, ...(spoken ? { spoken } : {}) });
     state.textContent = t('loom.thinking');
+    const before = lastMade;
     try {
       const reply = await respond(text, { go });
-      const { went, ...msg } = reply;
-      push({ who: 'loom', project: reply.project ?? at, ...msg });
+      const { went, ...rest } = reply;
+      push({ who: 'loom', project: reply.project ?? at, ...rest });
       if (went) peekTalk();
     } catch (e) { console.warn('Loom', e); push({ who: 'loom', text: t('loom.failed'), project: at }); }
     state.textContent = t('loom.ready');
+    const done = { msg, note: lastMade !== before ? lastMade : '', project: at };
+    if (said && spoken === 'here') await keepForMac({ ...said.keep, rough: text, msg: done.msg, note: done.note, project: done.project }).catch(() => {});
+    return done;
   }
   el.send = send;
   const fitField = () => { field.style.height = 'auto'; field.style.height = `${Math.min(120, field.scrollHeight)}px`; };
-  field.addEventListener('input', fitField);
+  field.addEventListener('input', () => { fitField(); showSend(); if (!field.value.trim()) pending = null; });
+  const showSend = () => { sendBtn.hidden = !field.value.trim(); };
+  sendBtn.addEventListener('click', () => send(field.value));
   field.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(field.value); }
     if (e.key === 'Escape' && onClose) { e.preventDefault(); e.stopPropagation(); onClose(); }
   });
 
   // ---------------- speaking: the browser's speech recognition, or the keyboard's dictation
-  // Speaking (0.33.2, ENTE: "Die Sprache soll im Browser funktionieren", "nicht die Tastatur random öffnen"): the
-  // microphone always starts the browser's own recognition (Safari, Chrome) in the language above; what it hears
-  // stands in the field while you speak and is sent when you pause. It never opens the keyboard. If the browser
-  // cannot listen, a line says why (no keyboard, no detour). No time limit: Safari may first ask for the microphone.
+  // Speaking (0.33.4, ENTE: "wie eine Sprachnachricht … aber nicht meine Tastatur"): a tap on the microphone
+  // records, a second tap ends it (or 5 minutes); then the Mac writes it down, or this device roughly and the Mac
+  // precisely later (services/speech.js). The keyboard never opens. While recording the wave follows your voice.
   let rec = null;
+  let busy = false;
+  let tick = 0;
   let hintTimer = 0;
-  const showHint = (key, args) => {
+  const showHint = (key, args, ms = 12000) => {
     hint.textContent = t(key, args);
     hint.hidden = false;
     clearTimeout(hintTimer);
-    hintTimer = setTimeout(() => { hint.hidden = true; }, 12000);
+    if (ms) hintTimer = setTimeout(() => { hint.hidden = true; }, ms);
   };
-  const homeScreen = navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
-  mic.addEventListener('click', () => {
-    if (rec) { rec.stop(); return; }
-    const Rec = SR();
-    if (!Rec) { showHint(homeScreen ? 'loom.mic.safari' : 'loom.mic.none'); return; }
-    hint.hidden = true;
-    const done = () => { rec = null; el.classList.remove('listening'); state.textContent = t('loom.ready'); mic.setAttribute('aria-pressed', 'false'); };
+  const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+  const micIdle = () => { mic.innerHTML = icon('mic'); mic.setAttribute('aria-pressed', 'false'); mic.title = t('loom.mic'); mic.setAttribute('aria-label', t('loom.mic')); el.classList.remove('listening'); el.style.removeProperty('--level'); };
+  // the small model on this device: asked once before it is fetched (about 230 MB)
+  const mayLoad = async () => {
+    if (Date.now() - Number(loadPref('loom.speech.declined', 0)) < 24 * 3600 * 1000) return false;
+    if (!(await confirmDialog(t('loom.model.title'), t('loom.model.ask'), { okLabel: t('loom.model.load') }))) { savePref('loom.speech.declined', Date.now()); return false; }
     try {
-      rec = new Rec();
-      rec.lang = speechLang();
-      rec.interimResults = true;
-      rec.maxAlternatives = 1;
-      rec.continuous = !!loadPref('loom.aloud', false);
-      rec.onresult = (e) => {
-        let interim = '';
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          const r = e.results[i];
-          if (r.isFinal) { const said = r[0].transcript.trim(); if (said) send(said); interim = ''; } else interim += r[0].transcript;
-        }
-        if (interim) field.value = interim;
-      };
-      rec.onerror = (e) => {
-        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') showHint(homeScreen ? 'loom.mic.safari' : 'loom.mic.denied');
-        else if (e.error === 'language-not-supported') showHint('loom.mic.lang.no');
-        else if (e.error !== 'no-speech' && e.error !== 'aborted') showHint('loom.mic.failed', { error: e.error || '?' });
-      };
-      rec.onend = done;
-      rec.start();
-      el.classList.add('listening');
-      mic.setAttribute('aria-pressed', 'true');
-      state.textContent = t('loom.listening');
-    } catch (err) { done(); showHint('loom.mic.failed', { error: err?.name || 'start' }); }
+      await loadHere((share) => showHint('loom.model.loading', { n: Math.round((share || 0) * 100) }, 0));
+      showHint('loom.model.ready', {}, 4000);
+      return true;
+    } catch (e) { console.warn('speech model', e); showHint('loom.model.failed'); return false; }
+  };
+  async function heard(pcm, seconds) {
+    if (isSilent(pcm)) { showHint('loom.mic.silent', {}, 5000); return; }
+    const lang = speechLang().slice(0, 2);
+    const at = embedded ? project : placeNow().project;
+    const prompt = vocabulary({ project: at, lang });
+    const res = await writeDown(pcm, { lang, prompt, mayLoad });
+    if (res.text) {
+      // into the field, after what may stand there already; the keyboard stays closed (on a Mac the field takes the keys)
+      const before = field.value.trim();
+      field.value = before ? `${before} ${res.text}` : res.text;
+      // the Mac makes it precise later only when the field holds just this recording
+      const keep = res.later && !res.precise && !before && !pending;
+      pending = { text: field.value, precise: res.precise && (!pending || pending.precise), later: keep, keep: keep ? { wav: wavOf(pcm), lang, prompt, seconds } : null };
+      fitField();
+      showSend();
+      if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) { field.focus({ preventScroll: true }); field.setSelectionRange(field.value.length, field.value.length); }
+      if (!res.precise && !res.later) showHint('loom.mic.roughOnly', {}, 6000);
+      return;
+    }
+    if (res.later) {
+      // nothing could write it down here: it waits for the Mac as a voice message and becomes a note then
+      const msg = push({ who: 'me', text: t('loom.voice.waiting', { time: clock(seconds) }), project: at, spoken: 'waiting' });
+      await keepForMac({ wav: wavOf(pcm), lang, prompt, rough: '', msg, note: '', project: at, seconds });
+      return;
+    }
+    showHint('loom.mic.nothing');
+  }
+  async function finish() {
+    const r = rec;
+    rec = null;
+    clearInterval(tick);
+    micIdle();
+    busy = true;
+    mic.disabled = true;
+    state.textContent = t('loom.writing');
+    try {
+      const seconds = r.seconds();
+      const pcm = await r.stop();
+      await heard(pcm, seconds);
+    } catch (e) { console.warn('speech', e); showHint('loom.mic.failed', { error: e?.name || 'stop' }); }
+    busy = false;
+    mic.disabled = false;
+    state.textContent = t('loom.ready');
+  }
+  mic.addEventListener('click', async () => {
+    if (busy) return;
+    if (rec) { finish(); return; }
+    hint.hidden = true;
+    try {
+      rec = await record({ onLevel: (v) => el.style.setProperty('--level', v.toFixed(2)) });
+    } catch (e) {
+      rec = null;
+      showHint(e?.name === 'NotAllowedError' || e?.name === 'SecurityError' ? 'loom.mic.denied' : e?.name === 'NotSupportedError' ? 'loom.mic.none' : 'loom.mic.failed', { error: e?.name || '?' });
+      return;
+    }
+    el.classList.add('listening');
+    mic.innerHTML = icon('stop');
+    mic.setAttribute('aria-pressed', 'true');
+    mic.title = t('loom.mic.stop');
+    mic.setAttribute('aria-label', t('loom.mic.stop'));
+    state.textContent = t('loom.recording', { time: '0:00' });
+    tick = setInterval(() => {
+      if (!rec) return;
+      const sec = rec.seconds();
+      state.textContent = t('loom.recording', { time: clock(sec) });
+      if (sec >= MAX_SECONDS) finish();
+    }, 250);
   });
+  // Escape while recording: thrown away
+  el.addEventListener('keydown', (e) => { if (e.key === 'Escape' && rec) { e.stopPropagation(); rec.cancel(); rec = null; clearInterval(tick); micIdle(); state.textContent = t('loom.ready'); } });
   redraw();
   return el;
 }

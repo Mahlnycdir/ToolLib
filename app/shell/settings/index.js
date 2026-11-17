@@ -21,7 +21,7 @@ import { colourVar } from '../colors.js';
 import { connectionsMap } from './status.js';
 import { languageCard, searchCard, aboutCard, planCard } from './general.js';
 import { appearanceCard, accentsCard } from './look.js';
-import { loomTalkCard, loomModelCard } from './loom.js';
+import { loomTalkCard, loomSpeechCard, loomModelCard } from './loom.js';
 import { editorCard, commandsCard, macrosCard } from './write.js';
 import { keysCard, keyboardCard } from './keys.js';
 import { syncCard, syncBehaviourCard } from './knowledge.js';
@@ -34,7 +34,7 @@ import { backupCard } from './backup.js';
 // group: where the tile stands in the control centre; colour: from the one colour system (colors.js);
 // anchors: older section names that now live on this page
 export const PAGES = [
-  { id: 'loom', icon: 'sparkle', group: 'app', colour: 'yellow', cards: () => [loomTalkCard(), loomModelCard()] },   // 0.32.0
+  { id: 'loom', icon: 'sparkle', group: 'app', colour: 'yellow', cards: () => [loomTalkCard(), loomSpeechCard(), loomModelCard()] },   // 0.32.0
   { id: 'general', icon: 'settings', group: 'app', colour: 'blue', cards: (o) => [languageCard(), searchCard(), aboutCard(o.onCheckUpdate)] },
   { id: 'look', icon: 'palette', group: 'app', colour: 'rose', cards: (o) => [appearanceCard(), accentsCard(o.onChange)] },
   { id: 'write', icon: 'pen', group: 'app', colour: 'violet', cards: () => [editorCard(), commandsCard(), macrosCard()] },

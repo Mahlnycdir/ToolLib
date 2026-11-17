@@ -3177,3 +3177,15 @@ html.calm .lf-here { animation: none; }
 .widgets.stacked > .widget.lifted { z-index: 40; animation: none !important; transition: none !important; cursor: grabbing; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--light-line); will-change: transform; }
 .widget-ghost { align-self: start; pointer-events: none; border-radius: 18px; border: 2px dashed var(--light); background: color-mix(in srgb, var(--light) 10%, transparent); box-shadow: 0 0 22px color-mix(in srgb, var(--light) 28%, transparent); z-index: 0; }
 .widgets.one-col > .widget-ghost { grid-column: 1 / -1 !important; }
+
+/* 0.33.4: speaking like a voice message; the wave and the ring follow your voice (--level, 0…1) */
+.loom-talk.listening .talk-wave span { height: calc((6px + (var(--i) * 37 % 20) * 1px) * (0.45 + var(--level, 0.25) * 1.8)); transition: height 0.12s ease-out; }
+.loom-talk.listening .talk-mic { box-shadow: 0 0 0 calc(3px + var(--level, 0) * 14px) color-mix(in srgb, var(--light) 28%, transparent); transition: box-shadow 0.12s ease-out; }
+.talk-mic:disabled { opacity: 0.6; cursor: progress; }
+.talk-rough { display: block; margin-top: 3px; font-size: 11px; color: var(--muted); text-align: right; }
+.talk-msg.loom .talk-rough { text-align: left; }
+.loom-row-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.chip.ok { color: var(--light); border-color: var(--light-line); }
+.talk-send { flex: none; width: 36px; height: 36px; border-radius: 18px; border: 1px solid var(--light-line); background: var(--light-soft); color: var(--light); display: grid; place-items: center; cursor: pointer; align-self: center; }
+.talk-send[hidden] { display: none; }
+.talk-send .ic { width: 17px; height: 17px; }

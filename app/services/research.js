@@ -329,12 +329,13 @@ export async function fetchPage(url, { signal, settings = researchSettings(), on
 }
 
 // A request to the helper itself (0.14.4, the PDF folder): the answer, or a ResearchError ('helper' when it does not answer).
-export async function helperFetch(path, { method = 'GET', json = null, signal, settings = researchSettings() } = {}) {
+// body + type (0.33.4): raw bytes, e.g. a recording as audio/wav for /speech/text
+export async function helperFetch(path, { method = 'GET', json = null, body = null, type = '', signal, settings = researchSettings() } = {}) {
   if (!(await helperReady(settings))) throw new ResearchError(hasHelper(settings) ? 'helper' : 'no-helper', { detail: 'unreachable' });
   let res;
   try {
     res = await fetch(`${settings.helper}${path}`, {
-      method, body: json ? JSON.stringify(json) : null, headers: helperHeaders(settings, json ? { 'Content-Type': 'application/json' } : {}),
+      method, body: json ? JSON.stringify(json) : body, headers: helperHeaders(settings, json ? { 'Content-Type': 'application/json' } : type ? { 'Content-Type': type } : {}),
       signal, credentials: 'omit', cache: 'no-store', ...spaceOpt(settings.helper),
     });
   } catch {

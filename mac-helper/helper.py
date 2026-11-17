@@ -46,7 +46,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote, unquote, urljoin, urlsplit
 
-VERSION = '0.21.0'
+VERSION = '0.33.4'
 HOME = Path(os.environ.get('TOOLLIB_HELPER_HOME') or '~/.toollib-helper').expanduser()
 CONFIG = HOME / 'config.json'
 STATE = HOME / 'files.json'
@@ -64,6 +64,14 @@ INK_REPO = 'alephpi/FormulaNet'                          # Texo, 20 M parameters
 INK_REV = '63e04c86fc96c2324811114351eeea8118bf6b28'     # a fixed state of the model: the files cannot change under us
 INK_SHA = {'onnx/encoder_model.onnx': '95cccef463e5ed3623282f1541c0011a00b8a5d0828ea2cd57d6953ad4310b5b'}
 INK_IDLE = 300                                           # seconds without work: the reader ends and frees its memory
+# Speech → text (0.33.4): its own Python environment (MLX, Apple silicon) and a large German Whisper, only with
+# install.sh --sprache. primeline/whisper-large-v3-turbo-german (809 M parameters, Apache-2.0) converted for MLX; on
+# German test sets it misses about 3 words in 100. The state of the model is fixed at installation (SPEECH_DIR/.revision).
+SPEECH_VENV = HOME / 'speech-venv'
+SPEECH_DIR = HOME / 'speech-model'
+SPEECH_REPO = 'mlx-community/whisper-large-v3-turbo-german-f16'
+SPEECH_IDLE = 300                                        # seconds without work: the worker ends and frees its memory
+SPEECH_MAX_BYTES = 20 * 1024 * 1024                      # 16-bit WAV at 16 kHz: about ten minutes
 SEARXNG_SETTINGS = HOME / 'searxng-settings.yml'
 SEARXNG_LOG = HOME / 'searxng.log'
 DEFAULTS = {
@@ -874,6 +882,155 @@ class InkReader:
                 await self.stop()
 
 
+class SpeechReader:
+    """Writes down speech in a process of its own (speech-venv, helper.py speech-worker), started at the first
+    request and ended after SPEECH_IDLE seconds without work, like the handwriting reader. The model takes about
+    1.6 GB on disk and some GB of memory only while it works."""
+
+    def __init__(self):
+        self.proc = None
+        self.lock = asyncio.Lock()
+        self.used = 0.0
+        self.n = 0
+
+    @property
+    def installed(self):
+        return (SPEECH_VENV / 'bin' / 'python').exists() and (SPEECH_DIR / 'config.json').exists() and any(SPEECH_DIR.glob('weights.*'))
+
+    @property
+    def loaded(self):
+        return bool(self.proc and self.proc.returncode is None)
+
+    async def start(self):
+        if self.loaded:
+            return
+        log = open(LOG, 'a')   # noqa: SIM115 – the worker writes its complaints into the helper's log
+        self.proc = await asyncio.create_subprocess_exec(
+            str(SPEECH_VENV / 'bin' / 'python'), str(Path(__file__).resolve()), 'speech-worker',
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=log, limit=1 << 20)
+        log.close()
+
+    async def text(self, wav, lang, prompt):
+        seconds = max(1.0, (len(wav) - 44) / 32000)
+        async with self.lock:
+            await self.start()
+            self.n += 1
+            self.used = time.time()
+            self.proc.stdin.write((json.dumps({'id': self.n, 'wav': base64.b64encode(wav).decode(), 'lang': lang, 'prompt': prompt}) + '\n').encode())
+            await self.proc.stdin.drain()
+            try:
+                # the first time the model loads (some seconds); then about a tenth of the length of the recording
+                line = await asyncio.wait_for(self.proc.stdout.readline(), timeout=120 + 2 * seconds)
+            except asyncio.TimeoutError:
+                await self.stop()
+                raise RuntimeError('speech-timeout')
+            self.used = time.time()
+            if not line:
+                await self.stop()
+                raise RuntimeError('speech-worker-ended')
+            answer = json.loads(line)
+            if answer.get('error'):
+                raise RuntimeError(answer['error'])
+            return answer.get('text', '')
+
+    async def stop(self):
+        if self.loaded:
+            self.proc.terminate()
+            try:
+                await asyncio.wait_for(self.proc.wait(), 5)
+            except asyncio.TimeoutError:
+                self.proc.kill()
+        self.proc = None
+
+    async def close_idle(self):
+        while True:
+            await asyncio.sleep(30)
+            if self.loaded and not self.lock.locked() and time.time() - self.used > SPEECH_IDLE:
+                await self.stop()
+
+
+def wav_samples(wav):
+    """16-bit mono WAV at 16 kHz (as Toollib sends it) → list of floats in -1…1, via numpy when it is there."""
+    import io
+    import wave
+    with wave.open(io.BytesIO(wav)) as w:
+        if w.getnchannels() != 1 or w.getsampwidth() != 2 or w.getframerate() != 16000:
+            raise ValueError('expected 16-bit mono WAV at 16 kHz')
+        frames = w.readframes(w.getnframes())
+    import numpy as np
+    return np.frombuffer(frames, dtype='<i2').astype(np.float32) / 32768.0
+
+
+def cmd_speech_worker(cfg, args):
+    """In speech-venv: one JSON line per recording on stdin, one line with the text on stdout."""
+    try:
+        os.nice(5)   # gives way to what you do on the Mac, but not much: you are waiting for the text
+    except OSError:
+        pass
+    import mlx_whisper   # only in speech-venv
+    model = str(SPEECH_DIR)
+    for line in sys.stdin:
+        rid = None
+        try:
+            req = json.loads(line)
+            rid = req.get('id')
+            audio = wav_samples(base64.b64decode(req.get('wav') or '', validate=True))
+            lang = req.get('lang') if req.get('lang') in ('de', 'en') else 'de'
+            prompt = str(req.get('prompt') or '')[:800] or None
+            out = mlx_whisper.transcribe(audio, path_or_hf_repo=model, language=lang, task='transcribe', initial_prompt=prompt,
+                                         condition_on_previous_text=False, temperature=(0.0, 0.2, 0.4), no_speech_threshold=0.6,
+                                         compression_ratio_threshold=2.4, verbose=None)
+            # segments Whisper itself thinks are no speech are left out (silence makes it invent sentences)
+            parts = [str(seg.get('text', '')).strip() for seg in out.get('segments', []) if float(seg.get('no_speech_prob', 0)) < 0.8]
+            text = ' '.join(p for p in parts if p) if out.get('segments') else str(out.get('text', '')).strip()
+            answer = {'id': rid, 'text': text}
+        except Exception as e:   # noqa: BLE001
+            answer = {'id': rid, 'error': str(e)[:200]}
+        sys.stdout.write(json.dumps(answer) + '\n')
+        sys.stdout.flush()
+
+
+def cmd_speech_setup(cfg, args):
+    """Fetches the model into SPEECH_DIR (once, about 1.6 GB) at the state Hugging Face has now, and keeps that state."""
+    from urllib.request import Request, urlopen
+    SPEECH_DIR.mkdir(parents=True, exist_ok=True)
+    head = {'User-Agent': f'Toollib-Mac-helper/{VERSION}'}
+    rev_file = SPEECH_DIR / '.revision'
+    rev = rev_file.read_text().strip() if rev_file.exists() else ''
+    try:
+        with urlopen(Request(f'https://huggingface.co/api/models/{SPEECH_REPO}' + (f'/revision/{rev}' if rev else ''), headers=head), timeout=60) as r:
+            info = json.loads(r.read())
+    except Exception as e:   # noqa: BLE001
+        sys.exit(f'Das Modell ließ sich nicht finden ({e}). Später: bash install.sh --sprache erneut.')
+    rev = rev or str(info.get('sha') or '')
+    if not re.fullmatch(r'[0-9a-f]{40}', rev):
+        sys.exit('Der Stand des Modells ist unklar. Später: bash install.sh --sprache erneut.')
+    names = [x.get('rfilename', '') for x in info.get('siblings', [])]
+    wanted = [n for n in names if n == 'config.json' or re.fullmatch(r'weights\.(safetensors|npz)', n)]
+    if 'config.json' not in wanted or len(wanted) < 2:
+        sys.exit(f'Im Modell fehlen Dateien ({", ".join(names)[:200]}).')
+    for name in wanted:
+        dest = SPEECH_DIR / name
+        if dest.exists() and dest.stat().st_size > 0:
+            continue
+        part = dest.with_suffix(dest.suffix + '.part')
+        n = 0
+        try:
+            with urlopen(Request(f'https://huggingface.co/{SPEECH_REPO}/resolve/{rev}/{name}', headers=head), timeout=120) as r, open(part, 'wb') as f:
+                while chunk := r.read(1 << 22):
+                    n += len(chunk)
+                    if n > 4 * 1024 * 1024 * 1024:
+                        raise ValueError('too large')
+                    f.write(chunk)
+        except Exception as e:   # noqa: BLE001
+            part.unlink(missing_ok=True)
+            sys.exit(f'  {name}: {e}. Später: bash install.sh --sprache erneut.')
+        part.replace(dest)
+        say(f'  {name}: {n / 1e6:.0f} MB')
+    rev_file.write_text(rev + '\n')
+    say(f'Sprachmodell bereit in {shown(SPEECH_DIR)} (Stand {rev[:10]})')
+
+
 class InkModel:
     """The model itself, in the ink worker: ONNX Runtime on the CPU (two threads), greedy decoding with the cache of
     the merged decoder. Reads its settings from the files of the model (preprocessor, generation, tokenizer)."""
@@ -1093,6 +1250,7 @@ def make_app(cfg):
     renderer = Renderer(cfg, upstream)
     search = Search(cfg)
     ink = InkReader()
+    speech = SpeechReader()
     background = Background(cfg) if cfg['background'] else None
 
     def cors_for(origin):
@@ -1136,7 +1294,7 @@ def make_app(cfg):
         return web.json_response({'ok': True, 'name': 'toollib-mac-helper', 'version': VERSION, 'maxBytes': cfg['max_bytes'],
                                   'render': renderer.available, 'pdfDir': shown(files.root), 'inboxDir': shown(files.inbox), 'ownDir': shown(files.own), 'inbox': len(await asyncio.to_thread(files.inbox_files)),
                                   'names': host_names(cfg), 'port': cfg['port'], 'search': search.installed,
-                                  'background': bool(background), 'ink': ink.installed}, headers={'Cache-Control': 'no-store'})
+                                  'background': bool(background), 'ink': ink.installed, 'speech': speech.installed}, headers={'Cache-Control': 'no-store'})
 
     async def ink_state(request):
         return web.json_response({'ok': True, 'installed': ink.installed, 'loaded': ink.loaded}, headers={'Cache-Control': 'no-store'})
@@ -1156,6 +1314,26 @@ def make_app(cfg):
         except RuntimeError as e:
             return jerr('ink-failed', 502, detail=str(e)[:200])
         return web.json_response({'ok': True, 'results': results}, headers={'Cache-Control': 'no-store'})
+
+    async def speech_state(request):
+        return web.json_response({'ok': True, 'installed': speech.installed, 'loaded': speech.loaded}, headers={'Cache-Control': 'no-store'})
+
+    async def speech_text(request):
+        if not speech.installed:
+            return jerr('speech-not-installed', 404)
+        if (request.content_length or 0) > SPEECH_MAX_BYTES:
+            return jerr('too-large', 413, limit=SPEECH_MAX_BYTES)
+        body = await request.read()
+        if len(body) < 44 or len(body) > SPEECH_MAX_BYTES or body[:4] != b'RIFF' or body[8:12] != b'WAVE':
+            return jerr('bad-request', 400)
+        lang = request.query.get('lang', 'de')
+        lang = lang if lang in ('de', 'en') else 'de'
+        prompt = request.query.get('prompt', '')[:800]
+        try:
+            text = await speech.text(body, lang, prompt)
+        except RuntimeError as e:
+            return jerr('speech-failed', 502, detail=str(e)[:200])
+        return web.json_response({'ok': True, 'text': text}, headers={'Cache-Control': 'no-store'})
 
     async def fetch(request):
         url = request.query.get('url', '')
@@ -1286,6 +1464,7 @@ def make_app(cfg):
             await background.stop()
         await search.stop()
         await ink.stop()
+        await speech.stop()
         if state['session']:
             await state['session'].close()
         if renderer.browser:
@@ -1296,12 +1475,14 @@ def make_app(cfg):
     async def starting(app):
         app['idle'] = asyncio.create_task(renderer.close_idle())
         app['ink-idle'] = asyncio.create_task(ink.close_idle())
+        app['speech-idle'] = asyncio.create_task(speech.close_idle())
         if search.installed:
             asyncio.create_task(search.start())
         if background:
             background.start()
 
-    app = web.Application(middlewares=[guard], client_max_size=1 << 20)
+    # 24 MB: a recording for /speech/text (about ten minutes); every other request is small
+    app = web.Application(middlewares=[guard], client_max_size=24 << 20)
     app.router.add_get('/ping', ping)
     app.router.add_route('*', '/fetch', fetch)
     app.router.add_get('/render', render)
@@ -1313,6 +1494,8 @@ def make_app(cfg):
     app.router.add_post('/background/wake', background_wake)
     app.router.add_get('/ink/state', ink_state)
     app.router.add_post('/ink/latex', ink_latex)
+    app.router.add_get('/speech/state', speech_state)
+    app.router.add_post('/speech/text', speech_text)
     app.on_startup.append(starting)
     app.on_cleanup.append(closing)
     return app
@@ -1603,6 +1786,8 @@ def main():
     b.add_argument('--forget', action='store_true', help='with off: delete the profile with your settings too')
     sub.add_parser('ink-setup')
     sub.add_parser('ink-worker')
+    sub.add_parser('speech-setup')
+    sub.add_parser('speech-worker')
     args = ap.parse_args()
     cfg = load_config()
     if args.cmd == 'run':
@@ -1616,7 +1801,8 @@ def main():
             pass
         return
     {'setup': cmd_setup, 'info': cmd_info, 'trust': cmd_trust, 'autostart': cmd_autostart, 'renew': cmd_renew, 'token': cmd_token,
-     'background': cmd_background, 'ink-setup': cmd_ink_setup, 'ink-worker': cmd_ink_worker}[args.cmd](cfg, args)
+     'background': cmd_background, 'ink-setup': cmd_ink_setup, 'ink-worker': cmd_ink_worker,
+     'speech-setup': cmd_speech_setup, 'speech-worker': cmd_speech_worker}[args.cmd](cfg, args)
 
 
 if __name__ == '__main__':

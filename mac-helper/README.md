@@ -57,6 +57,7 @@ Alle mit `~/.toollib-helper/venv/bin/python ~/.toollib-helper/helper.py <befehl>
 | `background setup <Datei>` | im Hintergrund arbeiten, mit deiner verschlüsselten Einstellungs-Datei (fragt nach dem Passwort) |
 | `background off` / `status` | nicht mehr im Hintergrund (`--forget`: Profil löschen) / ob er an ist |
 | `ink-setup` | das Modell für die Handschrift holen (macht `install.sh --handschrift`) |
+| `speech-setup` | das Sprachmodell holen (macht `install.sh --sprache`) |
 
 Aktualisieren: `bash install.sh` erneut; Token, Zertifikat, Einstellungen und das Profil im Hintergrund bleiben. Ohne SearXNG: `bash install.sh --ohne-suche`. Entfernen: `helper.py autostart off`, dann den Ordner `~/.toollib-helper` löschen (mit SearXNG, Profil und Protokollen) und in der Schlüsselbundverwaltung „Toollib Helper CA“ löschen. Der PDF-Ordner bleibt.
 
@@ -93,6 +94,8 @@ Nach einer Änderung: `helper.py autostart on` (startet ihn neu).
 | `POST /background/wake` | gleich abgleichen und nach Aufträgen sehen (Toollib schickt das nach einem Auftrag) |
 | `GET /ink/state` | ob er Handschrift lesen kann und ob der Leser gerade läuft |
 | `POST /ink/latex` | `{ "images": [PNG als Base64, …] }` (höchstens 40 Zeilen): LaTeX pro Zeile |
+| `GET /speech/state` | ob er Sprache abschreiben kann und ob das Modell gerade geladen ist |
+| `POST /speech/text?lang=de&prompt=<Wörter>` | eine Aufnahme als WAV (16 Bit, mono, 16 kHz, höchstens 20 MB, etwa zehn Minuten): `{ "text": … }` |
 
 Regeln wie beim Worker: nur deine Seiten mit deinem Token, nur http und https, keine Adressen im Heimnetz (auch nicht über Weiterleitungen oder DNS), keine Cookies, höchstens 100 MB. Bilder, Videos und Schriften lädt Chromium nicht. Das Protokoll steht in `~/.toollib-helper/helper.log` (nur Website, Status, Dauer), das von SearXNG in `searxng.log`.
 
@@ -109,3 +112,13 @@ Das Chromium im Hintergrund vertraut dem eigenen Zertifikat des Helfers nur übe
 - **Unterwegs:** „Vom Mac lesen lassen“ markiert die Notiz (`ink_read: "mac"`). Toollib im Hintergrund des Helfers liest sie beim nächsten Sync und schreibt das Ergebnis unter „## LaTeX (Kladde)“ in die Notiz.
 - **Entfernen:** die Ordner `ink-venv` und `ink-model` löschen. Ohne sie antwortet `/ink/latex` mit `ink-not-installed`.
 
+## Sprache abschreiben (Loom, 0.33.4)
+
+`bash install.sh --sprache` richtet es einmal ein (Mac mit Apple-Chip, etwa 2,5 GB): eine eigene Python-Umgebung `~/.toollib-helper/speech-venv` (MLX und mlx-whisper aus `requirements-speech.txt`) und das Modell in `~/.toollib-helper/speech-model`.
+
+- **Modell:** `primeline/whisper-large-v3-turbo-german`, für MLX umgewandelt (`mlx-community/whisper-large-v3-turbo-german-f16`, 809 Millionen Parameter, Apache-2.0). Auf deutschen Testdaten verfehlt es etwa 3 von 100 Wörtern, das allgemeine Whisper large-v3-turbo etwa 3,6.
+- **Fester Stand:** Beim Einrichten merkt sich der Helfer den Stand des Modells (`speech-model/.revision`) und lädt danach nur diesen.
+- **Dein Wortschatz:** Loom schickt mit jeder Aufnahme Begriffe aus deinem Wissen mit (Titel deiner Karten, das Projekt, in dem du bist, deine Korrekturen) als Hinweis für Whisper (`prompt`, höchstens 800 Zeichen). Das Protokoll schreibt weder sie noch den Text.
+- **Kaum bemerkbar:** Das Modell läuft in einem eigenen Prozess. Er startet bei der ersten Aufnahme (ein paar Sekunden), schreibt dann schnell ab (ein Bruchteil der Länge der Aufnahme) und endet nach fünf Minuten Ruhe.
+- **Nur auf dem Mac:** Die Aufnahme geht vom Gerät direkt an den Helfer, sonst nirgendwohin. Ist der Mac nicht erreichbar, schreibt das iPhone mit einem kleinen deutschen Whisper grob ab und behält die Aufnahme (höchstens zwei Wochen); sobald es den Helfer wieder erreicht, schreibt der Mac sie genau ab.
+- **Entfernen:** die Ordner `speech-venv` und `speech-model` löschen. Ohne sie antwortet `/speech/text` mit `speech-not-installed`.
