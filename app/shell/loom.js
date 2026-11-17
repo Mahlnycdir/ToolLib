@@ -136,7 +136,7 @@ export function loomWidget({ go }) {
   const field = h('input', { class: 'loom-ask', type: 'text', placeholder: t('loom.talk.placeholder'), 'aria-label': t('loom.talk.placeholder'), enterkeyhint: 'send' });
   field.addEventListener('keydown', (e) => { if (e.key === 'Enter' && field.value.trim()) { e.preventDefault(); const v = field.value; field.value = ''; sendToLoom(v, { go }); } });
   const mic = h('button', { type: 'button', class: 'talk-mic small', 'aria-label': t('loom.mic'), title: t('loom.mic'), html: icon('mic') });
-  mic.addEventListener('click', () => { const panel = openTalk({ go }); panel.querySelector('.talk-mic')?.click(); });
+  mic.addEventListener('click', () => { const panel = openTalk({ go, focus: false }); panel.querySelector('.talk-mic')?.click(); });
   card.append(host, h('div', { class: 'loom-ask-row' }, field, mic));
   card.querySelector('.loom-voice-state').textContent = t('loom.state.listen');
   return card;

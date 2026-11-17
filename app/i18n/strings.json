@@ -2683,8 +2683,7 @@
   "loom.listening": { "en": "listening", "de": "hört zu" },
   "loom.state.listen": { "en": "listens when you want", "de": "hört zu, wenn du willst" },
   "loom.mic": { "en": "Speak", "de": "Sprechen" },
-  "loom.mic.dictate": { "en": "Speak with the microphone of the keyboard (next to the space bar or below it): the dictation writes into the field, then send.", "de": "Sprich über das Mikrofon der Tastatur (neben oder unter der Leertaste): Das Diktat schreibt ins Feld, dann senden." },
-  "loom.mic.denied": { "en": "The microphone is not allowed. Allow it in the settings of the browser, or use the dictation of the keyboard.", "de": "Das Mikrofon ist nicht erlaubt. Erlaube es in den Einstellungen des Browsers oder nimm das Diktat der Tastatur." },
+  "loom.mic.denied": { "en": "The microphone is not allowed for this page. Allow it in the settings of the browser (Safari: the menu in the address bar, then Website Settings), then tap the microphone again.", "de": "Das Mikrofon ist für diese Seite nicht erlaubt. Erlaube es in den Einstellungen des Browsers (Safari: Menü in der Adressleiste, dann Website-Einstellungen) und tippe dann noch mal aufs Mikrofon." },
   "loom.photo.me": { "en": "A photo", "de": "Ein Foto" },
   "loom.noted.in": { "en": "Noted in {title}.", "de": "Notiert in {title}." },
   "loom.noted.inbox": { "en": "Noted in the inbox.", "de": "Notiert im Eingang." },
@@ -2775,10 +2774,14 @@
   "dive.levels.one": { "en": "1 level deep", "de": "1 Ebene tief" },
   "dive.mins": { "en": "{n} min", "de": "{n} min" },
   "canvas.groups.adopted.one": { "en": "The group of the canvas is now a section, on the board too", "de": "Die Gruppe der Leinwand ist jetzt ein Abschnitt, auch auf dem Board" },
-  "loom.mic.dictate.tap": { "en": "The speech recognition does not start here. Tap the field, then the microphone of the keyboard.", "de": "Die Spracherkennung startet hier nicht. Tippe ins Feld, dann aufs Mikrofon der Tastatur." },
   "loom.half": { "en": "Half or whole screen", "de": "Halber oder ganzer Bildschirm" },
   "widget.hidePhone": { "en": "Hide on this phone", "de": "Auf diesem Handy ausblenden" },
   "widget.hiddenPhone": { "en": "\"{name}\" hidden on this phone (the Mac keeps it)", "de": "„{name}“ auf diesem Handy ausgeblendet (der Mac behält es)" },
   "tray.phone": { "en": "Hidden on this phone · show", "de": "Auf diesem Handy ausgeblendet · zeigen" },
-  "tray.hint.phone": { "en": "Drag widgets; × hides one on this phone only", "de": "Widgets ziehen; × blendet eins nur auf diesem Handy aus" }
+  "tray.hint.phone": { "en": "Drag widgets; × hides one on this phone only", "de": "Widgets ziehen; × blendet eins nur auf diesem Handy aus" },
+  "loom.mic.lang": { "en": "Language Loom listens in (tap to switch)", "de": "Sprache, in der Loom zuhört (tippen zum Wechseln)" },
+  "loom.mic.lang.no": { "en": "This browser cannot listen in this language. Tap DE/EN beside the microphone to switch.", "de": "Dieser Browser kann in dieser Sprache nicht zuhören. Tippe auf DE/EN neben dem Mikrofon zum Wechseln." },
+  "loom.mic.none": { "en": "This browser cannot listen. Safari and Chrome can.", "de": "Dieser Browser kann nicht zuhören. Safari und Chrome können es." },
+  "loom.mic.safari": { "en": "In the app on the home screen iOS does not let Loom listen. Open Loom in Safari, there the microphone works.", "de": "In der App auf dem Home-Bildschirm lässt iOS Loom nicht zuhören. Öffne Loom in Safari, dort geht das Mikrofon." },
+  "loom.mic.failed": { "en": "Listening did not work ({error}). Tap the microphone again.", "de": "Das Zuhören hat nicht geklappt ({error}). Tippe noch mal aufs Mikrofon." }
 }

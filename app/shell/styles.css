@@ -3166,3 +3166,7 @@ html.calm .lf-here { animation: none; }
 .widgets.stacked > .widget, .widgets.stacked > .widget-add { grid-row-start: auto !important; align-self: start !important; }
 .widgets.stacked > .widget.s-1x2, .widgets.stacked > .widget.s-2x2 { min-height: 380px; }
 .widgets.stacked > .widget.bare.s-1x2 > :not(.widget-head):not(.widget-x):not(.widget-size), .widgets.stacked > .widget.bare.s-2x2 > :not(.widget-head):not(.widget-x):not(.widget-size) { min-height: 380px; }
+
+/* 0.33.2: the language Loom listens in, beside the microphone */
+.talk-lang { flex: none; align-self: center; min-width: 34px; height: 30px; padding: 0 8px; border-radius: 15px; border: 1px solid var(--light-line); background: transparent; color: color-mix(in srgb, var(--light) 75%, var(--fg)); font: inherit; font-size: 12px; font-weight: 600; line-height: 1; letter-spacing: 0.04em; cursor: pointer; }
+.talk-lang:hover { background: var(--light-soft); }

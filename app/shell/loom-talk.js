@@ -37,6 +37,18 @@ const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(
 const KEY = 'loom.talk';
 const slugOf = (path) => path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '');
 const SR = () => window.SpeechRecognition || window.webkitSpeechRecognition || null;
+// The language Loom listens in (0.33.2): its own, not the language of the surface. ENTE reads Loom in English and
+// speaks German; an English recognizer then got every second word wrong. First the pref, then the languages of the
+// device (German if it has German at all), then the surface.
+export const SPEECH_LANGS = ['de-DE', 'en-US'];
+export function speechLang() {
+  const v = loadPref('loom.speechLang', '');
+  if (SPEECH_LANGS.includes(v)) return v;
+  const device = (navigator.languages?.length ? navigator.languages : [navigator.language || '']).map((x) => String(x).toLowerCase());
+  if (device.some((x) => x.startsWith('de'))) return 'de-DE';
+  if (device.some((x) => x.startsWith('en'))) return 'en-US';
+  return getLang() === 'de' ? 'de-DE' : 'en-US';
+}
 
 // ------------------------------------------------------------------ where you are (the project and the card deep in it)
 let placeHint = { project: '', at: 0 };
@@ -239,6 +251,11 @@ export function talkPanel({ go, project = '', embedded = false, onClose = null }
   const field = h('textarea', { class: 'talk-in', rows: '1', placeholder: t('loom.talk.placeholder'), 'aria-label': t('loom.talk.placeholder'), enterkeyhint: 'send' });
   const wave = h('div', { class: 'talk-wave', 'aria-hidden': 'true' }, ...Array.from({ length: 22 }, (_, i) => h('span', { style: `--i:${i}` })));
   const mic = h('button', { type: 'button', class: 'talk-mic', 'aria-label': t('loom.mic'), title: t('loom.mic'), html: icon('mic') });
+  // DE / EN beside the microphone: tap to switch the language Loom listens in
+  const langBtn = h('button', { type: 'button', class: 'talk-lang', title: t('loom.mic.lang'), 'aria-label': t('loom.mic.lang') });
+  const showLang = () => { langBtn.textContent = speechLang().slice(0, 2).toUpperCase(); };
+  showLang();
+  langBtn.addEventListener('click', () => { const i = SPEECH_LANGS.indexOf(speechLang()); savePref('loom.speechLang', SPEECH_LANGS[(i + 1) % SPEECH_LANGS.length]); showLang(); });
   const aloud = h('button', { type: 'button', class: 'chip talk-aloud', 'aria-pressed': String(!!loadPref('loom.aloud', false)), title: t('loom.aloud.hint') }, iconEl('wave'), h('span', { text: t('loom.aloud') }));
   const state = h('span', { class: 'talk-state', text: t('loom.ready') });
   const close = onClose ? h('button', { type: 'button', class: 'icon-btn small talk-close', 'aria-label': t('action.close'), title: t('action.close'), html: icon('close'), onclick: onClose }) : null;
@@ -247,7 +264,7 @@ export function talkPanel({ go, project = '', embedded = false, onClose = null }
   // the phone (0.33.1): a handle on top; tap it to switch between the whole screen and the lower half
   const grab = embedded ? null : h('button', { type: 'button', class: 'talk-grab', 'aria-label': t('loom.half'), title: t('loom.half'), onclick: () => el.classList.toggle('half') });
   const hint = h('p', { class: 'talk-hint', hidden: true });
-  el.append(...[grab, head, list, hint, h('div', { class: 'talk-bar' }, wave, field, photo, mic)].filter(Boolean));
+  el.append(...[grab, head, list, hint, h('div', { class: 'talk-bar' }, wave, field, photo, langBtn, mic)].filter(Boolean));
   field.addEventListener('focus', () => el.classList.remove('half'));
 
   aloud.addEventListener('click', () => {
@@ -317,57 +334,50 @@ export function talkPanel({ go, project = '', embedded = false, onClose = null }
   });
 
   // ---------------- speaking: the browser's speech recognition, or the keyboard's dictation
-  // In the app on the iPhone's home screen Safari's speech recognition does not start (0.33.1, ENTE's test): there
-  // the microphone opens the keyboard at once (the tap is still a tap, so iOS allows it) and points to its own
-  // microphone, the dictation, which writes into the field. Elsewhere the recognition gets 1.5 s to begin; if it
-  // does not, the same hint comes.
+  // Speaking (0.33.2, ENTE: "Die Sprache soll im Browser funktionieren", "nicht die Tastatur random öffnen"): the
+  // microphone always starts the browser's own recognition (Safari, Chrome) in the language above; what it hears
+  // stands in the field while you speak and is sent when you pause. It never opens the keyboard. If the browser
+  // cannot listen, a line says why (no keyboard, no detour). No time limit: Safari may first ask for the microphone.
   let rec = null;
   let hintTimer = 0;
-  const showHint = (key) => {
-    hint.textContent = t(key);
+  const showHint = (key, args) => {
+    hint.textContent = t(key, args);
     hint.hidden = false;
     clearTimeout(hintTimer);
     hintTimer = setTimeout(() => { hint.hidden = true; }, 12000);
   };
-  const dictate = (inTap) => {
-    if (inTap) { field.focus(); showHint('loom.mic.dictate'); } else showHint('loom.mic.dictate.tap');
-  };
-  const ios = document.documentElement.classList.contains('ios');
   const homeScreen = navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
   mic.addEventListener('click', () => {
     if (rec) { rec.stop(); return; }
     const Rec = SR();
-    if (!Rec || (ios && homeScreen)) { dictate(true); return; }
-    let started = false;
-    let watchdog = 0;
-    const done = () => { clearTimeout(watchdog); rec = null; el.classList.remove('listening'); state.textContent = t('loom.ready'); mic.setAttribute('aria-pressed', 'false'); };
+    if (!Rec) { showHint(homeScreen ? 'loom.mic.safari' : 'loom.mic.none'); return; }
+    hint.hidden = true;
+    const done = () => { rec = null; el.classList.remove('listening'); state.textContent = t('loom.ready'); mic.setAttribute('aria-pressed', 'false'); };
     try {
       rec = new Rec();
-      rec.lang = getLang() === 'de' ? 'de-DE' : 'en-US';
+      rec.lang = speechLang();
       rec.interimResults = true;
+      rec.maxAlternatives = 1;
       rec.continuous = !!loadPref('loom.aloud', false);
-      rec.onstart = () => { started = true; };
-      rec.onaudiostart = () => { started = true; };
       rec.onresult = (e) => {
-        started = true;
         let interim = '';
         for (let i = e.resultIndex; i < e.results.length; i++) {
           const r = e.results[i];
-          if (r.isFinal) { send(r[0].transcript.trim()); interim = ''; } else interim += r[0].transcript;
+          if (r.isFinal) { const said = r[0].transcript.trim(); if (said) send(said); interim = ''; } else interim += r[0].transcript;
         }
         if (interim) field.value = interim;
       };
       rec.onerror = (e) => {
-        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') showHint('loom.mic.denied');
-        else if (e.error !== 'no-speech' && e.error !== 'aborted') dictate(false);
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') showHint(homeScreen ? 'loom.mic.safari' : 'loom.mic.denied');
+        else if (e.error === 'language-not-supported') showHint('loom.mic.lang.no');
+        else if (e.error !== 'no-speech' && e.error !== 'aborted') showHint('loom.mic.failed', { error: e.error || '?' });
       };
       rec.onend = done;
       rec.start();
       el.classList.add('listening');
       mic.setAttribute('aria-pressed', 'true');
       state.textContent = t('loom.listening');
-      watchdog = setTimeout(() => { if (started || !rec) return; try { rec.abort(); } catch { /* gone */ } done(); dictate(false); }, 1500);
-    } catch { done(); dictate(true); }
+    } catch (err) { done(); showHint('loom.mic.failed', { error: err?.name || 'start' }); }
   });
   redraw();
   return el;
@@ -384,7 +394,7 @@ export function suggestRow(x, { go, redraw = () => {} }) {
 }
 
 // ------------------------------------------------------------------ the docked panel (Alt+T, the Loom button)
-export function openTalk({ go, text = '' } = {}) {
+export function openTalk({ go, text = '', focus = true } = {}) {
   if (!shared.el || !shared.el.isConnected) {
     shared.el = talkPanel({ go, onClose: () => closeTalk() });
     shared.el.classList.add('docked');
@@ -396,7 +406,9 @@ export function openTalk({ go, text = '' } = {}) {
   shared.el.classList.remove('half');
   shared.el.redraw();
   if (text) shared.el.send(text);
-  else setTimeout(() => shared.el?.querySelector('.talk-in')?.focus({ preventScroll: true }), 60);
+  // the field takes the keys only on a Mac (mouse and keyboard); on the phone a tap on the field opens the keyboard,
+  // nothing else does (0.33.2)
+  else if (focus && window.matchMedia('(hover: hover) and (pointer: fine)').matches) setTimeout(() => shared.el?.querySelector('.talk-in')?.focus({ preventScroll: true }), 60);
   return shared.el;
 }
 export function closeTalk() {
