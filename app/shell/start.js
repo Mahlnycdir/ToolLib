@@ -189,6 +189,8 @@ function startGrid(s, { go, ready, arranging, onArrange }) {
     arranging,
     onArrange,
     tray: t('tray.title'),
+    // 0.33.1: the phone is for working on the go: the focus, Loom, the question, one step, go on and the inbox
+    phoneHidden: ['pult', 'themes', 'projects', 'tools', 'bench'],
     render: (id) => {
       const block = s.blocks.get(id);
       if (block) {

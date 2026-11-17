@@ -124,11 +124,11 @@ export async function respond(raw, { go }) {
   switch (u.intent) {
     case 'open': {
       const tool = toolFor(u.arg);
-      if (tool) { go(tool.href); return { text: t('loom.opened', { title: tool.name }) }; }
+      if (tool) { go(tool.href); return { text: t('loom.opened', { title: tool.name }), went: true }; }
       const d = nodeFor(u.arg);
       if (!d) return { text: t('loom.notFound', { q: u.arg }), chips: [{ label: t('loom.chip.research'), act: 'research', arg: u.arg }] };
       go(nodeHref(d.path));
-      return { text: t('loom.opened', { title: nodeTitle(d, lang) }) };
+      return { text: t('loom.opened', { title: nodeTitle(d, lang) }), went: true };
     }
     case 'search': {
       const hits = searchNodes(u.arg, { limit: 5 });
@@ -148,7 +148,7 @@ export async function respond(raw, { go }) {
       const { queueSearch } = await import('./research-view.js');
       queueSearch(u.arg);
       go('#/m/scraper');
-      return { text: t('loom.research', { q: u.arg }) };
+      return { text: t('loom.research', { q: u.arg }), went: true };
     }
     case 'collect':
       return { text: t('loom.collect'), chips: [{ label: t('loom.chip.research'), act: 'research', arg: u.arg || '' }] };
@@ -169,7 +169,7 @@ export async function respond(raw, { go }) {
       if (!d) return { text: t('loom.deeper.which') };
       diveInto(place.project, d.path);
       go(nodeHref(place.project));
-      return { text: t('loom.deeper', { title: nodeTitle(d, lang) }) };
+      return { text: t('loom.deeper', { title: nodeTitle(d, lang) }), went: true };
     }
     case 'ask': return answer(text, { lang });
     default: {
@@ -218,9 +218,11 @@ async function attachTo(path, words = '') {
 
 async function runChip(c, { go }) {
   try {
-    if (c.act === 'open') { go(String(c.arg).startsWith('#') ? c.arg : nodeHref(c.arg)); return; }
-    if (c.act === 'research') { const { queueSearch } = await import('./research-view.js'); queueSearch(c.arg); go('#/m/scraper'); return; }
-    if (c.act === 'deeper') { const place = placeNow(); if (place.project) { diveInto(place.project, c.arg); go(nodeHref(place.project)); } return; }
+    // a chip that leads somewhere: on the phone the conversation steps down to the lower half, so you see where
+    // you are and can go on talking (0.33.1)
+    if (c.act === 'open') { go(String(c.arg).startsWith('#') ? c.arg : nodeHref(c.arg)); peekTalk(); return; }
+    if (c.act === 'research') { const { queueSearch } = await import('./research-view.js'); queueSearch(c.arg); go('#/m/scraper'); peekTalk(); return; }
+    if (c.act === 'deeper') { const place = placeNow(); if (place.project) { diveInto(place.project, c.arg); go(nodeHref(place.project)); peekTalk(); } return; }
     let reply = null;
     if (c.act === 'note') reply = await noteHere(c.arg, { go });
     else if (c.act === 'card') { const n = await loadNote(c.arg).catch(() => null); reply = await cardFrom(n?.text || '', { fromNote: c.arg }); }
@@ -242,7 +244,11 @@ export function talkPanel({ go, project = '', embedded = false, onClose = null }
   const close = onClose ? h('button', { type: 'button', class: 'icon-btn small talk-close', 'aria-label': t('action.close'), title: t('action.close'), html: icon('close'), onclick: onClose }) : null;
   const photo = photoButton({ cls: 'small', onPath: async (path) => { push({ who: 'me', text: t('loom.photo.me'), project: placeNow().project }); const r = await noteHere(`${imageLine(path)}\n\n${field.value.trim()}`.trim(), { go }); field.value = ''; push({ who: 'loom', ...r }); } });
   const head = h('header', { class: 'talk-head' }, h('span', { class: 'talk-mark' }, loomMark(18), h('b', { text: embedded ? t('loom.aloud.title') : 'Loom' })), state, aloud, close);
-  el.append(head, list, h('div', { class: 'talk-bar' }, wave, field, photo, mic));
+  // the phone (0.33.1): a handle on top; tap it to switch between the whole screen and the lower half
+  const grab = embedded ? null : h('button', { type: 'button', class: 'talk-grab', 'aria-label': t('loom.half'), title: t('loom.half'), onclick: () => el.classList.toggle('half') });
+  const hint = h('p', { class: 'talk-hint', hidden: true });
+  el.append(...[grab, head, list, hint, h('div', { class: 'talk-bar' }, wave, field, photo, mic)].filter(Boolean));
+  field.addEventListener('focus', () => el.classList.remove('half'));
 
   aloud.addEventListener('click', () => {
     const on = !loadPref('loom.aloud', false);
@@ -296,7 +302,9 @@ export function talkPanel({ go, project = '', embedded = false, onClose = null }
     state.textContent = t('loom.thinking');
     try {
       const reply = await respond(text, { go });
-      push({ who: 'loom', project: reply.project ?? at, ...reply });
+      const { went, ...msg } = reply;
+      push({ who: 'loom', project: reply.project ?? at, ...msg });
+      if (went) peekTalk();
     } catch (e) { console.warn('Loom', e); push({ who: 'loom', text: t('loom.failed'), project: at }); }
     state.textContent = t('loom.ready');
   }
@@ -309,32 +317,57 @@ export function talkPanel({ go, project = '', embedded = false, onClose = null }
   });
 
   // ---------------- speaking: the browser's speech recognition, or the keyboard's dictation
+  // In the app on the iPhone's home screen Safari's speech recognition does not start (0.33.1, ENTE's test): there
+  // the microphone opens the keyboard at once (the tap is still a tap, so iOS allows it) and points to its own
+  // microphone, the dictation, which writes into the field. Elsewhere the recognition gets 1.5 s to begin; if it
+  // does not, the same hint comes.
   let rec = null;
+  let hintTimer = 0;
+  const showHint = (key) => {
+    hint.textContent = t(key);
+    hint.hidden = false;
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => { hint.hidden = true; }, 12000);
+  };
+  const dictate = (inTap) => {
+    if (inTap) { field.focus(); showHint('loom.mic.dictate'); } else showHint('loom.mic.dictate.tap');
+  };
+  const ios = document.documentElement.classList.contains('ios');
+  const homeScreen = navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
   mic.addEventListener('click', () => {
     if (rec) { rec.stop(); return; }
     const Rec = SR();
-    if (!Rec) { field.focus(); toast(t('loom.mic.dictate'), 'info', 6000); return; }
+    if (!Rec || (ios && homeScreen)) { dictate(true); return; }
+    let started = false;
+    let watchdog = 0;
+    const done = () => { clearTimeout(watchdog); rec = null; el.classList.remove('listening'); state.textContent = t('loom.ready'); mic.setAttribute('aria-pressed', 'false'); };
     try {
       rec = new Rec();
       rec.lang = getLang() === 'de' ? 'de-DE' : 'en-US';
       rec.interimResults = true;
       rec.continuous = !!loadPref('loom.aloud', false);
-      let said = '';
+      rec.onstart = () => { started = true; };
+      rec.onaudiostart = () => { started = true; };
       rec.onresult = (e) => {
+        started = true;
         let interim = '';
         for (let i = e.resultIndex; i < e.results.length; i++) {
           const r = e.results[i];
-          if (r.isFinal) { said = r[0].transcript.trim(); send(said); interim = ''; } else interim += r[0].transcript;
+          if (r.isFinal) { send(r[0].transcript.trim()); interim = ''; } else interim += r[0].transcript;
         }
         if (interim) field.value = interim;
       };
-      rec.onerror = (e) => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') toast(t('loom.mic.denied'), 'error', 6000); else if (e.error !== 'no-speech' && e.error !== 'aborted') toast(t('loom.mic.dictate'), 'info', 5000); };
-      rec.onend = () => { rec = null; el.classList.remove('listening'); state.textContent = t('loom.ready'); mic.setAttribute('aria-pressed', 'false'); };
+      rec.onerror = (e) => {
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') showHint('loom.mic.denied');
+        else if (e.error !== 'no-speech' && e.error !== 'aborted') dictate(false);
+      };
+      rec.onend = done;
       rec.start();
       el.classList.add('listening');
       mic.setAttribute('aria-pressed', 'true');
       state.textContent = t('loom.listening');
-    } catch { rec = null; field.focus(); toast(t('loom.mic.dictate'), 'info', 6000); }
+      watchdog = setTimeout(() => { if (started || !rec) return; try { rec.abort(); } catch { /* gone */ } done(); dictate(false); }, 1500);
+    } catch { done(); dictate(true); }
   });
   redraw();
   return el;
@@ -360,6 +393,7 @@ export function openTalk({ go, text = '' } = {}) {
   shared.open = true;
   document.querySelector('.app')?.classList.add('talk-open');
   shared.el.hidden = false;
+  shared.el.classList.remove('half');
   shared.el.redraw();
   if (text) shared.el.send(text);
   else setTimeout(() => shared.el?.querySelector('.talk-in')?.focus({ preventScroll: true }), 60);
@@ -378,4 +412,10 @@ export function toggleTalk({ go }) {
   if (shared.open) closeTalk(); else openTalk({ go });
 }
 export const sendToLoom = (text, { go }) => openTalk({ go, text });
+// the phone: the docked conversation to the lower half (after a chip or an answer led somewhere)
+export function peekTalk() {
+  if (!shared.open || !shared.el || window.innerWidth >= 760) return;
+  shared.el.classList.add('half');
+  document.activeElement?.blur?.();
+}
 export const talkIsOpen = () => shared.open;

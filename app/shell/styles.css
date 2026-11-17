@@ -3130,3 +3130,39 @@ html.calm .lf-here { animation: none; }
 .widget.s-1x1 .small-card .btn-row { gap: 6px; }
 .widget.s-1x1 .small-card .btn { white-space: nowrap; padding: 0 10px; font-size: 13px; }
 @media (max-width: 759px) { .widget.s-1x1.bare .small-step, .widget.s-1x1.bare .ideas, .widget.s-1x1.bare .loom-voice { padding: 12px; } .widget.s-1x1 .loom-voice p { font-size: 13.5px; } }
+
+/* ================================================================== 0.33.1: the phone calmer, the conversation as a half sheet */
+.widgets.sized > .widget { min-width: 0; }
+.widgets.sized > .widget > * { min-width: 0; max-width: 100%; }
+.widgets.one-col > .widget, .widgets.one-col > .widget.wide { grid-column: 1 / -1 !important; grid-row: auto !important; min-height: 0 !important; }
+.widgets.one-col > .widget-add { grid-column: 1 / -1; }
+.widget.bare .small-card { border: 0; background: transparent; padding: 0; box-shadow: none; }
+.small-card .btn-row { flex-wrap: wrap; }
+.widgets.phone .problem-h { font-size: 15px; }
+.widgets.phone .widget.bare .problem, .widgets.phone .widget.bare .small-step, .widgets.phone .widget.bare .ideas, .widgets.phone .widget.bare .loom-voice { padding: 14px 16px; }
+.widgets.phone .loom-voice p { font-size: 15px; line-height: 1.45; }
+.widgets.phone .loom-focus-title { font-size: 18px; }
+.widgets.phone .ideas-themes .chip { font-size: 13.5px; }
+@media (max-width: 759px) { .app:not(.solo) .main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); } }
+/* the photo button: as large as the other buttons in its row */
+.photo-btn, .photo-btn.small { width: 40px; height: 40px; min-width: 40px; }
+.photo-btn .ic, .photo-btn.small .ic { width: 21px; height: 21px; }
+.talk-bar .photo-btn { align-self: center; }
+/* the keyboard's dictation, said in the panel */
+.talk-hint { margin: 0; padding: 8px 12px; border-radius: 12px; background: var(--light-soft); border: 1px solid var(--light-line); color: color-mix(in srgb, var(--light) 70%, var(--fg)); font-size: 13px; line-height: 1.45; }
+.talk-hint[hidden] { display: none; }
+.talk-grab { display: none; }
+@media (max-width: 759px) {
+  .talk-grab { display: block; align-self: center; width: 64px; height: 18px; margin: -8px 0 -4px; padding: 0; border: 0; background: none; cursor: pointer; position: relative; }
+  .talk-grab::before { content: ''; position: absolute; left: 14px; right: 14px; top: 7px; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--fg) 30%, transparent); }
+  .loom-talk.docked.half { top: auto; bottom: calc(64px + env(safe-area-inset-bottom)); height: 50vh; border-radius: 22px 22px 0 0; padding-top: 12px; padding-bottom: 12px; box-shadow: 0 -18px 40px rgba(0, 0, 0, 0.35); overflow: hidden; }
+  .loom-talk.docked.half .talk-list { min-height: 0; }
+  .loom-talk.docked.half .talk-empty .talk-how, .loom-talk.docked.half .talk-suggest { display: none; }
+  .loom-talk.docked.half .talk-bar { flex: none; }
+  .loom-fab { width: 46px; height: 46px; right: 12px; }
+}
+/* stacked like stones (0.33.1): rows of 4 px, each widget spans what its content needs (widget-frame.js pack) */
+.widgets.sized.stacked, .start-board .widgets.sized.stacked { grid-auto-rows: 4px; row-gap: 0 !important; align-items: start; }
+.widgets.stacked > .widget, .widgets.stacked > .widget-add { grid-row-start: auto !important; align-self: start !important; }
+.widgets.stacked > .widget.s-1x2, .widgets.stacked > .widget.s-2x2 { min-height: 380px; }
+.widgets.stacked > .widget.bare.s-1x2 > :not(.widget-head):not(.widget-x):not(.widget-size), .widgets.stacked > .widget.bare.s-2x2 > :not(.widget-head):not(.widget-x):not(.widget-size) { min-height: 380px; }

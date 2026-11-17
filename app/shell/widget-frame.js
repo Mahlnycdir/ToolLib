@@ -7,6 +7,9 @@
 //                  drop it where the light bar shows; what is inside rests meanwhile. A tray above the board offers
 //                  everything you can lay down: widgets you hid (to show again) and building blocks.
 //   iPhone         a long press on a widget starts Anordnen (like the home screen); "Fertig" ends it.
+//                  0.33.1: on the phone the board is one column and calmer: each widget takes the whole width, and
+//                  what you hide there (×) is hidden on this phone only (pref widgets.phone, per board); the Mac keeps
+//                  everything. The tray offers them again under "Hidden on this phone".
 //
 //   widgetGrid({
 //     scope,                     a name for this board (drags only land on the same board)
@@ -22,11 +25,12 @@
 //     add(value)                 put a new widget on the board
 //     arranging, onArrange(on)   whether the board is being arranged, and how to switch (the page keeps the state)
 //     tray                       a title for the tray ("Heute anordnen"); no title: no tray
+//     phoneHidden                ids hidden on a phone when this board has no list of its own yet (0.33.1)
 //   })
 //
 // For Python readers: the board does not keep a model of its own; every action calls save/remove/add, which write
 // the file, and the page is drawn again from the file (like re-rendering a template after each POST).
-import { h, actionSheet, confirmDialog, toast } from '../services/ui.js';
+import { h, actionSheet, confirmDialog, toast, loadPref, savePref } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t } from '../i18n/i18n.js';
 import { draggable, dropZone } from './drag.js';
@@ -46,24 +50,51 @@ export function sizesOf(stored, wide = []) {
   return out;
 }
 const colsOf = (size) => Number(String(size || '1x1')[0]) || 1;
+// the phone (0.33.1): narrow screen; its own list of hidden widgets per board, on this device only
+export const isPhone = () => window.matchMedia('(max-width: 759px)').matches;
+function phoneList(scope, fallback) {
+  const all = loadPref('widgets.phone', {});
+  const v = all && typeof all === 'object' ? all[scope] : null;
+  return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [...fallback];
+}
+function setPhoneList(scope, list) {
+  const all = loadPref('widgets.phone', {});
+  const next = all && typeof all === 'object' && !Array.isArray(all) ? { ...all } : {};
+  next[scope] = [...new Set(list)].slice(0, 60);
+  savePref('widgets.phone', Object.fromEntries(Object.entries(next).slice(-40)));
+}
 const rowsOf = (size) => Number(String(size || '1x1')[2]) || 1;
 
-export function widgetGrid({ scope, list, sizes = null, wide = [], render, save, remove, edit, choices, add, arranging = false, onArrange = null, tray = '' }) {
+export function widgetGrid({ scope, list, sizes = null, wide = [], render, save, remove, edit, choices, add, arranging = false, onArrange = null, tray = '', phoneHidden = [] }) {
   const size = sizesOf(sizes, sizes ? [] : wide);
-  const area = h('div', { class: `widgets sized${arranging ? ' arranging' : ''}`, dataset: { scope } });
-  const shown = list.map((id) => ({ id, w: render(id) })).filter((x) => x.w);
-  const ids = shown.map((x) => x.id);
+  const phone = isPhone();
+  const hiddenHere = phone ? phoneList(scope, phoneHidden) : [];
+  const area = h('div', { class: `widgets sized${arranging ? ' arranging' : ''}${phone ? ' phone' : ''}`, dataset: { scope } });
+  const all = list.map((id) => ({ id, w: render(id) })).filter((x) => x.w);
+  const shown = all.filter((x) => !hiddenHere.includes(x.id));
+  // the order is kept for every widget, also the ones hidden on this phone
+  const ids = all.map((x) => x.id);
+  // after hiding or showing on the phone the board draws itself again (whichever element stands for it now)
+  const redraw = () => window.dispatchEvent(new CustomEvent('widgets:phone', { detail: scope }));
   const store = (next, nextSizes = size) => save({ list: next, sizes: nextSizes, wide: Object.keys(nextSizes).filter((k) => colsOf(nextSizes[k]) === 2) });
   const setSize = (id, v) => { const next = { ...size }; if (v === '1x1') delete next[id]; else next[id] = v; store(ids, next); };
 
   const takeAway = async (id, w) => {
+    // on the phone: hidden on this phone only, the Mac keeps it
+    if (phone) {
+      setPhoneList(scope, [...phoneList(scope, phoneHidden), id]);
+      redraw();
+      toast(t('widget.hiddenPhone', { name: w.title }), 'ok', 7000, { label: t('delete.undo'), run: () => { setPhoneList(scope, phoneList(scope, phoneHidden).filter((x) => x !== id)); redraw(); } });
+      return;
+    }
     // a building block with something written in it asks first: its content goes with it
     if (w.hasContent && !(await confirmDialog(t('widget.remove'), t('widget.remove.confirm', { name: w.title }), { okLabel: t('widget.remove'), danger: true }))) return;
     const undo = await remove(id);
     if (typeof undo === 'function') toast(t('widget.removed', { name: w.title }), 'ok', 8000, { label: t('delete.undo'), run: undo });
   };
 
-  shown.forEach(({ id, w }, i) => {
+  shown.forEach(({ id, w }) => {
+    const i = ids.indexOf(id);
     const sz = size[id] || '1x1';
     const menu = h('button', { type: 'button', class: 'icon-btn small widget-menu no-drag', title: t('widget.menu'), 'aria-label': `${t('widget.menu')}: ${w.title}`, html: icon('more') });
     menu.addEventListener('click', async () => {
@@ -72,10 +103,10 @@ export function widgetGrid({ scope, list, sizes = null, wide = [], render, save,
         { label: t('widget.earlier'), value: 'up', icon: 'arrowLeft', disabled: i === 0 },
         { label: t('widget.later'), value: 'down', icon: 'arrowRight', disabled: i === ids.length - 1 },
         '-',
-        ...SIZES.map((v) => ({ label: t('widget.size', { size: v.replace('x', '×') }), value: `size:${v}`, icon: v === sz ? 'check' : colsOf(v) > 1 ? 'expand' : 'shrink', disabled: v === sz })),
+        ...(phone ? [] : SIZES.map((v) => ({ label: t('widget.size', { size: v.replace('x', '×') }), value: `size:${v}`, icon: v === sz ? 'check' : colsOf(v) > 1 ? 'expand' : 'shrink', disabled: v === sz }))),
         ...(w.editable ? ['-', { label: t('widget.edit'), value: 'edit', icon: 'edit' }] : []),
         ...(onArrange ? ['-', { label: t('start.arrange'), value: 'arrange', icon: 'blocks' }] : []),
-        '-', { label: t('widget.remove'), value: 'remove', icon: 'close', danger: true },
+        '-', { label: t(phone ? 'widget.hidePhone' : 'widget.remove'), value: 'remove', icon: 'close', danger: !phone },
       ]);
       if (!pick) return;
       if (pick === 'edit') { edit?.(id); return; }
@@ -88,7 +119,8 @@ export function widgetGrid({ scope, list, sizes = null, wide = [], render, save,
       store(next);
     });
     const head = h('header', { class: 'widget-head' }, iconEl(w.icon, 'widget-icon'), h('h3', { text: w.title }), menu);
-    const x = h('button', { type: 'button', class: 'widget-x no-drag', 'aria-label': `${t('widget.remove')}: ${w.title}`, title: t('widget.remove'), html: icon('close') });
+    const xLabel = t(phone ? 'widget.hidePhone' : 'widget.remove');
+    const x = h('button', { type: 'button', class: 'widget-x no-drag', 'aria-label': `${xLabel}: ${w.title}`, title: xLabel, html: icon('close') });
     x.addEventListener('click', (e) => { e.stopPropagation(); takeAway(id, w); });
     const grip = h('span', { class: 'widget-size no-drag', title: t('widget.resize'), 'aria-hidden': 'true' });
     const el = h('section', { class: `widget widget-${w.kind} s-${sz}${colsOf(sz) > 1 ? ' wide' : ''}${w.bare ? ' bare' : ''}`, dataset: { widget: id, size: sz } }, x, head, w.body, grip);
@@ -114,9 +146,42 @@ export function widgetGrid({ scope, list, sizes = null, wide = [], render, save,
     area.append(el);
   });
 
-  // the columns follow the width of the board: four on a wide Mac, two on the phone (a widget spans one or two)
-  const fitCols = () => { const w = area.getBoundingClientRect().width; if (!w) return; area.style.setProperty('--cols', String(w >= 1000 ? 4 : w >= 700 ? 3 : 2)); };
-  if (window.ResizeObserver) new ResizeObserver(fitCols).observe(area);
+  // the columns follow the width of the board: four on a wide Mac, one on the phone (0.33.1: every widget the whole
+  // width there, so each one stays readable)
+  const fitCols = () => {
+    const w = area.getBoundingClientRect().width;
+    if (!w) return;
+    const cols = w >= 1000 ? 4 : w >= 700 ? 3 : w >= 520 ? 2 : 1;
+    area.style.setProperty('--cols', String(cols));
+    area.classList.toggle('one-col', cols === 1);
+    pack();
+  };
+  // Stacked like stones (0.33.1, ENTE: "ein langes Widget, daneben mehrere kleine, auch untereinander"): the board's
+  // rows are a few pixels high and every widget spans as many of them as its content needs, so a tall widget stands
+  // beside several small ones and gaps fill up from below (grid-auto-flow: dense). A 1×2 or 2×2 widget is at least
+  // twice as tall. On the phone (one column) the widgets simply follow each other.
+  const ROW = 4;
+  let packing = 0;
+  function pack() {
+    cancelAnimationFrame(packing);
+    packing = requestAnimationFrame(() => {
+      if (!area.isConnected) return;
+      const one = area.classList.contains('one-col');
+      area.classList.toggle('stacked', !one);
+      const gap = parseFloat(getComputedStyle(area).columnGap) || 14;
+      for (const el of area.children) {
+        if (one) { el.style.gridRowEnd = ''; continue; }
+        const hgt = el.getBoundingClientRect().height;
+        el.style.gridRowEnd = `span ${Math.max(1, Math.ceil((hgt + gap) / ROW))}`;
+      }
+    });
+  }
+  if (window.ResizeObserver) {
+    new ResizeObserver(fitCols).observe(area);
+    // a widget whose content grows or shrinks (a list, a picture that loads) takes its new height
+    const each = new ResizeObserver(pack);
+    for (const el of area.children) each.observe(el);
+  }
   requestAnimationFrame(fitCols);
 
   const offer = choices?.() || [];
@@ -128,22 +193,37 @@ export function widgetGrid({ scope, list, sizes = null, wide = [], render, save,
     });
     area.append(btn);
   }
-  if (!tray) return area;
+  const opts = { scope, list, sizes, wide, render, save, remove, edit, choices, add, arranging, onArrange, tray, phoneHidden };
+  const listen = (root) => {
+    const again = (e) => {
+      if (!root.isConnected) { window.removeEventListener('widgets:phone', again); return; }
+      if (e.detail !== scope) return;
+      window.removeEventListener('widgets:phone', again);
+      root.replaceWith(widgetGrid(opts));
+    };
+    window.addEventListener('widgets:phone', again);
+    return root;
+  };
+  if (!tray) return listen(area);
   const wrap = h('div', { class: 'widget-board' });
-  if (arranging) wrap.append(trayOf({ title: tray, offer, add, done: () => onArrange?.(false) }));
+  const onPhone = phone ? all.filter((x) => hiddenHere.includes(x.id)).map((x) => ({ value: x.id, label: x.w.title, icon: x.w.icon })) : [];
+  const showAgain = (id) => { setPhoneList(scope, phoneList(scope, phoneHidden).filter((x) => x !== id)); redraw(); };
+  if (arranging) wrap.append(trayOf({ title: tray, offer, add, done: () => onArrange?.(false), onPhone, showAgain }));
   wrap.append(area);
-  return wrap;
+  return listen(wrap);
 }
 
 // The tray while arranging: everything you can lay down, and "Fertig".
-function trayOf({ title, offer, add, done }) {
+function trayOf({ title, offer, add, done, onPhone = [], showAgain }) {
   const cut = offer.indexOf('-');
   const own = (cut < 0 ? offer : offer.slice(0, cut)).filter((x) => x && x !== '-');
   const blocks = cut < 0 ? [] : offer.slice(cut + 1).filter((x) => x && x !== '-');
   const chip = (x) => h('button', { type: 'button', class: 'chip tray-chip', dataset: { value: x.value }, title: x.detail || x.label, onclick: () => add(x.value) }, iconEl(x.icon || 'plus'), h('span', { text: x.label }));
   const fertig = h('button', { type: 'button', class: 'btn primary small tray-done', onclick: done }, iconEl('check'), h('span', { text: t('start.arranged') }));
   return h('section', { class: 'widget-tray', 'aria-label': title },
-    h('div', { class: 'tray-top' }, h('b', { text: title }), h('span', { class: 'muted small', text: t('tray.hint') }), fertig),
+    h('div', { class: 'tray-top' }, h('b', { text: title }), h('span', { class: 'muted small', text: t(onPhone.length || isPhone() ? 'tray.hint.phone' : 'tray.hint') }), fertig),
+    onPhone.length ? h('div', { class: 'tray-row' }, h('span', { class: 'tray-label muted small', text: t('tray.phone') }),
+      ...onPhone.map((x) => h('button', { type: 'button', class: 'chip tray-chip', dataset: { value: x.value, phone: '1' }, onclick: () => showAgain(x.value) }, iconEl(x.icon || 'plus'), h('span', { text: x.label })))) : null,
     own.length ? h('div', { class: 'tray-row' }, h('span', { class: 'tray-label muted small', text: t('tray.hidden') }), ...own.map(chip)) : null,
     blocks.length ? h('div', { class: 'tray-row' }, h('span', { class: 'tray-label muted small', text: t('tray.blocks') }), ...blocks.map(chip)) : null);
 }
@@ -197,8 +277,9 @@ function longPress(el, area, start) {
     const timer = setTimeout(() => {
       cleanup();
       if (navigator.vibrate) { try { navigator.vibrate(10); } catch { /* not here */ } }
-      // the finger lifting after the long press must not tap what lies below it
-      const eat = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+      // the finger lifting after the long press must not tap what lies below it (only there: a tap elsewhere, an ×
+      // say, goes through)
+      const eat = (ev) => { if (Math.hypot(ev.clientX - at.x, ev.clientY - at.y) < 24) { ev.preventDefault(); ev.stopPropagation(); } };
       document.addEventListener('click', eat, true);
       setTimeout(() => document.removeEventListener('click', eat, true), 700);
       start();
