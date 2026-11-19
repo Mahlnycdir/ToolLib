@@ -1,4 +1,6 @@
-// The control panel on Start (0.28.0). ENTE: "like a small control panel for the project in focus … I work on 3–4
+// The control panel on Start (0.28.0). Since 0.33.7 it shows the projects in focus, in the order of their
+// priorities (any number), and "Choose projects" opens the focus sheet (focus-ui.js); `pult:` in start.md is only
+// read once to make that list. ENTE: "like a small control panel for the project in focus … I work on 3–4
 // projects at the same time and need more structure for that." Up to four projects of your choice:
 //   the one in focus is open: its next step with "Done" and "Handed in", all steps with their lights, where you
 //   stand in its red thread, what you did last in it (a page, a work, a card), the focus timer and its date;
@@ -14,8 +16,8 @@ import { h, toast, actionSheet, savePref } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
 import { nodeByPath, nodeBySlug, onNodesChange } from '../services/search.js';
-import { focusPath, loadProject, nextUp, projectLibrary, projectWorks, projects, setFocus, setStepStatus } from '../services/projects.js';
-import { PULT_MAX } from '../services/start-store.js';
+import { focusList, focusPath, loadProject, nextUp, onFocusChange, projectLibrary, projectWorks, projects, setFocus, setStepStatus } from '../services/projects.js';
+import { openFocusSheet } from './focus-ui.js';
 import { trail } from '../services/trail.js';
 import { nodeHref, nodeTitle, typeTile } from './node-view.js';
 import { paintProject } from './projects-view.js';
@@ -28,13 +30,8 @@ import { formatTime } from './views.js';
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const days = (date) => Math.round((new Date(`${date}T00:00:00`) - new Date(new Date().toDateString())) / 864e5);
 
-// The projects in the panel: the ones you chose, or (not chosen yet) the one in focus and the next active ones.
-export function pultProjects(pult) {
-  const all = projects().filter((p) => p.state !== 'done');
-  if (pult) return pult.map((path) => all.find((p) => p.path === path)).filter(Boolean).slice(0, PULT_MAX);
-  const focus = all.find((p) => p.path === focusPath());
-  return [...new Set([focus, ...all.filter((p) => p.state === 'active')].filter(Boolean))].slice(0, PULT_MAX);
-}
+// The projects in the panel: the ones in focus, priority 1 first (0.33.7).
+export function pultProjects() { return focusList(); }
 
 // The light of a whole project: red when a step is next, yellow when something waits, green when all is done.
 function projectLight(p) {
@@ -45,9 +42,19 @@ function projectLight(p) {
   return 'open';
 }
 
-export function pultWidget({ go, pult, savePult }) {
+// 0.33.7: the panel draws itself again when the focus or its order changes
+export function pultWidget(args) {
+  const host = h('div', { class: 'pult-host' });
+  let shownOpen = '';
+  const build = () => host.replaceChildren(pultBox({ ...args, openPath: shownOpen, setOpen: (p) => { shownOpen = p; build(); } }));
+  build();
+  const stop = onFocusChange(() => { if (!host.isConnected) { stop(); return; } if (host.contains(document.activeElement) && document.activeElement.matches('input, textarea')) return; build(); });
+  return host;
+}
+
+function pultBox({ go, openPath, setOpen }) {
   const lang = getLang();
-  const list = pultProjects(pult);
+  const list = pultProjects();
   const box = h('div', { class: 'pult' });
   if (!list.length) {
     box.append(h('div', { class: 'empty-invite' }, h('p', { text: t(projects().length ? 'pult.empty' : 'project.none') }),
@@ -55,24 +62,15 @@ export function pultWidget({ go, pult, savePult }) {
       h('div', { class: 'btn-row' }, projects().length ? choose() : h('button', { type: 'button', class: 'btn primary', onclick: () => CREATORS.find((c) => c.id === 'project').run({ go }) }, iconEl('plus'), h('span', { text: t('create.project') })))));
     return box;
   }
-  const open = list.find((p) => p.path === focusPath()) || list[0];
+  const open = list.find((p) => p.path === openPath) || list.find((p) => p.path === focusPath()) || list[0];
   const openBox = h('div', { class: 'pult-open' });
   const others = h('div', { class: 'pult-others' });
   box.append(openBox, others);
 
-  // ---------------------------------------------------------------- which projects (at most four)
+  // ---------------------------------------------------------------- which projects: the focus and its priorities
   function choose() {
     const b = h('button', { type: 'button', class: 'btn small pult-choose' }, iconEl('edit'), h('span', { text: t('pult.choose') }));
-    b.addEventListener('click', async () => {
-      const now = list.map((p) => p.path);
-      const pick = await actionSheet(t('pult.choose.title', { n: PULT_MAX }), projects().filter((p) => p.state !== 'done').map((p) => ({
-        label: `${now.includes(p.path) ? '✓ ' : ''}${p.title}`, value: p.path, icon: 'target', detail: p.steps?.next ? `${t('project.next')} ${p.steps.next}` : p.goal || '',
-      })));
-      if (!pick) return;
-      if (now.includes(pick)) { await savePult(now.filter((x) => x !== pick)); return; }
-      if (now.length >= PULT_MAX) { toast(t('pult.full', { n: PULT_MAX }), 'info', 5000); return; }
-      await savePult([...now, pick]);
-    });
+    b.addEventListener('click', () => openFocusSheet());
     return b;
   }
 
@@ -82,7 +80,7 @@ export function pultWidget({ go, pult, savePult }) {
     const here = fresh && nextUp(fresh.steps);
     if (here) { toast(t('steps.goOn', { step: here.text }), 'ok', 7000); return; }
     const other = list.filter((x) => x.path !== p.path).map((x) => ({ x, s: (nodeByPath(x.path)?.steps?.list || []).find((i) => i.status === 'next') })).find((y) => y.s);
-    if (other) toast(t('pult.goOnOther', { step: other.s.text, project: other.x.title }), 'ok', 8000, { label: t('pult.toFocus'), run: () => setFocus(other.x.path) });
+    if (other) toast(t('pult.goOnOther', { step: other.s.text, project: other.x.title }), 'ok', 8000, { label: t('focus.work'), run: () => { setFocus(other.x.path); setOpen(other.x.path); } });
     else toast(t('steps.allDone'), 'ok', 6000);
   }
 
@@ -94,9 +92,10 @@ export function pultWidget({ go, pult, savePult }) {
     const fields = {};
     const ctx = { path: p.path, go, redraw: drawOpen, fields, refocus };
     const head = h('div', { class: 'pult-head' },
+      h('span', { class: 'focus-rank big', text: String(list.findIndex((x) => x.path === p.path) + 1) }),
       h('a', { class: 'pult-title', href: nodeHref(p.path), text: p.title }),
       focusPath() === p.path ? h('span', { class: 'chip pult-focus-chip' }, iconEl('target'), h('span', { text: t('start.focus') }))
-        : h('button', { type: 'button', class: 'btn small pult-to-focus', onclick: () => setFocus(p.path) }, iconEl('target'), h('span', { text: t('pult.toFocus') })),
+        : h('button', { type: 'button', class: 'btn small pult-to-focus', title: t('focus.work.hint'), onclick: () => setFocus(p.path) }, iconEl('target'), h('span', { text: t('focus.work') })),
       p.due ? h('span', { class: `chip pult-due${days(p.due) <= 3 ? ' soon' : ''}`, title: p.dueWhat || '', text: days(p.due) === 0 ? t('due.today') : t(days(p.due) < 0 ? 'pult.dueAgo' : 'pult.dueIn', { n: Math.abs(days(p.due)) }) }) : null);
     paintProject(openBox, p.slug);
     const parts = [head];
@@ -150,8 +149,9 @@ export function pultWidget({ go, pult, savePult }) {
       const s = p.steps || {};
       const total = (s.open || 0) + (s.done || 0);
       const row = h('div', { class: 'pult-row', dataset: { path: p.path } },
+        h('span', { class: 'focus-rank', text: String(list.findIndex((x) => x.path === p.path) + 1) }),
         light(projectLight(p), t(`pult.light.${projectLight(p)}`)),
-        h('button', { type: 'button', class: 'pult-row-main', title: t('pult.toFocus'), onclick: () => setFocus(p.path) },
+        h('button', { type: 'button', class: 'pult-row-main', title: t('pult.show'), onclick: () => setOpen(p.path) },
           h('span', { class: 'pult-row-title', text: p.title }),
           h('span', { class: 'muted small pult-row-next', text: s.next ? s.next : t(total ? 'steps.allDone' : 'pult.noSteps') })),
         h('span', { class: 'pult-row-meta small' },

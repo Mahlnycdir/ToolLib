@@ -9,7 +9,7 @@ import { t, getLang } from '../i18n/i18n.js';
 import { ACCENTS } from './modules.js';
 import { allNodes, indexState, nodeByPath, onIndexChange, searchNodes } from '../services/search.js';
 import {
-  STATES, addToProject, deleteProject, focusPath, loadProject, projectNodes, projects, projectsWith, setFocus, setProjectField, touchProject, stationOf,
+  STATES, addToFocus, addToProject, deleteProject, focusList, focusPath, focusRank, loadProject, moveFocus, onFocusChange, removeFromFocus, projectNodes, projects, projectsWith, setFocus, setProjectField, touchProject, stationOf,
   boardOf, parseSections, repoLabel, repoUrl,
 } from '../services/projects.js';
 import { projectBody, sectionTitle, keepView } from './project-board.js';
@@ -31,6 +31,8 @@ import { queueSearch } from './research-view.js';
 import { cardDialog } from './card-dialog.js';
 import { createCard } from '../services/reader-cards.js';
 import { connect } from '../services/relations.js';
+import { openFocusSheet } from './focus-ui.js';
+import { repairCanvasSections } from './project-canvas.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 
@@ -79,13 +81,20 @@ const stateLabel = (s) => t(`project.state.${s}`);
 let refocus = '';   // 'step' or 'quick': the field that keeps the focus when the project is drawn again
 
 // ------------------------------------------------------------------ list of projects
+// 0.33.7 (ENTE: "Die Ansicht ist doof … am Handy kann man nicht mal in der horizontalen verschieben … eine
+// modernisierte Ansicht statt solch eine langgezogene"): tiles in a grid instead of one long card per project. First
+// the projects in focus, in the order of their priorities (number on the tile), then the others, done ones folded.
+// A tile: number, title, goal, a ring (steps done), the next step, a slim bar of its sections (width = cards in it,
+// colour = section) and the days left. Nothing is wider than the screen, on the phone one column.
 export function renderProjects(main, mod, { go }) {
   main.dataset.view = 'projects';
   const head = h('div', { class: 'module-head' }, iconEl(mod.icon, 'tile big'),
     h('div', {}, h('h1', { class: 'view-title', text: t('module.projects.name') }), h('p', { class: 'lead', text: t('module.projects.desc') })));
   const add = h('button', { type: 'button', class: 'btn primary new-project', onclick: () => newProject({ go }) }, iconEl('plus'), h('span', { text: t('create.project') }));
-  const list = h('div', { class: 'project-list' });
-  main.append(head, h('div', { class: 'btn-row' }, add), list);
+  const prios = h('button', { type: 'button', class: 'btn', onclick: () => openFocusSheet() }, iconEl('target'), h('span', { text: t('focus.manage') }));
+  const list = h('div', { class: 'project-overview' });
+  main.append(head, h('div', { class: 'btn-row' }, add, prios), list);
+  let showDone = false;
 
   function draw() {
     const s = indexState();
@@ -96,32 +105,86 @@ export function renderProjects(main, mod, { go }) {
       list.append(h('div', { class: 'empty-invite' }, h('p', { text: t('project.none') }), h('p', { class: 'muted small', text: t('project.none.hint') })));
       return;
     }
-    for (const d of all) list.append(projectCard(d, { go }));
+    const focus = focusList();
+    const inFocus = new Set(focus.map((d) => d.path));
+    const rest = all.filter((d) => !inFocus.has(d.path) && d.state !== 'done');
+    const done = all.filter((d) => d.state === 'done');
+    const group = (title, items) => h('section', { class: 'project-group' }, h('h2', { class: 'project-group-title', text: title }), h('div', { class: 'project-tiles' }, items.map((d) => projectTile(d, { go }))));
+    if (focus.length) list.append(group(t('projects.inFocus'), focus));
+    if (rest.length) list.append(group(t(focus.length ? 'projects.others' : 'projects.all'), rest));
+    if (done.length) {
+      list.append(h('button', { type: 'button', class: 'btn small ghost project-done-toggle', text: t(showDone ? 'projects.done.hide' : 'projects.done.show', { n: done.length }), onclick: () => { showDone = !showDone; draw(); } }));
+      if (showDone) list.append(group(t('project.state.done'), done));
+    }
     const loose = inbox();
     if (loose.length) list.append(h('p', { class: 'muted small' }, t('inbox.waiting', { n: loose.length }), ' ', h('a', { href: '#/home', text: t('nav.home') })));
   }
   const stop = onIndexChange((s) => { if (!list.isConnected) stop(); else if (!s.building) draw(); });
+  const stopF = onFocusChange(() => { if (!list.isConnected) stopF(); else draw(); });
   draw();
 }
 
-// A project as a card: title, goal, next step, the track. Used in the list and on Start.
-export function projectCard(d, { go, big = false } = {}) {
-  const inFocus = focusPath() === d.path;
-  const card = h('article', { class: `project-card${big ? ' big' : ''}${inFocus ? ' focus' : ''} state-${d.state}`, dataset: { path: d.path } });
-  paintProject(card, d.slug);
-  const open = () => go(nodeHref(d.path));
-  const title = h('a', { class: 'project-title', href: nodeHref(d.path), text: d.title });
-  const focus = h('button', { type: 'button', class: `btn small focus-btn${inFocus ? ' on' : ''}`, 'aria-pressed': String(inFocus), title: t(inFocus ? 'project.focus.off' : 'project.focus.hint') },
-    iconEl('target'), h('span', { text: t(inFocus ? 'project.focus.on' : 'project.focus.set') }));
-  focus.addEventListener('click', () => setFocus(inFocus ? '' : d.path));
-  card.append(h('header', { class: 'project-head' }, h('div', { class: 'project-names' }, title,
-    d.state !== 'active' ? h('span', { class: 'chip', text: stateLabel(d.state) }) : null), focus));
-  if (d.goal) card.append(h('p', { class: 'project-goal', text: d.goal }));
-  if (d.steps?.next) card.append(h('p', { class: 'project-next' }, h('span', { class: 'muted', text: `${t('project.next')} ` }), h('span', { text: d.steps.next })));
-  else if (big) card.append(h('p', { class: 'project-next muted', text: t('project.next.none') }));
-  card.append(track(d, { onStation: (id) => { savePref('project.station', { path: d.path, id, at: Date.now() }); open(); } }));
-  return card;
+// the ring of a project: steps done of all (svg)
+export function progressRing(done, all, size = 44) {
+  const part = all ? done / all : 0;
+  const R = 18; const C = 2 * Math.PI * R;
+  const NS = 'http://www.w3.org/2000/svg';
+  const ring = document.createElementNS(NS, 'svg');
+  ring.setAttribute('viewBox', '0 0 44 44'); ring.setAttribute('width', size); ring.setAttribute('height', size); ring.setAttribute('class', 'tile-ring'); ring.setAttribute('role', 'img');
+  ring.setAttribute('aria-label', t('start.focus.part', { n: Math.round(part * 100) }));
+  const circle = (stroke, dash) => { const c = document.createElementNS(NS, 'circle'); for (const [k, v] of Object.entries({ cx: 22, cy: 22, r: R, fill: 'none', stroke, 'stroke-width': 3.5, 'stroke-linecap': 'round', transform: 'rotate(-90 22 22)' })) c.setAttribute(k, v); if (dash) c.setAttribute('stroke-dasharray', dash); return c; };
+  ring.append(circle('var(--line)'), circle('var(--accent, var(--light))', `${(part * C).toFixed(1)} ${C.toFixed(1)}`));
+  const label = document.createElementNS(NS, 'text');
+  for (const [k, v] of Object.entries({ x: 22, y: 25.5, 'text-anchor': 'middle', fill: 'currentColor', 'font-size': 10.5, 'font-weight': 650 })) label.setAttribute(k, v);
+  label.textContent = all ? `${Math.round(part * 100)}%` : '–';
+  ring.append(label);
+  return ring;
 }
+
+const daysTo = (date) => Math.round((new Date(`${date}T00:00:00`) - new Date(new Date().toDateString())) / 864e5);
+
+// A project as a tile (0.33.7). Also exported as projectCard for older callers.
+export function projectTile(d, { go } = {}) {
+  const rank = focusRank(d.path);
+  const st = d.steps || {};
+  const all = (st.open || 0) + (st.done || 0);
+  const secs = boardOfSummary(d);
+  const cards = secs.reduce((n, x) => n + x.items.length, 0);
+  const tile = h('article', { class: `project-tile state-${d.state}${rank ? ' in-focus' : ''}${focusPath() === d.path ? ' here' : ''}`, dataset: { path: d.path } });
+  paintProject(tile, d.slug);
+  const open = () => go(nodeHref(d.path));
+  const focusBtn = h('button', {
+    type: 'button', class: `btn small focus-btn${rank ? ' on' : ''}`, 'aria-pressed': String(!!rank), title: t(rank ? 'focus.remove' : 'project.focus.hint'),
+    onclick: (e) => { e.stopPropagation(); if (rank) removeFromFocus(d.path); else addToFocus(d.path); },
+  }, iconEl('target'), h('span', { text: t(rank ? 'project.focus.on' : 'focus.add') }));
+  const bar = h('div', { class: 'tile-sections', title: t('projects.sections', { n: secs.length, cards }) });
+  for (const x of secs) {
+    if (!x.items.length) continue;
+    const seg = h('span', { class: 'tile-seg', title: `${sectionTitle(x)} · ${x.items.length}` });
+    seg.style.flexGrow = String(x.items.length);
+    seg.style.setProperty('--sec', colourVar(x.color));
+    bar.append(seg);
+  }
+  if (!bar.firstChild) bar.append(h('span', { class: 'tile-seg empty' }));
+  const due = d.due ? daysTo(d.due) : null;
+  tile.append(
+    h('div', { class: 'tile-top' },
+      rank ? h('span', { class: 'focus-rank big', title: t('focus.rank', { n: rank }), text: String(rank) }) : h('span', { class: 'project-dot', 'aria-hidden': 'true' }),
+      h('a', { class: 'tile-title', href: nodeHref(d.path), text: d.title }),
+      d.state !== 'active' ? h('span', { class: 'chip', text: stateLabel(d.state) }) : null),
+    h('div', { class: 'tile-mid' }, progressRing(st.done || 0, all),
+      h('div', { class: 'tile-text' },
+        d.goal ? h('p', { class: 'tile-goal muted small', text: d.goal }) : null,
+        h('p', { class: 'tile-next' }, h('span', { class: 'muted small', text: t('project.next') }), h('span', { text: st.next || t(all ? 'steps.allDone' : 'project.next.none') })))),
+    bar,
+    h('div', { class: 'tile-foot muted small' },
+      h('span', { text: t('projects.sections', { n: secs.length, cards }) }),
+      due != null ? h('span', { class: due <= 3 ? 'soon' : '', text: due === 0 ? t('due.today') : t(due < 0 ? 'pult.dueAgo' : 'pult.dueIn', { n: Math.abs(due) }) }) : null,
+      focusBtn));
+  tile.addEventListener('click', (e) => { if (!e.target.closest('a, button')) open(); });
+  return tile;
+}
+export const projectCard = projectTile;
 
 // ------------------------------------------------------------------ the code of a project (0.24.0)
 // A project can know its code repository; Kobra keeps the list of yours (kobra.git.repos) and opens it.
@@ -177,6 +240,9 @@ export async function renderProject(main, path, ctx) {
   try { p = await loadProject(path); } catch { p = null; }
   if (!isCurrent()) return;
   if (!p) { box.append(h('h1', { class: 'view-title', text: t('node.notFound') })); return; }
+  // 0.33.7: groups taken over twice before (empty twins) and groups inside frames: tidied once
+  try { if (await repairCanvasSections(path, p)) p = (await loadProject(path)) || p; } catch (e) { console.warn('repair', e); }
+  if (!isCurrent()) return;
   touchProject(path);
   paintProject(box, p.slug);
   // drawn again after a change; the shell keeps the row you were at (0.22.0)
@@ -186,7 +252,8 @@ export async function renderProject(main, path, ctx) {
     await renderProject(main, path, ctx);
   };
   const d = nodeByPath(path) || { links: p.links, slug: p.slug, path };
-  const inFocus = focusPath() === path;
+  const rank = focusRank(path);
+  const inFocus = !!rank;
 
   // head: back, title, focus
   box.append(h('button', { type: 'button', class: 'btn small back-btn', onclick: () => go('#/m/projects') }, iconEl('chevronLeft'), h('span', { text: t('module.projects.name') })));
@@ -195,8 +262,19 @@ export async function renderProject(main, path, ctx) {
     const v = await promptDialog(t('project.rename'), { value: p.title, validate: (x) => (x.trim() ? '' : t('project.needTitle')) });
     if (v && v.trim() !== p.title && await setProjectField(path, 'title', v)) redraw();
   };
-  const focus = h('button', { type: 'button', class: `btn focus-btn${inFocus ? ' on primary' : ''}`, 'aria-pressed': String(inFocus) }, iconEl('target'), h('span', { text: t(inFocus ? 'project.focus.on' : 'project.focus.set') }));
-  focus.addEventListener('click', () => { setFocus(inFocus ? '' : path); redraw(); });
+  // 0.33.7: in focus with its priority; a tap changes the priority or takes it out
+  const focus = h('button', { type: 'button', class: `btn focus-btn${inFocus ? ' on primary' : ''}`, 'aria-pressed': String(inFocus) }, iconEl('target'),
+    h('span', { text: inFocus ? t('project.focus.rank', { n: rank }) : t('project.focus.set') }));
+  focus.addEventListener('click', async () => {
+    if (!inFocus) { addToFocus(path); redraw(); return; }
+    const n = focusList().length;
+    const pick = await actionSheet(p.title, [
+      ...Array.from({ length: n }, (_, i) => ({ label: `${i + 1 === rank ? '✓ ' : ''}${t('focus.rank', { n: i + 1 })}`, value: `r:${i + 1}`, icon: 'target' })),
+      '-', { label: t('focus.remove'), value: 'out', icon: 'close' }]);
+    if (!pick) return;
+    if (pick === 'out') removeFromFocus(path); else moveFocus(path, +pick.slice(2));
+    redraw();
+  });
   const more = h('button', { type: 'button', class: 'icon-btn project-more', 'aria-label': t('project.more'), title: t('project.more'), html: icon('more') });
   more.addEventListener('click', async () => {
     const pick = await actionSheet(p.title, [
@@ -225,7 +303,6 @@ export async function renderProject(main, path, ctx) {
   });
   box.append(goal);
   if (p.repo) box.append(repoRow(p.repo, go));
-  if (inFocus) box.append(h('p', { class: 'focus-note small' }, iconEl('target'), h('span', { text: t('project.focus.note') })));
 
   // 0.33.0 (Loom, entwurf J5): the structure on the left, the views in the middle (Fokus, Board, Leinwand, Widgets),
   // the project, its steps and the conversation with Loom on the right

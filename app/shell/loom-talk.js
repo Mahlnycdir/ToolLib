@@ -32,7 +32,7 @@ import { typeset } from './math.js';
 import { loomMark } from './loom.js';
 import { photoButton, imageLine } from './photo.js';
 import { MODULES } from './modules.js';
-import { SPEECH_LANGS, speechLang, setSpeechLang, record, isSilent, writeDown, vocabulary, keepForMac, wavOf, drain, loadHere, learnWords, liveEngine, liveWriter, AUTO_SECONDS, MAX_SECONDS } from '../services/speech.js';
+import { SPEECH_LANGS, speechLang, setSpeechLang, record, isSilent, writeDown, vocabulary, keepForMac, wavOf, drain, loadHere, learnWords, liveEngine, liveWriter, warmUp, activeEngine, AUTO_SECONDS, MAX_SECONDS } from '../services/speech.js';
 import { hasHelper as hasHelperNow } from '../services/research.js';
 import { saveNote } from '../services/notes.js';
 
@@ -411,7 +411,7 @@ export function talkPanel({ go, project = '', embedded = false, onClose = null }
     if (ms) hintTimer = setTimeout(() => { hint.hidden = true; }, ms);
   };
   const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
-  const micIdle = () => { mic.innerHTML = icon('mic'); mic.setAttribute('aria-pressed', 'false'); mic.title = t('loom.mic'); mic.setAttribute('aria-label', t('loom.mic')); el.classList.remove('listening', 'live-text'); el.style.removeProperty('--level'); field.readOnly = false; };
+  const micIdle = () => { field.placeholder = t('loom.talk.placeholder'); mic.innerHTML = icon('mic'); mic.setAttribute('aria-pressed', 'false'); mic.title = t('loom.mic'); mic.setAttribute('aria-label', t('loom.mic')); el.classList.remove('listening', 'live-text'); el.style.removeProperty('--level'); field.readOnly = false; };
   const autoSend = () => loadPref('loom.autoSend', true) !== false;
   // the small model on this device: asked once before it is fetched (about 230 MB)
   const mayLoad = async () => {
@@ -497,7 +497,15 @@ export function talkPanel({ go, project = '', embedded = false, onClose = null }
     const lang = speechLang().slice(0, 2);
     r.prompt = vocabulary({ project: embedded ? project : placeNow().project, lang });
     // who writes along is found out while you already speak (the recording keeps everything from the start)
-    if (loadPref('loom.live', true) !== false) {
+    // 0.33.7: the field says who writes down (and the model wakes at once, so the first words do not wait for it)
+    field.placeholder = t('loom.listening');
+    const wantLive = loadPref('loom.live', true) !== false;
+    (wantLive ? liveEngine() : activeEngine()).then((engine) => {
+      if (rec !== r) return;
+      warmUp(engine);
+      field.placeholder = t(!engine ? 'loom.listening.later' : !wantLive ? 'loom.listening.end' : engine === 'mac' ? 'loom.listening.mac' : 'loom.listening.here');
+    }).catch(() => {});
+    if (wantLive) {
       liveEngine().then((engine) => {
         if (!engine || rec !== r) return;
         r.canLater = engine === 'here' && hasHelperNow();

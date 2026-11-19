@@ -159,6 +159,8 @@ export function renderKladde(main, mod, { go }) {
       o.addEventListener('pointerup', (e) => this.up(e, false));
       o.addEventListener('pointercancel', (e) => this.up(e, true));
       o.addEventListener('lostpointercapture', (e) => { if (this.ptrs.has(e.pointerId)) this.up(e, true); });
+      // 0.33.7: on the Mac the trackpad (two fingers) or the wheel moves the page, pinching or Ctrl + wheel zooms
+      if (role === 'page') o.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
       this.ro = new ResizeObserver(() => this.resize());
       this.ro.observe(host);
       off.push(() => this.ro.disconnect());
@@ -309,6 +311,8 @@ export function renderKladde(main, mod, { go }) {
         this.mode = inside ? 'lupe' : 'pan';
         return;
       }
+      // 0.33.7: no tool chosen (a second tap on the active pen or eraser): the page follows the mouse or the finger
+      if (!tool) { this.mode = this.role === 'page' ? 'pan' : 'ignore'; return; }
       if (tool === 'eraser') { this.mode = 'erase'; this.erased = []; this.eraser = null; this.eraseAt(x, y); return; }
       this.beginStroke(x, y);
     }
@@ -342,7 +346,7 @@ export function renderKladde(main, mod, { go }) {
       if (cancelled) this.cancel();
       else if (this.mode === 'draw') this.finishStroke(x, y);
       else if (this.mode === 'erase') this.finishErase();
-      else if (this.mode === 'pan' && Math.hypot(x - this.start.x, y - this.start.y) < 8) {
+      else if (this.mode === 'pan' && lupeOn && Math.hypot(x - this.start.x, y - this.start.y) < 8) {
         const [px, py] = this.toPage(x, y);
         placeLupe(px, py);
       }
@@ -361,6 +365,19 @@ export function renderKladde(main, mod, { go }) {
       const [a, b] = [...this.ptrs.values()];
       this.pinch = { d0: Math.hypot(b.x - a.x, b.y - a.y) || 1, s0: this.s, anchor: this.toPage((a.x + b.x) / 2, (a.y + b.y) / 2) };
       this.mode = 'pinch';
+    }
+
+    wheel(e) {
+      e.preventDefault();
+      this.rect = this.over.getBoundingClientRect();
+      const [x, y] = this.local(e);
+      if (e.ctrlKey || e.metaKey) {
+        const fit = this.w / PAGE_W;
+        const [px, py] = this.toPage(x, y);
+        this.s = clamp(this.s * Math.exp(-e.deltaY * 0.01), fit * 0.6, fit * 10);
+        this.ox = px - x / this.s; this.oy = py - y / this.s;
+      } else { this.ox += e.deltaX / this.s; this.oy += e.deltaY / this.s; }
+      this.clampView(); this.invalidate();
     }
 
     updatePinch() {
@@ -782,6 +799,7 @@ export function renderKladde(main, mod, { go }) {
   function setTool(v) {
     tool = v;
     for (const [b, name] of [[penBtn, 'pen'], [eraserBtn, 'eraser']]) { b.classList.toggle('on', v === name); b.setAttribute('aria-pressed', String(v === name)); }
+    root.classList.toggle('kl-hand', !v);
     updateSwatches();
   }
   function updateSwatches() {
@@ -873,10 +891,20 @@ export function renderKladde(main, mod, { go }) {
   const page = new Surface(stage, 'page');
   const pad = new Surface(padEl, 'pad');
 
+  // 0.33.7 (ENTE: "ein weiterer Klick auf den aktivierten Stift oder Radiergummi … deaktiviert es wieder -> danach kann
+  // man das Canvas mit der Maus wohin ziehen"): a tap on the active tool lays it down; the width of the pen opens with
+  // a long press or a right click on the pen (before: with the second tap)
+  let penHeld = false;
+  let penT = 0;
+  penBtn.addEventListener('pointerdown', () => { penHeld = false; clearTimeout(penT); penT = setTimeout(() => { penHeld = true; setTool('pen'); openPop(widthpop); }, 450); });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) penBtn.addEventListener(ev, () => clearTimeout(penT));
+  penBtn.addEventListener('contextmenu', (e) => { e.preventDefault(); clearTimeout(penT); penHeld = true; setTool('pen'); openPop(widthpop); });
   penBtn.addEventListener('click', () => {
-    if (tool === 'pen') { if (widthpop.hidden) openPop(widthpop); else closePopovers(); } else setTool('pen');
+    if (penHeld) { penHeld = false; return; }
+    if (!widthpop.hidden) { closePopovers(); return; }
+    setTool(tool === 'pen' ? null : 'pen');
   });
-  eraserBtn.addEventListener('click', () => setTool('eraser'));
+  eraserBtn.addEventListener('click', () => setTool(tool === 'eraser' ? null : 'eraser'));
   for (const b of swatches.children) b.addEventListener('click', () => { prefs.color = b.dataset.color; savePrefs(); setTool('pen'); });
   for (const b of widthpop.children) b.addEventListener('click', () => { prefs.width = +b.dataset.w; savePrefs(); updateWidth(); setTool('pen'); closePopovers(); });
   undoBtn.addEventListener('click', undo);

@@ -113,6 +113,9 @@ function cardsArea(p, members, ctx) {
     holder.querySelector('.lf')?.cleanup?.();
     document.body.classList.remove('pc-full-open');
     holder.dataset.view = v;
+    // 0.33.7: board and canvas get the whole width beside the structure; the project card moves below them
+    const wide = () => holder.closest('.lp')?.classList.toggle('lp-wide', v === 'board' || v === 'canvas');
+    wide(); requestAnimationFrame(wide);
     const sw = h('div', { class: 'segmented small view-switch', role: 'group', 'aria-label': t('project.view') },
       ...PROJECT_VIEWS.map((id) => {
         const b = h('button', { type: 'button', class: v === id ? 'on' : '', 'aria-pressed': String(v === id), dataset: { view: id } }, iconEl(VIEW_ICON[id]), h('span', { text: t(`project.view.${id}`) }));

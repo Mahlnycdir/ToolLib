@@ -432,15 +432,16 @@ export function startShell(root) {
   const talkBtn = h('button', { type: 'button', class: 'icon-btn talk-btn', onclick: () => toggleTalk({ go }) });
   const fab = h('button', { type: 'button', class: 'loom-fab', onclick: () => toggleTalk({ go }) });
   const pill = h('button', { type: 'button', class: 'focus-pill', hidden: true });
-  // 0.32.0: tabs for Heute and the projects you work on (at most three), "+" for all projects
+  // 0.32.0: tabs for Heute and the projects you work on, "+" for all projects; 0.33.7: exactly the projects in focus,
+  // in the order of their priorities, as many as there are (the row scrolls sideways)
   const tabs = h('div', { class: 'loom-tabs', role: 'tablist', 'aria-label': t('tabs.label') });
   function renderTabs() {
     const route = currentRoute();
     const here = route.kind === 'node' ? route.path : '';
     const tab = (cls, on, label, onclick, ...inner) => h('button', { type: 'button', role: 'tab', class: `loom-tab ${cls}${on ? ' on' : ''}`, 'aria-selected': String(on), title: label, onclick }, ...inner);
     const list = [tab('home', route.kind === 'home', t('nav.home'), () => go('#/home'), h('span', { text: t('nav.home') }))];
-    for (const p of openTabs()) {
-      const b = tab('project', here === p.path, p.title, () => go(nodeHref(p.path)), h('span', { class: 'project-dot', 'aria-hidden': 'true' }), h('span', { text: p.title }));
+    for (const { d: p, visit } of openTabs(here)) {
+      const b = tab(`project${visit ? ' visit' : ''}`, here === p.path, visit ? t('tabs.visit', { title: p.title }) : p.title, () => go(nodeHref(p.path)), h('span', { class: 'project-dot', 'aria-hidden': 'true' }), h('span', { text: p.title }));
       paintProject(b, p.slug);
       // 0.33.0: a tab pulled to the right edge opens beside the page (Mac)
       if (!side) draggable(b, { data: { kind: 'tab', hash: nodeHref(p.path), title: p.title }, label: p.title, when: () => window.innerWidth >= 1100 });

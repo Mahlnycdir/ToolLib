@@ -35,6 +35,13 @@ export function speechLang() {
   return getLang() === 'de' ? 'de-DE' : 'en-US';
 }
 export const setSpeechLang = (v) => { if (SPEECH_LANGS.includes(v)) savePref('loom.speechLang', v); };
+// 0.33.7 (ENTE: "ich will mir das aussuchen und genau wissen, welches Model gerade da ist"): who writes down —
+// 'auto' (the Mac when it is in reach, else this device), 'mac' (only the Mac; on the go it waits for it) or 'here'
+// (only the small model on this device, even when the Mac is in reach)
+export const SPEECH_ENGINES = ['auto', 'mac', 'here'];
+export const MODEL_NAMES = { mac: 'Whisper large-v3-turbo · Deutsch · 1,6 GB', here: 'Whisper tiny · Deutsch · 230 MB' };
+export function speechEngine() { const v = loadPref('loom.speechEngine', 'auto'); return SPEECH_ENGINES.includes(v) ? v : 'auto'; }
+export const setSpeechEngine = (v) => { if (SPEECH_ENGINES.includes(v)) savePref('loom.speechEngine', v); };
 
 // ------------------------------------------------------------------ recording
 // → { seconds(), stop() → Float32Array (16 kHz mono), cancel(), and for writing along while you speak (0.33.5):
@@ -270,9 +277,10 @@ export async function macState({ fresh = false } = {}) {
   macCache = { ...r, at: Date.now() };
   return r;
 }
-async function onMac(pcm, { lang, prompt }) {
-  if (engines.mac) return engines.mac(pcm, { lang, prompt });
-  const q = `lang=${encodeURIComponent(lang)}&prompt=${encodeURIComponent(String(prompt || '').slice(0, 800))}`;
+async function onMac(pcm, { lang, prompt, quick = false }) {
+  if (engines.mac) return engines.mac(pcm, { lang, prompt, quick });
+  // quick (0.33.7): a preview while you still speak, one try without the slower second and third passes
+  const q = `lang=${encodeURIComponent(lang)}&prompt=${encodeURIComponent(String(prompt || '').slice(0, 800))}${quick ? '&quick=1' : ''}`;
   const res = await helperFetch(`/speech/text?${q}`, { method: 'POST', body: wavOf(pcm), type: 'audio/wav' });
   const j = await res.json();
   return String(j.text || '');
@@ -311,6 +319,30 @@ export async function loadHere(onProgress) {
   progressFn = onProgress;
   try { return await ask('load', { kind: 'load' }); } finally { progressFn = null; }
 }
+// 0.33.7: take the small model off this device again (the browser's cache of it)
+export async function forgetHere() {
+  try { worker?.terminate(); } catch { /* gone already */ }
+  worker = null;
+  waitingFor.clear();
+  try { await caches.delete('transformers-cache'); } catch (e) { console.warn('speech: forget', e); }
+}
+// 0.33.7: the model wakes while you start speaking, so the first words do not wait for it to load (Mac: a few
+// seconds the first time after a pause of five minutes; device: into memory from its cache)
+export async function warmUp(engine) {
+  try {
+    if (engine === 'mac' && !engines.mac) await helperFetch('/speech/warm', { method: 'POST' });
+    else if (engine === 'here' && !engines.here) { const hs = await hereState(); if (hs.cached && !hs.ready) await ask('load', { kind: 'load' }); }
+  } catch { /* an older Mac helper has no /speech/warm: then it loads with the first piece */ }
+}
+// which one writes down right now: 'mac', 'here' or '' (nobody: it waits for the Mac or is not set up)
+export async function activeEngine() {
+  const want = speechEngine();
+  if (want !== 'here' && (await macState()).ok) return 'mac';
+  if (want === 'mac') return '';
+  const hs = await hereState();
+  if (hs.cached || hs.ready) return 'here';
+  return '';
+}
 async function onHere(pcm, { lang }) {
   if (engines.here) return engines.here(pcm, { lang });
   const id = `t${++seq}`;
@@ -322,11 +354,13 @@ async function onHere(pcm, { lang }) {
 // → { text, precise, later }: precise = from the Mac; later = the Mac should write it down again (or at all).
 // mayLoad() is asked before the small model is fetched the first time (it costs about 230 MB).
 export async function writeDown(pcm, { lang = speechLang().slice(0, 2), prompt = '', mayLoad = null } = {}) {
-  const mac = await macState();
+  const want = speechEngine();
+  const mac = want === 'here' ? { ok: false } : await macState();
   if (mac.ok) {
     try { return { text: clean(await onMac(pcm, { lang, prompt })), precise: true, later: false }; } catch (e) { console.warn('speech: Mac', e); macCache = null; }
   }
   const canLater = engines.mac ? true : hasHelper();
+  if (want === 'mac') return { text: '', precise: false, later: canLater };
   const here = await hereState();
   if (here.cached || here.ready || (mayLoad && (await mayLoad()))) {
     try { return { text: clean(await onHere(pcm, { lang })), precise: false, later: canLater }; } catch (e) { console.warn('speech: here', e); }
@@ -348,11 +382,7 @@ export function waitWord(text, lang = 'de') {
   return { text: text.slice(0, m.index + m[1].length).replace(/[\s,;:–-]+$/, '').trim(), hold: true };
 }
 // which engine writes along: 'mac', 'here' or '' (none: the recording is written down when it ends)
-export async function liveEngine() {
-  if ((await macState()).ok) return 'mac';
-  const hs = await hereState();
-  return hs.cached || hs.ready ? 'here' : '';
-}
+export async function liveEngine() { return activeEngine(); }
 export function liveWriter(rec, { engine, lang = speechLang().slice(0, 2), prompt = '', onText = () => {} }) {
   const R = rec.rate;
   const run = engine === 'mac' ? onMac : onHere;
@@ -365,7 +395,7 @@ export function liveWriter(rec, { engine, lang = speechLang().slice(0, 2), promp
   let lastInterim = 0;
   const hint = () => { const tail = finals.join(' ').slice(-240); return (tail ? `${prompt}${prompt ? '. ' : ''}${tail}` : prompt).slice(-800); };
   const show = () => onText({ text: [...finals, interim].filter(Boolean).join(' '), hold });
-  const write = async (from, to) => clean(await run(await rec.slice(from, to), { lang, prompt: hint() }));
+  const write = async (from, to, quick = false) => clean(await run(await rec.slice(from, to), { lang, prompt: hint(), quick }));
   async function finalize(cut) {
     const from = seg;
     seg = cut;
@@ -385,7 +415,7 @@ export function liveWriter(rec, { engine, lang = speechLang().slice(0, 2), promp
       const open = (now - seg) / R;
       const voiced = rec.voiced(seg, now);
       if (voiced && (quiet >= 0.7 || open >= 25)) await finalize(quiet >= 0.7 ? Math.max(seg, now - Math.floor((quiet - 0.25) * R)) : now);
-      else if (voiced && open >= 1 && Date.now() - lastInterim > 1100) { lastInterim = Date.now(); interim = (await write(seg, now)).replace(WAIT_WORD[lang] || WAIT_WORD.de, '$1').trim(); show(); }
+      else if (voiced && open >= 1 && Date.now() - lastInterim > 900) { lastInterim = Date.now(); interim = (await write(seg, now, true)).replace(WAIT_WORD[lang] || WAIT_WORD.de, '$1').trim(); show(); }
       else if (!voiced && open > 2) seg = now - Math.floor(0.3 * R);
     } catch (e) { console.warn('speech: live', e); broken = true; } finally { busy = false; }
   }

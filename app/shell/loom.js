@@ -4,7 +4,7 @@
 //   benchItems(n)     "Auf der Werkbank": what lies half finished, newest first, from the trail of this device
 //                     (services/trail.js: what you read, wrote and opened) plus a snippet draft
 //   benchStrip(o)     the strip itself: a title and up to n chips; in the status line on wide screens, on Heute on the phone
-//   openTabs()        the projects shown as tabs in the bar: the one in focus and the ones you used last, at most three
+//   openTabs(here)    the projects shown as tabs in the bar: the ones in focus, priority 1 first (0.33.7)
 //   loomVoice(o)      Loom's card on Heute: what is open today, as a sentence and one chip per thing to start with.
 //   loomWidget(o)     0.33.0: the widget "Loom" on Heute: that card, the suggestions with their reasons and a line to
 //                     speak or type to Loom (the conversation opens beside, loom-talk.js)
@@ -17,7 +17,7 @@ import { t, getLang } from '../i18n/i18n.js';
 import { loadPref, savePref } from '../services/prefs.js';
 import { trail } from '../services/trail.js';
 import { nodeByPath } from '../services/search.js';
-import { focusProject, projects, setFocus } from '../services/projects.js';
+import { focusList, focusProject, projects, setFocus } from '../services/projects.js';
 import { nodeHref, nodeTitle } from './node-view.js';
 import { icon } from '../services/icons.js';
 import { suggestions } from '../services/loom-mind.js';
@@ -87,16 +87,12 @@ export function benchStrip({ n = 4 } = {}) {
 }
 
 // ------------------------------------------------------------------ tabs of the open projects
-export function openTabs(max = 3) {
-  const list = [];
-  const f = focusProject();
-  if (f) list.push(f);
-  const used = loadPref('projects.used', []);
-  for (const p of used) {
-    if (list.length >= max) break;
-    const d = nodeByPath(p);
-    if (d && d.type === 'project' && !d.conflict && d.state !== 'done' && !list.some((x) => x.path === d.path)) list.push(d);
-  }
+// 0.33.7: exactly the projects in focus, in the order of their priorities (any number); a project you open that is
+// not in focus gets a passing tab at the end (`visit`), gone when you leave it.
+export function openTabs(here = '') {
+  const list = focusList().map((d) => ({ d, visit: false }));
+  const v = here && nodeByPath(here);
+  if (v && v.type === 'project' && !v.conflict && !list.some((x) => x.d.path === v.path)) list.push({ d: v, visit: true });
   return list;
 }
 

@@ -140,3 +140,14 @@ Eine Zeile in `PAGES` (`app/shell/settings/index.js`), die Texte `settings.sec.<
 - Abschnitte mit Elternteil: `"id|Titel|Farbe|parent"` (`parseSections`, `sectionTree`, `setSectionParent`; `moveSectionTo` nimmt Untergruppen mit). `project-canvas.js`: die Rahmen der Leinwand sind die Abschnitte (`rects()` rechnet sie aus den Karten und den gesetzten Rahmen `state.frames`); in der .canvas-Datei tragen von Loom gezeichnete Rahmen `"auto": true`.
 - Nebeneinander: `shell.js` `openSide` lädt die App als `index.html?side=1#…` in einem iframe (`app.side-frame`: ohne Leisten, ohne Sync).
 - `app/shell/photo.js`: ein Knopf für Fotos beim Anlegen (`saveImage` aus assets.js).
+
+## 0.33.7 Bugs aus der Liste vom 19.11.
+
+- Fokus mit Prioritäten: `app/services/projects.js` hält die Liste (`focusList`, `focusRank`, `addToFocus`, `removeFromFocus`, `moveFocus`, `setFocusOrder`; Kopie in pref `focus.order`). Sie steht in start.md als `focus: [Pfade]` (start-store.js `setFocusField`); Lesen schreibt nie (ein neues Gerät kann sonst nicht klonen), ohne `focus:` entsteht sie einmal aus dem alten Fokus und `pult:`. `focusPath()` ist das Projekt, an dem du auf diesem Gerät arbeitest (pref `focus`, immer eines der Liste, sonst Priorität 1); `setFocus(p)` hängt p hinten an, ohne die anderen zu verschieben.
+- `app/shell/focus-ui.js`: das Blatt „Fokus & Prioritäten“ (`openFocusSheet`) und die Zeilen auf Heute (`focusRows`). Die Tabs oben (`loom.js` `openTabs`) sind genau die Liste, ein Projekt außerhalb bekommt einen vorübergehenden Tab (`visit`). Das Kontrollpult (`pult.js`) zeigt die Liste, beliebig lang.
+- Projektübersicht als Kacheln (`projects-view.js` `projectTile`, `progressRing`).
+- Leinwand: `adoptOldGroups` läuft je Projekt nur einmal zugleich (`adopting`), nimmt gleichnamige Abschnitte, macht innere Gruppen zu Untergruppen und speichert sofort. `repairCanvasSections` räumt einmal je Projekt und Gerät auf (leere Doppelte weg, Rahmen in Rahmen = Untergruppe; pref `canvas.repaired`); die Projektseite ruft es auch. Board und Leinwand bekommen die Breite (`.lp-wide`).
+- Notiz: `.md-editor .cm-scroller` ohne `overscroll-behavior: contain` (das Mausrad über dem Text scrollt die Seite).
+- Kladde: zweiter Tipp aufs aktive Werkzeug legt es ab (`tool = null`, `.kl-hand`), dann zieht die Maus die Seite; Rad/Trackpad verschiebt, Strg + Rad zoomt; Stärke per langem Drücken oder Rechtsklick. iPhone: die Leiste unten und der Loom-Knopf raus aus dem Raster.
+- iPhone: kein Leerraum unter Kladde und Kobra und keiner über der Tastatur (`padding-bottom` 0).
+- Sprache: `speech.js` `speechEngine` (pref `loom.speechEngine`: auto, mac, here), `activeEngine`, `warmUp` (Mac: `POST /speech/warm` lädt das Modell, sobald du zu sprechen beginnst), `forgetHere`; Vorschau beim Sprechen mit `quick=1` (ein Durchgang). Einstellungen › Loom zeigen beide Modelle mit Namen und Zustand und wer gerade abschreibt.

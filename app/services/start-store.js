@@ -8,7 +8,9 @@
 //   col: {"loom": 2, "step": 0}                         their columns on a board of four (0.33.2; without one a
 //                                                       widget takes the lowest free place)
 //   loom: 1                                             the widgets of 0.33.0 were laid on once (see migrate)
-//   pult: ["projects/master-thesis.md", …]              the projects in the control panel, at most four
+//   focus: ["projects/master-thesis.md", …]             the projects in focus, priority 1 first (0.33.7, any number)
+//   pult: ["projects/master-thesis.md", …]              before 0.33.7: the projects in the control panel (only read
+//                                                       once, to make the focus list)
 //   themes: ["electronics", "physics", …]              your themes for ideas and paths (0.30.0, paths.js THEMES)
 //   w_<id>: {"kind": "note", …}                         building blocks (widget-store.js)
 //   ---
@@ -24,6 +26,7 @@ import { post, onAnnounce } from './channel.js';
 import { onNodesChange } from './search.js';
 import { blocksOf, cleanConfig, widgetList, wideList, withConfig, withContent, withoutBlock } from './widget-store.js';
 import { THEMES, isTheme } from './paths.js';
+import { adoptFocusOrder, onFocusOrderSave } from './projects.js';
 
 export const START_FILE = 'start.md';
 // 0.33.0: everything on Heute below the head is a widget: the focus card, Loom, "What do you want to solve?", one
@@ -81,7 +84,8 @@ function parse(text) {
     size,
     col: colMap(meta),
     wide: Object.keys(size).filter((id) => size[id][0] === '2'),
-    pult: meta.pult == null ? null : asList(meta.pult).filter((p) => /^projects\/[\w.-]+\.md$/.test(p)).slice(0, PULT_MAX),
+    pult: meta.pult == null ? null : asList(meta.pult).filter((p) => /^projects\/[\w.-]+\.md$/.test(p)),
+    focus: meta.focus == null ? null : asList(meta.focus).filter((p) => /^projects\/[\w.-]+\.md$/.test(p)),
     themes: meta.themes == null ? DEFAULT_THEMES : [...new Set(asList(meta.themes).filter(isTheme))],
     blocks: blocksOf(meta, text, widgets),
   };
@@ -91,6 +95,7 @@ export async function loadStart() {
   let s = { found: false, ...DEFAULT_START, size: { ...DEFAULT_START.size }, col: {}, wide: Object.keys(DEFAULT_START.size), pult: null, themes: DEFAULT_THEMES, blocks: new Map() };
   try { if (await exists(FILE)) s = parse(await readText(FILE)); } catch (e) { console.warn('start.md', e); }
   cache = s;
+  if (s.found) adoptFocusOrder(s.focus, s.pult || []);
   return s;
 }
 
@@ -133,7 +138,10 @@ export const setStartLayout = ({ list, sizes, col }) => changeStart((text) => {
 // 0.32 and before: a list of wide widgets (kept for older callers; written as sizes)
 export const setStartWide = (wide) => setStartSizes(Object.fromEntries(wideList(wide).map((id) => [id, '2x1'])));
 export const setStartThemes = (list) => changeStart((text) => setField(text, 'themes', yamlValue([...new Set(list)].filter(isTheme)), ['pult', 'wide', 'widgets', ...AFTER]));
-export const setPult = (paths) => changeStart((text) => setField(text, 'pult', yamlValue([...new Set(paths)].slice(0, PULT_MAX)), ['wide', 'widgets', ...AFTER]));
+export const setPult = (paths) => changeStart((text) => setField(text, 'pult', yamlValue([...new Set(paths)]), ['wide', 'widgets', ...AFTER]));
+// 0.33.7: the projects in focus, in the order of their priorities (projects.js keeps the list, this writes it)
+export const setFocusField = (paths) => changeStart((text) => setField(text, 'focus', yamlValue([...new Set(paths)]), ['pult', 'wide', 'widgets', ...AFTER]));
+onFocusOrderSave(setFocusField);
 // a new building block: its config, then its place at the end of the widgets
 export const addStartBlock = (id, cfg) => changeStart((text, s) => setField(withConfig(text, id, cfg, ['pult', 'wide', 'widgets', ...AFTER]), 'widgets', yamlValue([...s.widgets, id]), AFTER));
 export const saveStartBlock = (id, cfg) => changeStart((text) => withConfig(text, id, cfg, ['pult', 'wide', 'widgets', ...AFTER]));

@@ -24,13 +24,13 @@
 // For Python readers: `state.cards` is a dict slug → box {x, y, w, h}; render once, then layout() moves the
 // elements and drawLines() redraws the SVG with the threads. Two coordinate systems: world = where a card lies on
 // the surface, screen = world × zoom + shift (state.k, state.tx, state.ty), like an affine transform in matplotlib.
-import { h, toast, promptDialog, actionSheet, confirmDialog, debounce } from '../services/ui.js';
+import { h, toast, promptDialog, actionSheet, confirmDialog, debounce, loadPref, savePref } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { t, getLang } from '../i18n/i18n.js';
 import { nodeBySlug, onNodesChange } from '../services/search.js';
 import { getNode } from '../services/nodes.js';
 import { connect, disconnect, graph, isDrawn, onRelationsChange } from '../services/relations.js';
-import { addSection, boardOf, depthOfSection, loadProject, placeItem, removeSection, sectionTree, sectionsOf, setSectionParent, setThread, suggestThread, updateSection } from '../services/projects.js';
+import { addSection, boardOf, depthOfSection, loadProject, placeItem, removeSection, repairSections, sectionTree, sectionsOf, setSectionParent, setThread, suggestThread, updateSection } from '../services/projects.js';
 import { capture } from '../services/notes.js';
 import { loadCanvas, saveCanvas, canvasPathOf } from '../services/canvas-store.js';
 import { onAnnounce } from '../services/channel.js';
@@ -52,6 +52,7 @@ const hexOf = (name) => PALETTE[name]?.[0] || PALETTE.slate[0];
 const nameOf = (hex) => COLOURS.find((c) => PALETTE[c][0].toLowerCase() === String(hex || '').toLowerCase()) || 'slate';
 // where you looked last per project, so a redraw of the page (after a quick note, say) keeps the view
 const views = new Map();
+const adopting = new Set();   // 0.33.7: projects whose old groups are being taken over right now
 
 // The cards of a project right now, from the relations (so a card added anywhere shows at once); libraries apart.
 function membersOf(projectSlug) {
@@ -486,24 +487,45 @@ export function projectCanvas(p, ctx) {
     layout();
   }
   // Groups from a canvas of before 0.33.0 (frames of their own) become sections, with the cards inside them.
+  // 0.33.7: only once at a time per project (on 17.11. it ran twice for ENTE's thesis, from two loads of the canvas
+  // before the first had saved, and every group came twice); a section of the same name is taken instead of a new
+  // one; a group that lies wholly inside another becomes its subgroup; the canvas is saved at once.
   async function adoptOldGroups(old) {
+    if (adopting.has(path)) return;
+    adopting.add(path);
+    try { await adoptNow(old); } finally { adopting.delete(path); }
+  }
+  async function adoptNow(old) {
     const known = new Set(sectionsOf(cur).map((x) => x.id));
     for (const g of old) if (known.has(g.id) && !g.auto) state.frames.set(g.id, { x: g.x, y: g.y, w: g.w, h: g.h });
     // only a canvas written before 0.33.0 (no frame of a section, none drawn by Loom) has groups of its own; a frame
     // of a section removed elsewhere is not brought back
     const before033 = old.length && !old.some((g) => g.auto || known.has(g.id));
     const strange = before033 ? old : [];
-    if (!strange.length) { if (state.frames.size) layout(); return; }
+    if (!strange.length) { if (state.frames.size) layout(); await repairOnce(old); return; }
+    const used = new Set();
+    const idOf = new Map();
     for (const g of strange) {
-      const id = await addSection(path, (g.label || t('canvas.group.untitled')).slice(0, 120), nameOf(g.color));
+      const name = (g.label || t('canvas.group.untitled')).slice(0, 120);
+      const twin = sectionsOf(cur).find((x) => !used.has(x.id) && x.title.trim().toLowerCase() === name.trim().toLowerCase());
+      const id = twin ? twin.id : await addSection(path, name, nameOf(g.color));
       if (!id) continue;
+      used.add(id);
+      idOf.set(g, id);
       state.frames.set(id, { x: g.x, y: g.y, w: g.w, h: g.h });
       for (const [slug, b] of state.cards) { const c = centre(b); if (c.x > g.x && c.x < g.x + g.w && c.y > g.y && c.y < g.y + g.h) await placeItem(path, slug, id, -1); }
     }
+    const parents = {};
+    for (const g of strange) { const outer = innermost(g, strange); if (outer && idOf.get(outer) && idOf.get(g)) parents[idOf.get(g)] = idOf.get(outer); }
+    if (Object.keys(parents).length) await repairSections(path, { parents });
+    markRepaired();
     await reloadProject();
     scheduleSave();
+    save.flush();
     toast(t(strange.length === 1 ? 'canvas.groups.adopted.one' : 'canvas.groups.adopted', { n: strange.length }), 'ok', 6000);
   }
+  const markRepaired = () => markCanvasRepaired(path);
+  async function repairOnce(old) { if (await repairCanvasSections(path, cur, old)) await reloadProject(); }
 
   // ---------------------------------------------------------------- a note written on the canvas: a note of the project
   function noteAt(pos) {
@@ -852,4 +874,40 @@ export function projectCanvas(p, ctx) {
   applyView();
   load();
   return wrap;
+}
+
+// the smallest other frame that holds g wholly (10 px play)
+function innermost(g, all) {
+  let best = null;
+  for (const o of all) {
+    if (o === g || o.w * o.h <= g.w * g.h) continue;
+    if (g.x >= o.x - 10 && g.y >= o.y - 10 && g.x + g.w <= o.x + o.w + 10 && g.y + g.h <= o.y + o.h + 10 && (!best || o.w * o.h < best.w * best.h)) best = o;
+  }
+  return best;
+}
+const markCanvasRepaired = (path) => savePref('canvas.repaired', [...new Set([...loadPref('canvas.repaired', []), path])].slice(-100));
+// 0.33.7: a canvas adopted twice before 0.33.7 (sections twice, the first ones empty and without a frame) and groups
+// lying inside others that were never made subgroups: tidied once per project on this device. The project page calls
+// it too, so board and structure are tidy without opening the canvas. True when something changed.
+export async function repairCanvasSections(path, cur, groups = null) {
+  if (loadPref('canvas.repaired', []).includes(path)) return false;
+  if (!groups) { try { groups = (await loadCanvas(path)).groups || []; } catch { return false; } }
+  const secs = sectionsOf(cur);
+  // a canvas that still has its old groups (before 0.33.0) is taken over by the canvas itself
+  if (groups.length && !groups.some((g) => g.auto || secs.some((x) => x.id === g.id))) return false;
+  const framed = new Map(groups.filter((g) => secs.some((x) => x.id === g.id)).map((g) => [g.id, g]));
+  const filled = (x) => (cur.board?.[x.id] || []).length > 0 || framed.has(x.id) || secs.some((y) => y.parent === x.id);
+  const drop = secs.filter((x) => !filled(x) && secs.some((y) => y !== x && y.title.trim().toLowerCase() === x.title.trim().toLowerCase() && filled(y))).map((x) => x.id);
+  const parents = {};
+  const frames = [...framed.values()];
+  for (const g of frames) {
+    if (secs.find((x) => x.id === g.id).parent) continue;
+    const outer = innermost(g, frames);
+    if (outer) parents[g.id] = outer.id;
+  }
+  markCanvasRepaired(path);
+  if (!drop.length && !Object.keys(parents).length) return false;
+  await repairSections(path, { drop, parents });
+  toast(t('canvas.repaired', { n: drop.length, m: Object.keys(parents).length }), 'ok', 7000);
+  return true;
 }

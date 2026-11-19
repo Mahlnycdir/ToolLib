@@ -2,7 +2,7 @@
 // (search, and everything you can create), and since 0.30.0 "Problem zuerst": what you want to solve, with suggestions,
 // one small step and ideas by theme (problem-ui.js). Below: your widgets, which you choose, order, make wide and take away,
 // kept in start.md in your knowledge (start-store.js), so the Mac and the iPhone show the same:
-//   pult      the control panel: up to four projects, the one in focus open (pult.js)
+//   pult      the control panel: the projects in focus, priority 1 open (pult.js)
 //   resume    where you left off
 //   inbox     quick notes and what waits in the inbox
 //   projects  your other projects
@@ -24,7 +24,8 @@ import { PLANNED, READY, paintAccent } from './modules.js';
 import { indexState, nodeByPath } from '../services/search.js';
 import { isConfigured, knowledgeStats, syncState } from '../services/sync.js';
 import { isStandalone, platform } from '../services/pwa.js';
-import { focusProject, projects, setFocus } from '../services/projects.js';
+import { focusList, focusProject, onFocusChange, projects, setFocus } from '../services/projects.js';
+import { focusRows, openFocusSheet } from './focus-ui.js';
 import { capture, inbox } from '../services/notes.js';
 import { trail } from '../services/trail.js';
 import { newBlockId } from '../services/widget-store.js';
@@ -147,7 +148,7 @@ export function renderStart(main, { go, onSync, onSetup, focusCommand }) {
 
 // The light of Heute (0.32.0): the project in focus, its next step and how far it is (done of all steps).
 function focusCard({ go }) {
-  const f = focusProject();
+  const f = focusList()[0] || focusProject();
   if (!f) return null;
   const st = f.steps || { open: 0, done: 0, next: '' };
   const all = st.open + st.done;
@@ -177,7 +178,22 @@ function noFocus({ go }) {
   return h('section', { class: 'loom-focus none' },
     h('span', { class: 'loom-focus-text' }, h('span', { class: 'loom-focus-kicker', text: t('start.focus.none') }),
       h('span', { class: 'loom-focus-sub', text: t('start.focus.noneHint') }),
-      list.length ? h('span', { class: 'loom-chips' }, list.map((p) => h('button', { type: 'button', class: 'loom-chip', text: p.title, onclick: () => { setFocus(p.path); go(nodeHref(p.path)); } }))) : null));
+      list.length ? h('span', { class: 'loom-chips' }, list.map((p) => h('button', { type: 'button', class: 'loom-chip', text: p.title, onclick: () => { setFocus(p.path); go(nodeHref(p.path)); } })),
+        h('button', { type: 'button', class: 'loom-chip ghost', text: t('focus.manage'), onclick: () => openFocusSheet() })) : null));
+}
+
+// 0.33.7: the focus widget: the light of priority 1, below one line for every other project in focus (number, light,
+// next step with a tick); on the phone the first two, the rest behind "+ n more". Draws again when the focus changes.
+function focusWidget({ go }) {
+  const host = h('div', { class: 'focus-widget' });
+  const phone = () => window.matchMedia('(max-width: 640px)').matches;
+  const draw = () => {
+    const card = focusCard({ go });
+    host.replaceChildren(...(card ? [card, focusRows({ go, skipFirst: true, max: phone() ? 2 : 0 })] : [noFocus({ go })]));
+  };
+  draw();
+  const stop = onFocusChange(() => { if (!host.isConnected) { stop(); return; } draw(); });
+  return host;
 }
 
 // The widgets of Start in the shared frame.
@@ -226,7 +242,7 @@ function startGrid(s, { go, ready, arranging, onArrange }) {
 // ------------------------------------------------------------------ the widgets Start brings
 const OWN = {
   // 0.33.0: the pieces that stood fixed on Heute until 0.32
-  focus: ({ go, ready }) => (ready ? focusCard({ go }) || noFocus({ go }) : null),
+  focus: ({ go, ready }) => (ready ? focusWidget({ go }) : null),
   loom: ({ go }) => loomWidget({ go }),
   problem: ({ go, ready, s }) => (ready ? problemBox({ go, themes: s.themes || DEFAULT_THEMES, saveThemes: (list) => setStartThemes(list), only: 'field' }) : null),
   step: ({ go, ready, s }) => (ready ? problemBox({ go, themes: s.themes || DEFAULT_THEMES, only: 'step' }) : null),
@@ -234,7 +250,7 @@ const OWN = {
   bench: () => h('div', { class: 'bench-card' }, benchStrip({ n: 6 })),
 
   // the control panel
-  pult: ({ go, s }) => pultWidget({ go, pult: s.pult, savePult: setPult }),
+  pult: ({ go }) => pultWidget({ go }),
 
   // where you left off: a snippet draft, a work you read, a page you wrote, a node you opened
   resume({ go, ready }) {
@@ -288,7 +304,7 @@ const OWN = {
 
   // your other projects (the ones not in the control panel)
   projects({ s }) {
-    const inPult = new Set(pultProjects(s.pult).map((p) => p.path));
+    const inPult = new Set(pultProjects().map((p) => p.path));
     const rest = projects().filter((p) => !inPult.has(p.path) && p.state !== 'done');
     return h('div', { class: 'start-projects' },
       rest.length ? h('div', { class: 'project-chips' }, rest.slice(0, 10).map((p) => {

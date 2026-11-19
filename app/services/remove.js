@@ -5,7 +5,7 @@ import { deleteNode, readNodeText, writeNode } from './nodes.js';
 import { allNodes, forgetNode, nodeByPath, refreshNode } from './search.js';
 import { noteChange } from './sync.js';
 import { announce } from './channel.js';
-import { addToProject, focusPath, projectsWith, removeFromProject, setFocus } from './projects.js';
+import { addToFocus, addToProject, focusPath, focusRank, projectsWith, removeFromFocus, removeFromProject, setFocus } from './projects.js';
 import { addToFolder, foldersWith, removeFromFolder } from './research-store.js';
 import { libraries, loadLibrary, placePage, unlistPage } from './library-store.js';
 import { forget } from './trail.js';
@@ -40,13 +40,14 @@ export async function removeNode(path) {
     if (at >= 0) place = { lib: lib.path, chapter: at, index: l.chapters[at].pages.indexOf(slug) };
   }
   const wasFocus = focusPath() === path;
+  const rank = focusRank(path);   // 0.33.7: its priority comes back with Undo
   for (const p of projects) await removeFromProject(p.path, slug);
   for (const f of folders) await removeFromFolder(f.path, slug);
   if (place) await unlistPage(place.lib, slug);
   await deleteNode(path);
   forgetNode(path);
   forget(path);
-  if (wasFocus) setFocus('');
+  if (rank) removeFromFocus(path);
   await noteChange(path, 'removed');
   announce([path]);
   return async function undo() {
@@ -56,6 +57,7 @@ export async function removeNode(path) {
     for (const p of projects) await addToProject(p.path, [slug]);
     for (const f of folders) await addToFolder(f.path, slug);
     if (place) await placePage(place.lib, slug, place.chapter, place.index);
+    if (rank) addToFocus(path, rank - 1);
     if (wasFocus) setFocus(path);
     announce([path]);
   };

@@ -46,7 +46,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote, unquote, urljoin, urlsplit
 
-VERSION = '0.33.4'
+VERSION = '0.33.7'
 HOME = Path(os.environ.get('TOOLLIB_HELPER_HOME') or '~/.toollib-helper').expanduser()
 CONFIG = HOME / 'config.json'
 STATE = HOME / 'files.json'
@@ -910,13 +910,31 @@ class SpeechReader:
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=log, limit=1 << 20)
         log.close()
 
-    async def text(self, wav, lang, prompt):
+    async def warm(self):
+        """0.33.7: loads the model while you start to speak (Loom calls /speech/warm with the microphone), so the first
+        words do not wait for it: half a second of silence goes through once."""
+        if self.loaded or self.lock.locked():
+            return
+        import io
+        import wave
+        buf = io.BytesIO()
+        with wave.open(buf, 'wb') as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16000)
+            w.writeframes(b'\x00\x00' * 8000)
+        try:
+            await self.text(buf.getvalue(), 'de', '', quick=True)
+        except RuntimeError:
+            pass
+
+    async def text(self, wav, lang, prompt, quick=False):
         seconds = max(1.0, (len(wav) - 44) / 32000)
         async with self.lock:
             await self.start()
             self.n += 1
             self.used = time.time()
-            self.proc.stdin.write((json.dumps({'id': self.n, 'wav': base64.b64encode(wav).decode(), 'lang': lang, 'prompt': prompt}) + '\n').encode())
+            self.proc.stdin.write((json.dumps({'id': self.n, 'wav': base64.b64encode(wav).decode(), 'lang': lang, 'prompt': prompt, 'quick': bool(quick)}) + '\n').encode())
             await self.proc.stdin.drain()
             try:
                 # the first time the model loads (some seconds); then about a tenth of the length of the recording
@@ -977,8 +995,10 @@ def cmd_speech_worker(cfg, args):
             audio = wav_samples(base64.b64decode(req.get('wav') or '', validate=True))
             lang = req.get('lang') if req.get('lang') in ('de', 'en') else 'de'
             prompt = str(req.get('prompt') or '')[:800] or None
+            # quick (0.33.7): a preview while you still speak, one pass only (the others only help hard pieces)
+            temps = (0.0,) if req.get('quick') else (0.0, 0.2, 0.4)
             out = mlx_whisper.transcribe(audio, path_or_hf_repo=model, language=lang, task='transcribe', initial_prompt=prompt,
-                                         condition_on_previous_text=False, temperature=(0.0, 0.2, 0.4), no_speech_threshold=0.6,
+                                         condition_on_previous_text=False, temperature=temps, no_speech_threshold=0.6,
                                          compression_ratio_threshold=2.4, verbose=None)
             # segments Whisper itself thinks are no speech are left out (silence makes it invent sentences)
             parts = [str(seg.get('text', '')).strip() for seg in out.get('segments', []) if float(seg.get('no_speech_prob', 0)) < 0.8]
@@ -1318,6 +1338,12 @@ def make_app(cfg):
     async def speech_state(request):
         return web.json_response({'ok': True, 'installed': speech.installed, 'loaded': speech.loaded}, headers={'Cache-Control': 'no-store'})
 
+    async def speech_warm(request):
+        if not speech.installed:
+            return jerr('speech-not-installed', 404)
+        asyncio.create_task(speech.warm())
+        return web.json_response({'ok': True, 'loaded': speech.loaded}, headers={'Cache-Control': 'no-store'})
+
     async def speech_text(request):
         if not speech.installed:
             return jerr('speech-not-installed', 404)
@@ -1329,8 +1355,9 @@ def make_app(cfg):
         lang = request.query.get('lang', 'de')
         lang = lang if lang in ('de', 'en') else 'de'
         prompt = request.query.get('prompt', '')[:800]
+        quick = request.query.get('quick') == '1'
         try:
-            text = await speech.text(body, lang, prompt)
+            text = await speech.text(body, lang, prompt, quick=quick)
         except RuntimeError as e:
             return jerr('speech-failed', 502, detail=str(e)[:200])
         return web.json_response({'ok': True, 'text': text}, headers={'Cache-Control': 'no-store'})
@@ -1496,6 +1523,7 @@ def make_app(cfg):
     app.router.add_post('/ink/latex', ink_latex)
     app.router.add_get('/speech/state', speech_state)
     app.router.add_post('/speech/text', speech_text)
+    app.router.add_post('/speech/warm', speech_warm)
     app.on_startup.append(starting)
     app.on_cleanup.append(closing)
     return app

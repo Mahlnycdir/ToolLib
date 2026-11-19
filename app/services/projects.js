@@ -46,16 +46,77 @@ export function touchProject(path) {
 }
 
 // ------------------------------------------------------------------ focus
+// 0.33.7 (ENTE: "Mache halt Prios im Fokus … keine darf dieselbe haben … nicht eingeschränkt"): any number of projects
+// can be in focus, each with its own priority (1, 2, 3 … in this order, none twice). The list sits in start.md as
+// `focus: [paths]` (start-store.js), so the Mac and the iPhone share it; this module keeps a copy (pref
+// `focus.order`, device) so everything draws at once. The tabs on top show exactly this list, in this order.
+// Besides the list there is the project you work on right now on this device (pref `focus`, as before): whatever you
+// create joins it. It is always one of the list (setFocus puts a project in, at the end); without one, priority 1.
 const focusListeners = new Set();
-export const focusPath = () => loadPref('focus', '');
+let order = loadPref('focus.order', null);   // null: never set (seeded from the old focus and the control panel)
+let saveOrder = null;                        // start-store.js writes the list into start.md
+export function onFocusOrderSave(fn) { saveOrder = fn; }
+const NONE = '-';                            // "nothing in focus right now" (research: keep into the inbox)
+const isOpen = (d) => d && d.type === 'project' && !d.conflict && d.state !== 'done';
+function tellFocus() { const f = focusPath(); for (const fn of focusListeners) { try { fn(f); } catch (e) { console.warn(e); } } }
+// the projects in focus, priority 1 first (done, deleted or unknown ones left out)
+export function focusList() {
+  const seen = new Set();
+  const out = [];
+  for (const p of order || []) { const d = nodeByPath(p); if (isOpen(d) && !seen.has(p)) { seen.add(p); out.push(d); } }
+  return out;
+}
+export const focusRank = (path) => focusList().findIndex((d) => d.path === path) + 1;   // 0 = not in focus
+function storeOrder(list, { write = true } = {}) {
+  const next = [...new Set(list.filter((p) => /^projects\/[\w.-]+\.md$/.test(p)))];
+  if (order && next.join('|') === order.join('|')) return;
+  order = next;
+  savePref('focus.order', order);
+  if (write && saveOrder) saveOrder(order).catch?.((e) => console.warn('focus order', e));
+  tellFocus();
+}
+// start.md was read (here, from another window or a sync): its list wins. Without one the list is made once on this
+// device from the old focus and the projects of the control panel; nothing is written then (reading never writes,
+// so a fresh device can still clone), the file gets the list with your first change.
+export function adoptFocusOrder(list, seed = []) {
+  if (Array.isArray(list)) { storeOrder(list, { write: false }); return; }
+  if (order) return;
+  const old = loadPref('focus', '');
+  storeOrder([...(old && old !== NONE ? [old] : []), ...seed], { write: false });
+}
+export function setFocusOrder(paths) { storeOrder(paths); }
+export function addToFocus(path, at = -1) {
+  const list = (order || []).filter((p) => p !== path);
+  list.splice(at < 0 ? list.length : Math.min(at, list.length), 0, path);
+  storeOrder(list);
+}
+export function removeFromFocus(path) {
+  if (loadPref('focus', '') === path) savePref('focus', '');
+  storeOrder((order || []).filter((p) => p !== path));
+}
+// a new priority (1 = first); the others move up or down, none shares a number
+export function moveFocus(path, rank) {
+  const list = focusList().map((d) => d.path).filter((p) => p !== path);
+  list.splice(Math.max(0, Math.min(rank - 1, list.length)), 0, path);
+  storeOrder([...list, ...(order || []).filter((p) => !list.includes(p))]);
+}
+export function focusPath() {
+  const mine = loadPref('focus', '');
+  if (mine === NONE) return '';
+  const list = focusList();
+  if (mine && list.some((d) => d.path === mine)) return mine;
+  return list[0]?.path || '';
+}
 export function focusProject() {
   const d = nodeByPath(focusPath());
   return d && d.type === 'project' && !d.conflict ? d : null;
 }
+// The project you work on now (on this device). It joins the list at the end when it is not in yet; the priorities
+// of the others stay as they are. setFocus('') = nothing in focus right now (what you keep goes to the inbox).
 export function setFocus(path) {
-  savePref('focus', path || '');
-  if (path) touchProject(path);
-  for (const fn of focusListeners) { try { fn(path || ''); } catch (e) { console.warn(e); } }
+  savePref('focus', path || NONE);
+  if (path) { touchProject(path); if (!(order || []).includes(path)) { addToFocus(path); return; } }
+  tellFocus();
 }
 export function onFocusChange(fn) { focusListeners.add(fn); return () => focusListeners.delete(fn); }
 
@@ -102,7 +163,7 @@ export async function deleteProject(path) {
   await noteChange(path, 'removed');
   await removeCanvas(path).catch(() => {});   // its canvas (0.27.0)
   announce([path]);
-  if (focusPath() === path) setFocus('');
+  if ((order || []).includes(path)) removeFromFocus(path);
 }
 
 // Parts "## <name>" of the file ("## Calc", "## Time", "## Links", widget contents): md-parts.js.
@@ -357,6 +418,28 @@ export const removeSection = (path, id) => changeProject(path, (text, p) => {
   if (secs.length < 2 || !gone) return null;
   const rest = secs.filter((s) => s.id !== id).map((s) => (s.parent === id ? { ...s, parent: gone.parent || '' } : s));
   return removeField(writeSections(text, rest), `board_${id}`);
+});
+// 0.33.7: one write that tidies the sections (canvas repair): `drop` = ids of empty twins to take away, `parents` =
+// { id: parent } for groups that lie inside another frame. A parent that would make a ring is left out.
+export const repairSections = (path, { drop = [], parents = {} }) => changeProject(path, (text, p) => {
+  let secs = sectionsOf(p).filter((s) => !drop.includes(s.id) || (p.board?.[s.id] || []).length);
+  if (secs.length < 1) return null;
+  const ids = new Set(secs.map((s) => s.id));
+  for (const s of secs) if (s.parent && !ids.has(s.parent)) s.parent = '';
+  for (const [id, parent] of Object.entries(parents)) {
+    const s = secs.find((x) => x.id === id);
+    if (!s || !ids.has(parent) || parent === id || sectionTree(secs, id).includes(parent)) continue;
+    s.parent = parent;
+  }
+  // subgroups right after their parent, so the board shows them in order
+  const top = secs.filter((s) => !s.parent);
+  const ordered = [];
+  const walk = (s) => { ordered.push(s); for (const c of secs.filter((x) => x.parent === s.id)) walk(c); };
+  top.forEach(walk);
+  for (const s of secs) if (!ordered.includes(s)) ordered.push(s);
+  let next = writeSections(text, ordered);
+  for (const id of drop) if (!ids.has(id)) next = removeField(next, `board_${id}`);
+  return next === text ? null : next;
 });
 // A section to the place before index `before` (as the sections stand); its subgroups go along (0.33.0).
 export const moveSectionTo = (path, id, before) => changeProject(path, (text, p) => {

@@ -1509,7 +1509,7 @@ textarea.field { height: auto; padding: 10px 12px; line-height: 1.45; resize: ve
 .pe-text .md-editor, .source-text .md-editor { flex: 1; min-height: 0; height: 100%; }
 .md-editor { background: transparent; color: var(--fg); font-size: var(--ed-size, 16px); }
 .md-editor.cm-focused { outline: none; }
-.md-editor .cm-scroller { font-family: inherit; line-height: 1.65; overscroll-behavior: contain; }
+.md-editor .cm-scroller { font-family: inherit; line-height: 1.65; }
 .md-editor .cm-content { padding: 16px 18px 40vh; caret-color: var(--caret); }
 .md-editor .cm-line { padding: 0; }
 .md-source { font-size: 13.5px; }
@@ -1986,8 +1986,10 @@ body.dragging-now, body.dragging-now * { cursor: grabbing !important; -webkit-us
 [data-theme="dark"] .note-ink-pic img { filter: invert(1) hue-rotate(180deg); }
 [data-theme="dark"] .note-ink-pic { background: #15181c; }
 @media (max-width: 759px) {
-  .app[data-kladde-lupe="1"] .cmd { display: none; }
-  .app[data-kladde-lupe="1"] { grid-template-areas: "main"; grid-template-rows: minmax(0, 1fr); }
+  /* 0.33.7: the bar at the bottom (0.32.0) and Loom's round button go too; before, the bar still stood in the grid
+     and pushed Kladde into a narrow column of its own */
+  .app[data-kladde-lupe="1"] .cmd, .app[data-kladde-lupe="1"] .tabbar, .app[data-kladde-lupe="1"] .loom-fab { display: none; }
+  .app[data-kladde-lupe="1"] { grid-template-columns: minmax(0, 1fr); grid-template-areas: "main"; grid-template-rows: minmax(0, 1fr); }
   .kl-pad { height: min(300px, 38%); min-height: 160px; }
   .kl-pad { padding-bottom: env(safe-area-inset-bottom, 0px); }
 }
@@ -2767,7 +2769,6 @@ html.calm *, html.calm *::before, html.calm *::after, html.calm body::before, ht
 .loom-tab .project-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
 .loom-tab.plus { padding: 0 9px; font-size: 16px; }
 .loom-tabs ~ .focus-pill { display: none; }
-@media (max-width: 1099px) { .loom-tab:not(.on):not(.home):not(.plus) { display: none; } }
 
 /* the workbench (0.32.0): what lies half finished, in the status line on wide screens, on Heute on the phone */
 .bench { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; overflow: hidden; }
@@ -3202,3 +3203,82 @@ html.calm .lf-here { animation: none; }
 .board-scroll-thumb { position: absolute; left: 0; top: 2px; bottom: 2px; border-radius: 4px; background: color-mix(in srgb, var(--light) 65%, transparent); cursor: grab; }
 .board-scroll-thumb:hover, .board-scroll-thumb.held { background: var(--light); }
 .board-scroll-thumb.held { cursor: grabbing; }
+
+/* ------------------------------------------------------------------ 0.33.7: focus with priorities, tabs, Heute */
+.loom-tabs { flex: 0 1 auto; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+.loom-tabs::-webkit-scrollbar { display: none; }
+.loom-tab { flex: none; max-width: 170px; }
+.loom-tab.visit { color: var(--muted); box-shadow: inset 0 0 0 1px var(--line); opacity: .85; }
+.loom-tab.visit.on { box-shadow: inset 0 0 0 1px var(--light-line, var(--line)); }
+.focus-rank { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 6px; background: color-mix(in srgb, var(--accent, var(--light)) 18%, transparent); color: var(--accent, var(--light)); font: 650 11.5px/1 inherit; font-family: inherit; flex: none; border: 0; }
+.focus-rank.big { min-width: 28px; height: 28px; border-radius: 8px; font-size: 13.5px; }
+button.focus-rank { cursor: pointer; }
+.focus-widget { display: grid; gap: 8px; }
+.focus-rows { display: grid; gap: 4px; }
+.focus-row { display: flex; align-items: center; gap: 10px; padding: 7px 8px 7px 10px; border-radius: 12px; background: var(--glass); border: 1px solid var(--line); min-width: 0; }
+.focus-row.here { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.focus-row-main { flex: 1; min-width: 0; display: grid; gap: 2px; text-align: left; background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
+.focus-row-title { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.focus-row-next { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.focus-row-meter { width: 56px; flex: none; }
+.focus-row-done[hidden] { display: none; }
+.focus-rows-foot { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.focus-rows-foot:empty { display: none; }
+.focus-sheet { display: grid; gap: 8px; }
+.focus-sheet-list { display: grid; gap: 6px; }
+.focus-sheet-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--glass); }
+.focus-sheet-row.off { background: none; }
+.focus-sheet-row .project-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; margin: 0 6px; }
+.focus-sheet-title { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.focus-sheet-title b, .focus-sheet-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.focus-sheet-sub { margin-top: 8px; }
+.pult-host { display: contents; }
+/* 0.33.7: the projects as tiles */
+.project-overview { display: grid; gap: 22px; min-width: 0; }
+.project-group { display: grid; gap: 10px; min-width: 0; }
+.project-group-title { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.project-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr)); gap: 12px; }
+.project-tile { position: relative; display: grid; gap: 12px; padding: 14px 16px; border-radius: 18px; border: 1px solid var(--line); background: var(--glass); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); cursor: pointer; min-width: 0; transition: border-color .15s, transform .15s; }
+.project-tile:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.project-tile.in-focus { box-shadow: inset 3px 0 0 var(--accent); }
+.project-tile.state-paused, .project-tile.state-done { opacity: .72; }
+.tile-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.tile-top .project-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex: none; margin: 0 4px; }
+.tile-title { flex: 1; min-width: 0; font-weight: 650; font-size: 16px; color: var(--fg); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile-mid { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.tile-ring { flex: none; color: var(--fg); }
+.tile-text { min-width: 0; display: grid; gap: 4px; }
+.tile-goal { margin: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tile-next { margin: 0; display: grid; gap: 1px; }
+.tile-next span:last-child { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.tile-sections { display: flex; gap: 2px; height: 6px; border-radius: 4px; overflow: hidden; }
+.tile-seg { flex: 1 1 0; min-width: 3px; background: var(--sec, var(--accent)); opacity: .85; }
+.tile-seg.empty { background: var(--line); }
+.tile-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tile-foot .soon { color: var(--warn, #e5a50a); }
+.tile-foot .focus-btn { margin-left: auto; }
+.project-done-toggle { justify-self: start; }
+/* 0.33.7: board and canvas use the width; the project card sits below them */
+@media (min-width: 1280px) {
+  .lp.lp-wide { grid-template-columns: 210px minmax(0, 1fr); }
+  .lp.lp-wide > :nth-child(3) { grid-column: 2; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; align-items: start; }
+}
+/* 0.33.7: the wheel over a note's text scrolls the page (the editor grows with its text; `overscroll-behavior:
+   contain` on it swallowed every wheel turn although it had nothing of its own to scroll) */
+.md-editor .cm-scroller { overscroll-behavior: auto; }
+/* 0.33.7: Kladde without a tool: the page follows the mouse */
+.kl.kl-hand canvas { cursor: grab; }
+.kl.kl-hand canvas:active { cursor: grabbing; }
+/* 0.33.7: the room kept below the page for the bar at the bottom (0.32.0) is not for tools that fill the screen
+   (Kladde, Kobra: there it stood as an empty strip above the bar and above the keyboard) and not while the keyboard
+   is open (then the bar is gone anyway) */
+@media (max-width: 759px) {
+  .app .main[data-view="kladde"], .app .main[data-view="kobra"] { padding-bottom: 0; }
+  .app.kb-open:not(.solo) .main { padding-bottom: 0; }
+}
+/* 0.33.7: buttons and chips that are hidden stay hidden (Settings › Loom showed "Load" and "Remove" at once) */
+.btn[hidden], .chip[hidden] { display: none; }
+.loom-row .chip { white-space: nowrap; }
+.loom-row .segmented button { white-space: nowrap; }
+.chip.speech-active.ok { color: var(--light); border-color: var(--light-line); }
+@media (max-width: 640px) { .focus-row-meter { display: none; } }
