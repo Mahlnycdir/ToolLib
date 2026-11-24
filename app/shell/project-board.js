@@ -156,6 +156,8 @@ function board(p, members, ctx, sw = null) {
     const key = `${p.slug}:${sec.id}`;
     const col = h('section', { class: `${depth ? 'board-sub' : 'board-col station'} station-${sec.id}${collapsed.has(key) ? ' collapsed' : ''}`, id: `station-${sec.id}`, dataset: { sec: sec.id, depth: String(depth) }, role: depth ? null : 'listitem' });
     paintSection(col, sec.color);
+    // 0.33.8: a column whose subgroups have subgroups of their own gets twice the width, so cards stay readable
+    if (!depth && kids(sec.id).some((c) => kids(c.id).length)) col.classList.add('deep');
     const menu = h('button', { type: 'button', class: 'icon-btn board-menu no-drag', 'aria-label': t('board.section.menu'), title: t('board.section.menu'), html: icon('more') });
     menu.addEventListener('click', () => sectionMenu(p, sec, secs, ctx));
     const fold = h('button', { type: 'button', class: 'board-title', 'aria-expanded': String(!col.classList.contains('collapsed')) },
@@ -298,10 +300,15 @@ function boardThreads(section, boardEl, p) {
     if (!from) { lit = null; section.classList.remove('threads-on'); return; }
     const box = section.getBoundingClientRect();
     overlay.setAttribute('viewBox', `0 0 ${box.width} ${box.height}`);
-    const clip = boardEl.getBoundingClientRect();   // the board scrolls sideways: lines stay inside what you see
+    // 0.33.8: lines stay inside the part of the board you see (before they ran over the steps beside the board to
+    // cards scrolled out of view): only cards whose middle is in sight, and everything drawn is cut at its edges
+    const bb = boardEl.getBoundingClientRect();
+    const mainBox = boardEl.closest('.main')?.getBoundingClientRect() || bb;
+    const clip = { left: Math.max(bb.left, mainBox.left), right: Math.min(bb.right, mainBox.right), top: Math.max(bb.top, mainBox.top), bottom: Math.min(bb.bottom, mainBox.bottom) };
     const rectOf = (el) => { const r = el.getBoundingClientRect(); return { x: r.left - box.left, y: r.top - box.top, w: r.width, h: r.height }; };
     const a0 = rectOf(from);
-    const visible = (r) => r.x + r.w > clip.left - box.left && r.x < clip.right - box.left;
+    const visible = (r) => { const cx = r.x + r.w / 2 + box.left; const cy = r.y + r.h / 2 + box.top; return cx > clip.left && cx < clip.right && cy > clip.top - 400 && cy < clip.bottom + 400; };
+    overlay.style.clipPath = `inset(${Math.max(0, clip.top - box.top)}px ${Math.max(0, box.right - clip.right)}px ${Math.max(0, box.bottom - clip.bottom)}px ${Math.max(0, clip.left - box.left)}px)`;
     const line = (b, cls, colour) => {
       // from the side of a that faces b to the side of b that faces a
       const right = b.x > a0.x + a0.w / 2;

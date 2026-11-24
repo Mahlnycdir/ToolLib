@@ -661,7 +661,7 @@ dl.keys dd { margin: 0; }
 .math-display { padding: 10px 14px; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; background: var(--panel); }
 .math-display .katex-display { margin: 0; }
 .math-display .katex { font-size: 1.12em; }
-.tex-error { white-space: pre-wrap; font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--danger); }
+.tex-error { white-space: pre-wrap; font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted); font-size: 13px; overflow-x: auto; }
 .code-block.math { background: var(--panel); }
 
 /* Formulary (0.12.0) */
@@ -3144,7 +3144,8 @@ html.calm .lf-here { animation: none; }
 .widgets.phone .loom-voice p { font-size: 15px; line-height: 1.45; }
 .widgets.phone .loom-focus-title { font-size: 18px; }
 .widgets.phone .ideas-themes .chip { font-size: 13.5px; }
-@media (max-width: 759px) { .app:not(.solo) .main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); } }
+/* (0.33.1 kept 96 px + the safe area as padding under every page for Loom's round button; 0.33.8 makes that room
+   a spacer after flowing pages only, see the end of this file) */
 /* the photo button: as large as the other buttons in its row */
 .photo-btn, .photo-btn.small { width: 40px; height: 40px; min-width: 40px; }
 .photo-btn .ic, .photo-btn.small .ic { width: 21px; height: 21px; }
@@ -3272,13 +3273,46 @@ button.focus-rank { cursor: pointer; }
 /* 0.33.7: the room kept below the page for the bar at the bottom (0.32.0) is not for tools that fill the screen
    (Kladde, Kobra: there it stood as an empty strip above the bar and above the keyboard) and not while the keyboard
    is open (then the bar is gone anyway) */
-@media (max-width: 759px) {
-  .app .main[data-view="kladde"], .app .main[data-view="kobra"] { padding-bottom: 0; }
-  .app.kb-open:not(.solo) .main { padding-bottom: 0; }
-}
+
 /* 0.33.7: buttons and chips that are hidden stay hidden (Settings › Loom showed "Load" and "Remove" at once) */
 .btn[hidden], .chip[hidden] { display: none; }
 .loom-row .chip { white-space: nowrap; }
 .loom-row .segmented button { white-space: nowrap; }
 .chip.speech-active.ok { color: var(--light); border-color: var(--light-line); }
 @media (max-width: 640px) { .focus-row-meter { display: none; } }
+
+/* ------------------------------------------------------------------ 0.33.8: the iPhone again (bug list 24.11.) */
+@media (max-width: 759px) {
+  /* Room for Loom's round button only after pages that flow and scroll; tools that fill the height (reader and
+     research, network, Kobra, Kladde, an open library page) end right at the bar. Before, 96 px + the safe area of
+     padding under every page left an empty strip under those tools. */
+  .app:not(.solo) .main::after { content: ""; display: block; height: 76px; flex: none; grid-column: 1 / -1; }
+  .app .main[data-view="research"]::after, .app .main[data-view="net"]::after, .app .main[data-view="kobra"]::after,
+  .app .main[data-view="kladde"]::after, .app .main[data-view="library-open"]::after, .app .main[data-view="source"]::after,
+  .app.kb-open .main::after { display: none; }
+  .app.kb-open:not(.solo) .main { padding-bottom: 0; }
+  /* nothing moves sideways while you scroll: the page never gets wider than the screen */
+  .app .main { overflow-x: hidden; }
+  .lp, .lp > *, .lp-struct, .lp-sec, .lp-sec-btn { min-width: 0; max-width: 100%; }
+  .note-read, .node-body, .markdown { overflow-wrap: anywhere; }
+}
+/* a formula wider than its column scrolls inside itself (reader, notes, cards, Loom) instead of pushing the page */
+.katex-display { overflow-x: auto; overflow-y: hidden; max-width: 100%; padding: 2px 0; }
+.katex-display > .katex { max-width: none; }
+math[display="block"] { display: block; overflow-x: auto; max-width: 100%; }
+@media (max-width: 759px) {
+  .view-switch { max-width: 100%; overflow-x: auto; scrollbar-width: none; flex-wrap: nowrap; }
+  .view-switch::-webkit-scrollbar { display: none; }
+  .view-switch button { flex: 1 1 auto; min-width: 0; padding-left: 8px; padding-right: 8px; }
+}
+/* 0.33.8: the board — a card never gets wider than its column, also deep in subgroups (the list of cards is a grid
+   whose one column grew with its widest card and ran into the next column) */
+.board-cards { grid-template-columns: minmax(0, 1fr); }
+.board-col, .board-body, .board-sub, .board-card, .board-card .member-main, .board-card .member-text { min-width: 0; }
+.board-sub { margin-right: 0; }
+.board-sub .board-sub { padding-left: 8px; }
+@media (min-width: 900px) { .board-col.deep { grid-column: span 2; } }
+/* the scrollbar above the board: a calm band the columns pass under, not a thumb floating over a card */
+.board-scroll { box-shadow: 0 0 0 6px var(--bg), 0 8px 10px -6px var(--bg); background-clip: padding-box; }
+.board-scroll::before { content: ""; position: absolute; inset: 0; border-radius: 6px; background: color-mix(in srgb, var(--fg) 8%, var(--bg)); }
+.board-scroll-thumb { z-index: 1; }

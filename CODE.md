@@ -151,3 +151,10 @@ Eine Zeile in `PAGES` (`app/shell/settings/index.js`), die Texte `settings.sec.<
 - Kladde: zweiter Tipp aufs aktive Werkzeug legt es ab (`tool = null`, `.kl-hand`), dann zieht die Maus die Seite; Rad/Trackpad verschiebt, Strg + Rad zoomt; Stärke per langem Drücken oder Rechtsklick. iPhone: die Leiste unten und der Loom-Knopf raus aus dem Raster.
 - iPhone: kein Leerraum unter Kladde und Kobra und keiner über der Tastatur (`padding-bottom` 0).
 - Sprache: `speech.js` `speechEngine` (pref `loom.speechEngine`: auto, mac, here), `activeEngine`, `warmUp` (Mac: `POST /speech/warm` lädt das Modell, sobald du zu sprechen beginnst), `forgetHere`; Vorschau beim Sprechen mit `quick=1` (ein Durchgang). Einstellungen › Loom zeigen beide Modelle mit Namen und Zustand und wer gerade abschreibt.
+
+## 0.33.8 Bugs aus ENTEs Bildern (24.11.)
+
+- iPhone: Der Platz für Looms runden Knopf ist kein `padding-bottom` mehr unter jeder Seite, sondern ein Abstandhalter `.main::after` nur nach fließenden Seiten; Werkzeuge mit voller Höhe (Recherche und Leser, Netz, Kobra, Kladde, offene Bibliotheksseite, Quelltext) enden direkt an der Leiste. `.main` am iPhone `overflow-x: hidden`; die Ansichtsumschaltung im Projekt scrollt in sich.
+- Tastatur (`shell.js` `fitViewport`): Neuere iOS verkleinern `innerHeight` mit der Tastatur; gemessen wird jetzt gegen die größte Höhe ohne Textfeld im Fokus (`tallest`), und „Tastatur offen“ gilt nur mit einem Textfeld im Fokus (`typing`), neu geprüft bei focusin/focusout.
+- Board: `.board-cards` mit `minmax(0, 1fr)` (Karten wuchsen über ihre Spalte); Spalten mit Unter-Untergruppen `deep` (doppelte Breite ab 900 px); die Leiste über dem Board als Band; die Linien (`boardThreads`) nur zu Karten, deren Mitte sichtbar ist, und per `clip-path` am sichtbaren Board abgeschnitten.
+- Formeln (`math.js` `draw`): erst wie sie sind, dann ohne `\tag`, `\label`, `\nonumber` (und `\1` → `\mathbb{1}`, `\bf` → `\boldsymbol`), sonst ruhig als Quelltext (`.tex-error` gedämpft statt rot). Breite Formeln (`.katex-display`) scrollen in sich. Loom setzt Formeln in Zitaten (`inline` aus markdown.js).

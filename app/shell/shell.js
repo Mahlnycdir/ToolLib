@@ -883,9 +883,19 @@ export function startShell(root) {
   // when they change: these events come many times a second while the iPhone slides, and every new value on <html>
   // makes the browser work through all styles again (0.23.1).
   let fitted = { h: '', top: '', kb: null };
+  // 0.33.8: newer iOS shrinks innerHeight together with the visible area when the keyboard opens, so "innerHeight
+  // minus visible height" stayed small and the keyboard was never noticed (the bar at the bottom and the room for
+  // Loom's button stayed above the keyboard: a grey strip). Now the tallest height seen without a text field in focus
+  // is the measure (new on turning the phone), and only a focused text field can mean a keyboard.
+  let tallest = 0;
+  let tallW = 0;
+  const typing = () => { const a = document.activeElement; return !!a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) && !/^(checkbox|radio|button|submit|range|color|file)$/.test(a.type || ''); };
   function fitViewport() {
     const height = vv ? vv.height : window.innerHeight;
-    const keyboard = vv ? window.innerHeight - vv.height > 140 : false;
+    if (window.innerWidth !== tallW) { tallW = window.innerWidth; tallest = 0; }
+    const editing = typing();
+    if (!editing) tallest = Math.max(tallest, height, window.innerHeight);
+    const keyboard = vv ? editing && Math.max(tallest, window.innerHeight) - vv.height > 140 : false;
     const h = `${Math.round(height)}px`;
     const top = `${keyboard && vv ? Math.max(0, Math.round(vv.offsetTop)) : 0}px`;
     const root = document.documentElement;
@@ -898,6 +908,9 @@ export function startShell(root) {
   vv?.addEventListener('resize', fitViewport);
   vv?.addEventListener('scroll', fitViewport);
   window.addEventListener('resize', fitViewport);
+  // focus moves before the keyboard has finished: look again once it has settled
+  document.addEventListener('focusin', () => { fitViewport(); setTimeout(fitViewport, 350); });
+  document.addEventListener('focusout', () => setTimeout(fitViewport, 120));
   fitViewport();
   // Toollib is an app, not a page: no zooming with two fingers (iPhone; the Kladde did this for itself already).
   // Zooming in by itself when a small text field gets the focus is off through maximum-scale=1 in index.html.

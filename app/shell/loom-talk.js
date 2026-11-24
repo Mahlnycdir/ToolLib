@@ -29,6 +29,7 @@ import { addFind, diveInto, hereOf } from '../services/dive.js';
 import { loomSuggest } from './settings/loom.js';
 import { nodeHref, nodeTitle, typeLabel } from './node-view.js';
 import { typeset } from './math.js';
+import { inline } from './markdown.js';
 import { loomMark } from './loom.js';
 import { photoButton, imageLine } from './photo.js';
 import { MODULES } from './modules.js';
@@ -322,7 +323,8 @@ export function talkPanel({ go, project = '', embedded = false, onClose = null }
       box.append(h('div', { class: 'talk-items' }, m.items.map((it) => {
         const a = h('a', { class: 'talk-item', href: nodeHref(it.path) }, h('span', { class: 'talk-kind', text: typeLabel(it.type) }), h('b', { text: it.title }));
         if (it.tex) a.append(typeset(h('span', { class: 'talk-tex' }), it.tex, false));
-        if (it.quote) a.append(h('span', { class: 'talk-quote', text: it.quote.length > 260 ? `${it.quote.slice(0, 258)} …` : it.quote }));
+        // 0.33.8: formulas ($…$), code and emphasis in the quote are set like everywhere else (before: raw $\theta$)
+        if (it.quote) a.append(h('span', { class: 'talk-quote' }, inline(it.quote.length > 260 ? `${it.quote.slice(0, 258)} …` : it.quote)));
         a.append(h('span', { class: 'talk-src', text: t('loom.source', { title: it.title }) }));
         return a;
       })));

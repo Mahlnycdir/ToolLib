@@ -105,17 +105,19 @@ export function ownMacros() {
 }
 export const allMacros = () => ({ ...MACROS, ...ownMacros() });
 
+// 0.33.8: formulas from papers and websites carry what only works in a LaTeX environment (\tag{1}, \label{…},
+// \nonumber) or commands of their own (\1 for the unit, \bf …); KaTeX showed such a formula in red as source.
+// It first tries the formula as it is, then without those parts, and only then shows the source, calmly.
+const tidyTex = (tex) => String(tex)
+  .replace(/\\(tag|label)\*?\{[^{}]*\}/g, '').replace(/\\(nonumber|notag)\b/g, '')
+  .replace(/\\1(?![0-9])/g, '\\mathbb{1}').replace(/\\bf\b/g, '\\boldsymbol').trim();
 function draw(el, tex, display) {
-  try {
-    katex.render(tex, el, {
-      displayMode: display, throwOnError: false, trust: onlyChoiceSpots, strict: 'ignore', maxExpand: 1000,
-      macros: allMacros(), output: 'htmlAndMathml',
-    });
-    el.classList.add('typeset');
-  } catch (e) {
-    el.textContent = tex;
-    el.classList.add('tex-error');
+  const opts = { displayMode: display, throwOnError: true, trust: onlyChoiceSpots, strict: 'ignore', maxExpand: 1000, macros: allMacros(), output: 'htmlAndMathml' };
+  for (const src of [tex, tidyTex(tex)]) {
+    try { katex.render(src, el, opts); el.classList.add('typeset'); el.classList.remove('tex-error'); return; } catch { /* next try */ }
   }
+  el.textContent = tex;
+  el.classList.add('tex-error');
 }
 
 // Sets tex into el. Until KaTeX is there (first formula, a fraction of a second) the LaTeX shows as text.
