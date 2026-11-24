@@ -40,13 +40,22 @@ export async function renderSource(main, path, { go, isCurrent }) {
   }
   const original = await readNodeText(path);
   if (!isCurrent()) return;
+  // 0.35.1: leaving without saving (a tap on the rail, Back, a reload) used to lose what you typed without a word.
+  // The text waits on this device for this window, and comes back once when you open the same file again unchanged.
+  const DRAFT = 'toollib.source.draft';
+  const readDraft = () => { try { const d = JSON.parse(sessionStorage.getItem(DRAFT) || 'null'); return d && d.path === path && d.base === original && typeof d.text === 'string' ? d.text : null; } catch { return null; } };
+  const keepDraft = (text) => { try { if (text === original) sessionStorage.removeItem(DRAFT); else sessionStorage.setItem(DRAFT, JSON.stringify({ path, base: original, text })); } catch { /* full or private: no draft */ } };
+  const dropDraft = () => { try { sessionStorage.removeItem(DRAFT); } catch { /* nothing kept */ } };
+  const draft = readDraft();
+  let leaving = false;
 
   const host = h('div', { class: 'source-text' });
   const drawSoon = debounce(() => draw(), 250);
+  const keepSoon = debounce(() => { if (!leaving) keepDraft(editor.value()); }, 400);
   const editor = createEditor(host, {
-    value: original, kind: 'source', label: t('source.text'),
+    value: draft ?? original, kind: 'source', label: t('source.text'),
     links: (q) => (q.trim() ? searchNodes(q, { limit: 10, filter: (d) => !d.conflict && d.path !== path }) : []).map((d) => ({ slug: d.slug, label: d.title, kind: typeLabel(d.type) })),
-    onChange: () => drawSoon(),
+    onChange: () => { drawSoon(); keepSoon(); },
     actions: { 'editor.save': () => save.click() },
   });
   const area = { get value() { return editor.value(); } };
@@ -103,6 +112,7 @@ export async function renderSource(main, path, { go, isCurrent }) {
       announce([path]);
       toast(t('source.saved'), 'ok');
       leaving = true;
+      dropDraft();
       location.replace(nodeHref(path));
     } catch (e) {
       console.warn('Could not save', e);
@@ -110,12 +120,16 @@ export async function renderSource(main, path, { go, isCurrent }) {
       toast(t('create.failed'), 'error', 5000);
     }
   });
-  let leaving = false;
   cancel.addEventListener('click', async () => {
     if (changed() && !(await confirmDialog(t('source.discard'), t('source.discard.confirm'), { okLabel: t('source.discard'), danger: true }))) return;
     leaving = true;
+    dropDraft();
     back();
   });
+  // closing or reloading the window with changes asks first (the draft is kept as well)
+  const onUnload = (e) => { if (!isCurrent()) { window.removeEventListener('beforeunload', onUnload); return; } if (!leaving && changed()) { keepDraft(area.value); e.preventDefault(); e.returnValue = ''; } };
+  window.addEventListener('beforeunload', onUnload);
+  if (draft !== null) toast(t('source.draftBack'), 'ok', 5000);
 
   main.append(...[
     h('header', { class: 'source-head' }, h('div', {}, h('h1', { class: 'view-title', text: t('source.title') }), h('p', { class: 'muted small', text: path })), h('div', { class: 'btn-row' }, cancel, save)),

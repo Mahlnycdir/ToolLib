@@ -1,12 +1,13 @@
 // Your own snippets: a form for a new one (empty, or from "Try it" of another snippet) and for changing or deleting
 // one of yours. The file goes to nodes/snippets/<name>.md with source: you; Sync uploads it.
 // Texts land in the language of the app (title, description, problems); the other language is optional.
-import { h, toast, confirmDialog, promptDialog } from '../services/ui.js';
+import { askDelete } from './delete-node.js';
+import { h, toast, promptDialog } from '../services/ui.js';
 import { icon } from '../services/icons.js';
 import { loadPref, removePref, savePref } from '../services/prefs.js';
 import { t, getLang } from '../i18n/i18n.js';
-import { LANGUAGES, buildSnippet, deleteNode, freeSnippetPath, getNode, isOwn, languageName, readNodeText, snippetFields, updateSnippet, writeNode } from '../services/nodes.js';
-import { allNodes, forgetNode, indexState, nodeBySlug, refreshNode } from '../services/search.js';
+import { LANGUAGES, buildSnippet, freeSnippetPath, getNode, isOwn, languageName, readNodeText, snippetFields, updateSnippet, writeNode } from '../services/nodes.js';
+import { allNodes, indexState, nodeBySlug, refreshNode } from '../services/search.js';
 import { isConfigured, noteChange } from '../services/sync.js';
 import { GROUP_ORDER, groupLabel, nodeHref } from './node-view.js';
 import { enableCodeKeys, forgetEdits } from './run-panel.js';
@@ -210,21 +211,11 @@ export async function renderSnippetForm(main, { mode, path, go, isCurrent }) {
     else go(editing ? nodeHref(path) : '#/m/cheatsheet');
   });
 
+  // 0.35.1: like every other node (out of its projects too, "Undo" in the toast); this did neither
   async function remove(btn) {
-    const name = values.title || node.slug;
-    if (!(await confirmDialog(t('snippet.delete'), t('snippet.delete.confirm', { title: name }), { okLabel: t('snippet.delete'), danger: true }))) return;
     btn.disabled = true;
-    try {
-      await deleteNode(path);
-      forgetNode(path);
-      forgetEdits(path);
-      await noteChange(path, 'removed');
-      toast(t('snippet.deleted'), 'ok');
-      location.replace('#/m/cheatsheet');
-    } catch (err) {
-      btn.disabled = false;
-      toast(t('snippet.failed', { error: err.message || String(err) }), 'error', 5000);
-    }
+    const gone = await askDelete(path, { go, title: values.title || node.slug });
+    if (!gone) btn.disabled = false;
   }
 
   if (!editing && !values.title) title.focus();

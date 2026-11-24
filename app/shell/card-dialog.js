@@ -55,7 +55,7 @@ export async function cardDialog({ text = '', section = '', kind = '', workTitle
     toggle.addEventListener('click', () => { attachOn = !attachOn; toggle.classList.toggle('on', attachOn); toggle.setAttribute('aria-pressed', String(attachOn)); pick.disabled = !attachOn; });
     const pick = h('select', { class: 'field small cd-sec', 'aria-label': t('reader.card.section') }, ...secs.map((x) => h('option', { value: x.id, selected: x.id === sec ? true : null, text: x.title || x.id })));
     pick.addEventListener('change', () => { sec = pick.value; });
-    hangs.append(h('span', { class: 'muted small', text: t('reader.card.hangs') }), workTitle ? h('span', { class: 'chip on cd-work', text: workTitle.slice(0, 60) }) : null, toggle, secs.length ? pick : null);
+    hangs.append(...[h('span', { class: 'muted small', text: t('reader.card.hangs') }), workTitle ? h('span', { class: 'chip on cd-work', text: workTitle.slice(0, 60) }) : null, toggle, secs.length ? pick : null].filter(Boolean));
   } else if (workTitle) hangs.append(h('span', { class: 'muted small', text: t('reader.card.hangs') }), h('span', { class: 'chip on cd-work', text: workTitle.slice(0, 60) }));
   const form = h('div', { class: 'rd-card-form cd-form' },
     kinds, title,

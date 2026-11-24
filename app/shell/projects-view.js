@@ -18,7 +18,8 @@ import { talkPanel } from './loom-talk.js';
 import { diveOf, onDiveChange } from '../services/dive.js';
 import { colourVar } from './colors.js';
 import { nextUp } from '../services/projects.js';
-import { capture, deleteNote, inbox, loadNote, saveNote } from '../services/notes.js';
+import { capture, inbox, loadNote, saveNote } from '../services/notes.js';
+import { askDelete } from './delete-node.js';
 import { nodeHref, nodeLead, nodeTitle, typeLabel, typeTile } from './node-view.js';
 import { renderMarkdown } from './markdown.js';
 import { createEditor } from './md-editor.js';
@@ -422,9 +423,12 @@ export async function renderNote(main, path, ctx) {
     selBtn.style.top = `${r.bottom - b.top + 6}px`;
   };
   document.addEventListener('selectionchange', onSel);
+  // 0.35.1: a note goes like every other node: one question, out of its projects too, and "Undo" in the toast.
+  // A handwritten one takes its .ink file with it (Kladde's own way, without Undo).
   const remove = async () => {
+    if (!d?.ink) { await askDelete(path, { go, title: n.title || t('type.note') }); return; }
     if (!(await confirmDialog(t('note.delete'), t('note.delete.confirm'), { okLabel: t('note.delete'), danger: true }))) return;
-    await deleteNote(path);
+    await (await import('../services/kladde-store.js')).deleteInkNote(path);
     toast(t('note.deleted'), 'ok');
     if (history.length > 1) history.back(); else go('#/home');
   };

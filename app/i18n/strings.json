@@ -3059,5 +3059,6 @@
   "collect.block.empty": { "en": "Not fetched yet.", "de": "Noch nicht geholt." },
   "collect.block.gone": { "en": "This query is gone.", "de": "Diese Abfrage gibt es nicht mehr." },
   "collect.block.of": { "en": "Shows the query “{title}”.", "de": "Zeigt die Abfrage „{title}“." },
-  "collect.block.open": { "en": "Open", "de": "Öffnen" }
+  "collect.block.open": { "en": "Open", "de": "Öffnen" },
+  "source.draftBack": { "en": "What you had typed here and not saved is back.", "de": "Was du hier geschrieben und nicht gespeichert hattest, ist wieder da." }
 }
