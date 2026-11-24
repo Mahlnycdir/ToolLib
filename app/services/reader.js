@@ -20,6 +20,8 @@ export function planFor(work, version = null) {
   const steps = [];
   if (id) {
     steps.push({ via: 'arxiv-source', url: `https://arxiv.org/e-print/${id}` });
+    // 0.35.0: arXiv's HTML (LaTeXML) keeps every formula as LaTeX; better than the PDF when the source gives nothing
+    steps.push({ via: 'auto', url: `https://arxiv.org/html/${id}` });
     steps.push({ via: 'pdf', url: `https://arxiv.org/pdf/${id}` });
   } else {
     if (v?.pdf) steps.push({ via: 'auto', url: v.pdf });

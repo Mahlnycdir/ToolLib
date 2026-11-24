@@ -17,16 +17,20 @@ import { nodeHref, nodeTitle, typeLabel, typeTile } from './node-view.js';
 import { renderMarkdown } from './markdown.js';
 import { pickNode } from './link-ui.js';
 import { miniNet } from './net-view.js';
+import { dataBlockBody } from './collect-view.js';
+import { queryNow } from '../services/collect.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
-export const BLOCK_ICON = { link: 'link', search: 'search', note: 'edit', check: 'check', net: 'net', countdown: 'target' };
+export const BLOCK_ICON = { link: 'link', search: 'search', note: 'edit', check: 'check', net: 'net', countdown: 'target', data: 'vars' };
 export const blockTitle = (cfg) => cfg.title || t(`block.${cfg.kind}`);
-export const blockChoices = () => BLOCKS.map((k) => ({ value: `block:${k}`, label: t(`block.${k}`), icon: BLOCK_ICON[k], detail: t(`block.${k}.hint`) }));
+export const blockChoices = () => BLOCKS.filter((k) => k !== 'data').map((k) => ({ value: `block:${k}`, label: t(`block.${k}`), icon: BLOCK_ICON[k], detail: t(`block.${k}.hint`) }));
 // a search typed in a link tile opens the command bar with it (shell.js listens)
 export const searchFor = (q) => window.dispatchEvent(new CustomEvent('toollib:search', { detail: String(q) }));
 const days = (date) => Math.round((new Date(`${date}T00:00:00`) - new Date(new Date().toDateString())) / 864e5);
 
 const BODY = {
+  // 0.35.0: the table of a query from "Daten sammeln" (collect-view.js)
+  data(cfg, api) { return dataBlockBody(cfg, api); },
   // tiles to a tool, a node or a project, or a search
   link(cfg) {
     const lang = getLang();
@@ -152,6 +156,9 @@ export async function editBlock(cfg0) {
     const max = h('input', { class: 'field', id: 'block-max', type: 'number', min: '1', max: '12', value: String(cfg.max) });
     parts.push(field('block-q', t('block.search.q'), q), field('block-max', t('block.search.max'), max));
     read = () => ({ q: q.value, max: Number(max.value) });
+  } else if (cfg.kind === 'data') {
+    const d = queryNow(cfg.query);
+    parts.push(h('p', { class: 'muted small', text: d ? t('collect.block.of', { title: d.title }) : t('collect.block.gone') }));
   } else if (cfg.kind === 'countdown') {
     const date = h('input', { class: 'field', id: 'block-date', type: 'date', value: cfg.date });
     const what = h('input', { class: 'field', id: 'block-what', type: 'text', value: cfg.what, placeholder: t('due.whatHint') });

@@ -252,10 +252,14 @@ export async function fetchPage(url, { signal, settings = researchSettings(), on
     let res = null;
     let via = '';
     // Wikipedia, Wikibooks, Wikiversity (0.15.1): their page API allows any site, so they read without a fetcher
-    const wm = url.match(/^https:\/\/([a-z-]+\.(?:wikipedia|wikibooks|wikiversity|wiktionary)\.org)\/wiki\/([^?#]+)/);
+    // 0.35.0: also the mobile pages the iPhone shares (en.m.wikipedia.org) and subpages (Wikibooks "Calculus/Limits":
+    // the API wants the slash as %2F); before, both fell through to a plain fetch the site refuses
+    const wm = url.match(/^https?:\/\/([a-z-]+)(?:\.m)?\.(wikipedia|wikibooks|wikiversity|wiktionary)\.org\/wiki\/([^?#]+)/);
     if (wm) {   // HTML only: keep (a PDF for your folder) does not apply
+      let title = wm[3];
+      try { title = decodeURIComponent(title); } catch { /* as written */ }
       try {
-        const r = await fetch(`https://${wm[1]}/api/rest_v1/page/html/${wm[2]}`, { headers: { Accept: 'text/html' }, signal: t.signal, credentials: 'omit', referrerPolicy: 'no-referrer' });
+        const r = await fetch(`https://${wm[1]}.${wm[2]}.org/api/rest_v1/page/html/${encodeURIComponent(title)}`, { headers: { Accept: 'text/html' }, signal: t.signal, credentials: 'omit', referrerPolicy: 'no-referrer' });
         if (r.ok) {
           const bytes = new Uint8Array(await r.arrayBuffer());
           return { bytes, finalUrl: url, contentType: 'text/html; charset=utf-8', via: 'direct', savedAs: '', sha1: '' };

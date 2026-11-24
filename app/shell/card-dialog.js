@@ -5,38 +5,80 @@ import { getLang, t } from '../i18n/i18n.js';
 import { CARD_KINDS, createCard, guessKind, guessLang, guessTitle, knownTopics } from '../services/reader-cards.js';
 import { keepWork } from '../services/research-store.js';
 import { photoButton, imageLine } from './photo.js';
+import { typeset } from './math.js';
+import { focusProject, loadProject, sectionsOf, stationOf } from '../services/projects.js';
 
-// opts: { text, section, kind, workTitle, lang } → { kind, title, topic, text, lang } or null
-export async function cardDialog({ text = '', section = '', kind = '', workTitle = '', lang = '' } = {}) {
-  const sel = h('select', { class: 'field', 'aria-label': t('reader.card.type') }, ...CARD_KINDS.map((k) => h('option', { value: k, text: t(`reader.card.kind.${k}`) })));
-  sel.value = kind || (text ? guessKind(text, section) : 'formula');
-  const title = h('input', { class: 'field', type: 'text', value: text ? guessTitle(text, section) : '', 'aria-label': t('reader.card.title') });
-  const topics = knownTopics();
-  const topic = h('input', { class: 'field', type: 'text', list: 'rd-topics', value: loadPref('reader.topic', ''), 'aria-label': t('reader.card.topic'), autocomplete: 'off' });
-  const body = h('textarea', { class: 'field rd-card-text', rows: '5', 'aria-label': t('reader.card.text') });
+// opts: { text, section, kind, workTitle, lang } → { kind, title, topic, text, lang, attach } or null
+// 0.35.0 (P24, "auch das Erstellen neuer Karten überarbeiten"): one tap. The kind as buttons, the title and the topic
+// filled in (your last topics as chips), the formula of the text shown as it will look, a photo, and what the card
+// hangs on: the work it comes from and the project you work on, in the section you pick (kept per project).
+// Enter in the title creates it. attach: { project, section } or null.
+export async function cardDialog({ text = '', section = '', kind = '', workTitle = '', lang = '', title: title0 = '' } = {}) {
+  let k = kind || (text ? guessKind(text, section) : 'formula');
+  const kinds = h('div', { class: 'segmented small cd-kinds', role: 'group', 'aria-label': t('reader.card.type') });
+  const drawKinds = () => kinds.replaceChildren(...CARD_KINDS.map((x) => {
+    const b = h('button', { type: 'button', class: x === k ? 'on' : '', 'aria-pressed': String(x === k), dataset: { kind: x }, text: t(`reader.card.kind.${x}`) });
+    b.addEventListener('click', () => { k = x; drawKinds(); });
+    return b;
+  }));
+  drawKinds();
+  const title = h('input', { class: 'field cd-title', type: 'text', value: title0 || (text ? guessTitle(text, section) : ''), 'aria-label': t('reader.card.title'), placeholder: t('reader.card.title') });
+  const recent = loadPref('reader.topics', []).filter((x) => typeof x === 'string').slice(0, 5);
+  const topic = h('input', { class: 'field cd-topic', type: 'text', list: 'rd-topics', value: loadPref('reader.topic', ''), 'aria-label': t('reader.card.topic'), placeholder: t('reader.card.topic'), autocomplete: 'off' });
+  const topicChips = h('div', { class: 'cd-chips' }, ...recent.map((x) => { const c = h('button', { type: 'button', class: 'chip small', text: x }); c.addEventListener('click', () => { topic.value = x; }); return c; }));
+  const body = h('textarea', { class: 'field rd-card-text', rows: '4', 'aria-label': t('reader.card.text') });
   body.value = text;
-  const langSel = h('select', { class: 'field', 'aria-label': t('reader.card.lang') }, h('option', { value: 'en', text: 'English' }), h('option', { value: 'de', text: 'Deutsch' }));
-  langSel.value = lang || (text ? guessLang(text) : (getLang() === 'de' ? 'de' : 'en'));
-  const row = (key, el) => h('label', { class: 'rd-card-row' }, h('span', { text: t(key) }), el);
-  const from = section ? t('reader.card.from', { work: workTitle, section }) : workTitle ? t('library.fromWork', { work: workTitle }) : '';
-  const form = h('div', { class: 'rd-card-form' },
-    row('reader.card.type', sel), row('reader.card.title', title), row('reader.card.topic', topic),
-    h('datalist', { id: 'rd-topics' }, ...topics.slice(0, 40).map((x) => h('option', { value: x }))),
-    row('reader.card.text', body),
-    // 0.33.0: a photo (a board, a sketch, a page) goes into the card's text
-    h('div', { class: 'rd-card-photo' }, photoButton({ cls: 'small', onPath: (img) => { body.value = `${body.value.trim()}\n\n${imageLine(img)}`.trim(); } }), h('span', { class: 'muted small', text: t('photo.hint') })),
-    row('reader.card.lang', langSel),
-    from ? h('p', { class: 'muted small', text: from }) : null);
+  // the formula as it will look (the first $…$ or $$…$$ of the text)
+  const preview = h('div', { class: 'cd-preview', hidden: true });
+  const drawPreview = () => {
+    const m = body.value.match(/\$\$([\s\S]+?)\$\$/) || body.value.match(/\$([^$\n]+)\$/);
+    preview.hidden = !m;
+    if (m) { preview.replaceChildren(); typeset(preview, m[1].trim(), true); }
+  };
+  body.addEventListener('input', drawPreview);
+  drawPreview();
+  let ln = lang || (text ? guessLang(text) : (getLang() === 'de' ? 'de' : 'en'));
+  const langs = h('div', { class: 'segmented small cd-lang', role: 'group', 'aria-label': t('reader.card.lang') });
+  const drawLangs = () => langs.replaceChildren(...['de', 'en'].map((x) => { const b = h('button', { type: 'button', class: x === ln ? 'on' : '', 'aria-pressed': String(x === ln), text: x.toUpperCase() }); b.addEventListener('click', () => { ln = x; drawLangs(); }); return b; }));
+  drawLangs();
+  // what it hangs on: the work, and the project you work on with its section
+  const proj = focusProject();
+  let attachOn = !!proj;
+  let sec = '';
+  const hangs = h('div', { class: 'cd-hangs' });
+  if (proj) {
+    const p = await loadProject(proj.path).catch(() => null);
+    const secs = p ? sectionsOf(p) : [];
+    const kept = loadPref('card.section', {})[proj.path];
+    sec = secs.some((x) => x.id === kept) ? kept : (secs.find((x) => x.id === stationOf(k)) || secs[0] || {}).id || '';
+    const toggle = h('button', { type: 'button', class: `chip cd-proj${attachOn ? ' on' : ''}`, 'aria-pressed': String(attachOn) }, h('span', { text: proj.title }));
+    toggle.addEventListener('click', () => { attachOn = !attachOn; toggle.classList.toggle('on', attachOn); toggle.setAttribute('aria-pressed', String(attachOn)); pick.disabled = !attachOn; });
+    const pick = h('select', { class: 'field small cd-sec', 'aria-label': t('reader.card.section') }, ...secs.map((x) => h('option', { value: x.id, selected: x.id === sec ? true : null, text: x.title || x.id })));
+    pick.addEventListener('change', () => { sec = pick.value; });
+    hangs.append(h('span', { class: 'muted small', text: t('reader.card.hangs') }), workTitle ? h('span', { class: 'chip on cd-work', text: workTitle.slice(0, 60) }) : null, toggle, secs.length ? pick : null);
+  } else if (workTitle) hangs.append(h('span', { class: 'muted small', text: t('reader.card.hangs') }), h('span', { class: 'chip on cd-work', text: workTitle.slice(0, 60) }));
+  const form = h('div', { class: 'rd-card-form cd-form' },
+    kinds, title,
+    h('div', { class: 'cd-topicrow' }, topic, topicChips),
+    h('datalist', { id: 'rd-topics' }, ...knownTopics().slice(0, 40).map((x) => h('option', { value: x }))),
+    preview, body,
+    h('div', { class: 'cd-row' }, photoButton({ cls: 'small', onPath: (img) => { body.value = `${body.value.trim()}\n\n${imageLine(img)}`.trim(); } }), h('span', { class: 'grow' }), langs),
+    hangs.childNodes.length ? hangs : null,
+    section ? h('p', { class: 'muted small', text: t('reader.card.from', { work: workTitle, section }) }) : null);
+  const done = () => {
+    if (!title.value.trim() || !body.value.trim()) { toast(t('reader.card.empty'), 'error'); (title.value.trim() ? body : title).focus(); return undefined; }
+    const v = { kind: k, title: title.value.trim(), topic: topic.value.trim(), text: body.value.trim(), lang: ln, attach: attachOn && proj ? { project: proj.path, section: sec } : null };
+    if (v.topic) savePref('reader.topics', [v.topic, ...recent.filter((x) => x !== v.topic)].slice(0, 8));
+    if (v.attach?.section) savePref('card.section', { ...loadPref('card.section', {}), [proj.path]: v.attach.section });
+    return v;
+  };
   return modal({
     title: t('reader.card.new'), body: form, wide: true,
-    actions: [
-      { label: t('action.cancel'), value: null },
-      { label: t('reader.card.create'), kind: 'primary', value: () => {
-        if (!title.value.trim() || !body.value.trim()) { toast(t('reader.card.empty'), 'error'); (title.value.trim() ? body : title).focus(); return undefined; }
-        return { kind: sel.value, title: title.value.trim(), topic: topic.value.trim(), text: body.value.trim(), lang: langSel.value };
-      } },
-    ],
-    onOpen: () => setTimeout(() => title.focus(), 60),
+    actions: [{ label: t('action.cancel'), value: null }, { label: t('reader.card.create'), kind: 'primary', value: done }],
+    onOpen: (m) => setTimeout(() => {
+      title.focus();
+      title.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const btn = [...(title.closest('.modal')?.querySelectorAll('.modal-actions button') || [])].pop(); btn?.click(); } });
+    }, 60),
   });
 }
 

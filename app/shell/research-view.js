@@ -3,6 +3,16 @@
 // the left and on the right what you picked, ready to read. Folders are gone (0.16.0): a project holds what you
 // collect; a run through a website and the PDF inbox of the Mac are one entry each. On the iPhone the list and what
 // you picked take turns. "Read" turns the whole window into the reader; "Own window" opens it alone (?solo=1).
+// 0.35.0 "Recherche neu" (design board R): four tasks as tiles on top, each with one sentence, and one surface each:
+//   Suchen         papers and books in seven sources (or learning a subject): the sources as dots with their hits,
+//                  "nur freie Volltexte", merged hits with marks (free, cited n×, kept), on the right the work with
+//                  Lesen · Behalten · Karte daraus and what it already hangs on
+//   Lesen          an address, an arXiv id or a DOI straight into the reader (Wikipedia, Wikibooks, arXiv with all
+//                  formulas), and what you read last
+//   Durchgehen     a website within limits; the runs and their pages
+//   Daten sammeln  values from several pages as a table (collect-view.js)
+// Left beside the search: Mappen (the projects things go into) and Unterwegs (runs, queries); right: Loom reads
+// along (what your knowledge already has, what you read last).
 import { matches, keyTitle } from '../services/keys.js';
 import { h, toast, copyText, loadPref, savePref, promptDialog, confirmDialog, modal, actionSheet, keepScroll } from '../services/ui.js';
 import { icon } from '../services/icons.js';
@@ -25,6 +35,11 @@ import { crawlState, onCrawl, pageWork, parseStart } from '../services/crawl.js'
 import { crawlDialog, crawlPanel, pageTree } from './crawl-view.js';
 import { projectAccent } from './projects-view.js';
 import { ownHelp } from './problem-ui.js';
+import { collectView, ago } from './collect-view.js';
+import { collectRunning, listQueries, onQueries } from '../services/collect.js';
+import { knowledgeFor, madeFrom } from '../services/reader-cards.js';
+import { trail } from '../services/trail.js';
+import { typeTile } from './node-view.js';
 
 const iconEl = (name, cls = '') => h('span', { class: `icon ${cls}`, html: icon(name) });
 const solo = () => new URLSearchParams(location.search).has('solo');
@@ -55,7 +70,22 @@ const st = {
   learn: null,           // { query, groups, finished }: the search for learning
   learnSearch: null,
   webPdf: new Map(),     // key of a work -> { state, results }: "Search the web for a PDF"
+  task: ['search', 'read', 'crawl', 'collect'].includes(loadPref('research.task', 'search')) ? loadPref('research.task', 'search') : 'search',   // 0.35.0
 };
+export const TASKS = [
+  { id: 'search', icon: 'search' },
+  { id: 'read', icon: 'book' },
+  { id: 'crawl', icon: 'globe' },
+  { id: 'collect', icon: 'vars' },
+];
+// another part of Loom opens a task ("sammle Daten …" in the conversation, a widget on Heute)
+export function queueTask(task, extra = {}) {
+  if (!TASKS.some((x) => x.id === task)) return;
+  st.task = task;
+  savePref('research.task', task);
+  if (extra.query) savePref('collect.open', extra.query);
+  if (extra.title) savePref('collect.title', extra.title);
+}
 // The work in the reader comes back after a reload and after iOS closed the app (0.31.0, ENTE: "Wenn ich reloade,
 // werde ich aus dem Paper geworfen"); kept on this device only, for a week.
 const READING = 'research.reading';
@@ -151,13 +181,20 @@ async function pickProject(title, suggestion = '') {
 // ------------------------------------------------------------------ the view
 export function renderResearch(main) {
   main.dataset.view = 'research';
-  const root = h('div', { class: 'rs', dataset: { pane: st.pane, mode: st.read ? 'read' : '' } });
+  // the task kept on this device (a widget on Heute or Loom may have set it while the window was closed)
+  { const k = loadPref('research.task', st.task); if (TASKS.some((x) => x.id === k)) st.task = k; }
+  const root = h('div', { class: 'rs', dataset: { pane: st.pane, mode: st.read ? 'read' : '', task: st.task } });
+  const tasksBar = h('nav', { class: 'rs-tasks', 'aria-label': t('research.tasks') });
+  const side = h('aside', { class: 'rs-side', 'aria-label': t('research.side') });
+  const loomSide = h('aside', { class: 'rs-loomside', 'aria-label': 'Loom' });
+  const readStart = h('section', { class: 'rs-readstart', 'aria-label': t('research.task.read') });
+  const collectHost = h('div', { class: 'rs-collect' });
   const top = h('header', { class: 'rs-top' });
   // on the phone the list is hidden while you look at one work; back in the list you are where you were (0.22.0)
   const mid = keepScroll(h('section', { class: 'rs-results', 'aria-label': t('research.results') }));
   const right = h('section', { class: 'rs-detail', 'aria-label': t('research.details') });
   const readerHost = h('div', { class: 'rs-reader' });
-  root.append(top, mid, right, readerHost);
+  root.append(tasksBar, top, side, mid, right, loomSide, readStart, collectHost, readerHost);
   main.append(root);
 
   // ---------------------------------------------------------------- the bar on top
@@ -196,8 +233,11 @@ export function renderResearch(main) {
   const filterPanel = h('div', { class: 'rs-filter-panel' });
   const filters = h('div', { class: 'rs-filters' });
   const sources = h('div', { class: 'rs-sources', 'aria-live': 'polite' });
+  // 0.35.0: the sources as dots with their hits and "nur freie Volltexte" stay in sight (design R)
+  const srcBar = h('div', { class: 'rs-srcbar' });
   top.append(
     h('div', { class: 'rs-row1' }, modes, form),
+    srcBar,
     h('div', { class: 'rs-row2' }, tabs, h('div', { class: 'rs-row2-end' }, filterBtn, crawlBtn, into)),
     filterPanel);
   const notice = h('div', { class: 'rs-notice' });
@@ -228,12 +268,148 @@ export function renderResearch(main) {
 
   view = {
     root, input,
-    drawAll() { drawTabs(); drawInto(); drawFilterPanel(); drawNotice(); drawList(); drawDetail(); },
-    drawList: () => { drawTabs(); drawList(); },
+    drawAll() { drawTasks(); drawTabs(); drawInto(); drawFilterPanel(); drawNotice(); drawList(); drawDetail(); drawSide(); drawLoomSide(); drawTaskBody(); },
+    drawList: () => { drawTabs(); drawList(); drawSrcBar(); drawLoomSide(); },
     folderPath: () => st.folder,
   };
 
   function setPane(p) { st.pane = p; root.dataset.pane = p; }
+
+  // ---------------------------------------------------------------- the four tasks (0.35.0)
+  function setTask(task) {
+    if (st.task === task && !st.read) return;
+    st.task = task;
+    savePref('research.task', task);
+    root.dataset.task = task;
+    if (st.read) { st.read = null; showReader(); }
+    st.folder = task === 'crawl' ? st.folder : '';
+    st.kept = null; st.web1 = null;
+    if (narrow()) setPane('results');
+    view.drawAll();
+    if (task === 'search') input.focus({ preventScroll: true });
+    if (task === 'read') readStart.querySelector('.rs-read-input')?.focus({ preventScroll: true });
+  }
+  function drawTasks() {
+    root.dataset.task = st.task;
+    tasksBar.replaceChildren(...TASKS.map((x) => {
+      const on = st.task === x.id;
+      const b = h('button', { type: 'button', class: `rs-task${on ? ' on' : ''}`, 'aria-pressed': String(on), dataset: { task: x.id } },
+        iconEl(x.icon, 'rs-task-icon'), h('span', { class: 'rs-task-t' }, h('strong', { text: t(`research.task.${x.id}`) }), h('span', { class: 'small rs-task-s', text: t(`research.task.${x.id}.s`) })));
+      b.addEventListener('click', () => setTask(x.id));
+      return b;
+    }));
+    // on the phone the row scrolls: the task you are in stays in sight
+    if (narrow()) requestAnimationFrame(() => { const on = tasksBar.querySelector('.rs-task.on'); if (on) tasksBar.scrollLeft = Math.max(0, on.offsetLeft - 12); });
+  }
+  // what only one task shows: the start of "Lesen", the surface of "Daten sammeln"
+  let collectEl = null;
+  function drawTaskBody() {
+    // the field keeps what you typed while the window draws again (a search running elsewhere)
+    if (st.task === 'read') { if (!readStart.firstChild) drawReadStart(); } else readStart.replaceChildren();
+    if (st.task === 'collect') {
+      const want = loadPref('collect.open', '');
+      const title = loadPref('collect.title', '');
+      if (want || title || !collectEl || !collectEl.isConnected) {
+        savePref('collect.open', ''); savePref('collect.title', '');
+        collectEl = collectView({ id: want || (title ? '' : loadPref('collect.last', '')), title: title.trim(), onOpen: (qid) => savePref('collect.last', qid) });
+        collectHost.replaceChildren(collectEl);
+      }
+    } else { collectHost.replaceChildren(); collectEl = null; }
+  }
+
+  // "Lesen": an address, an arXiv id or a DOI into the reader; what you read last
+  function drawReadStart() {
+    const field = h('input', { class: 'field rs-read-input', type: 'text', inputmode: 'url', autocapitalize: 'off', spellcheck: 'false', placeholder: t('research.read.placeholder'), 'aria-label': t('research.read.placeholder') });
+    const go2 = h('button', { type: 'submit', class: 'btn primary rs-read-go' }, iconEl('book'), h('span', { text: t('research.read') }));
+    const form = h('form', { class: 'rs-read-form' }, iconEl('book', 'rs-read-icon'), field, go2);
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const w = workForAddress(field.value);
+      if (!w) { toast(t('research.read.bad'), 'error'); return; }
+      st.kept = null; st.selected = null;
+      openReader(w);
+    });
+    const recent = trail().filter((e) => e.kind === 'read').slice(0, 6);
+    const rows = recent.map((e) => {
+      const b = h('button', { type: 'button', class: 'rs-recent' }, typeTile('clip', 'small'), h('span', { class: 'rs-recent-t', text: e.title || e.path }), h('span', { class: 'muted small', text: ago(new Date(e.at).toISOString()) }));
+      b.addEventListener('click', async () => { const w = await workFromClip(e.path).catch(() => null); if (w) { st.kept = w; openReader(w); } });
+      return b;
+    });
+    readStart.replaceChildren(
+      h('div', { class: 'rs-read-card' }, form,
+        h('ul', { class: 'rs-read-hints small muted' }, ...['wiki', 'arxiv', 'doi', 'page'].map((k) => h('li', { text: t(`research.read.hint.${k}`) })))),
+      h('div', { class: 'rs-read-card' }, h('h3', { class: 'small rs-side-t', text: t('research.read.recent') }),
+        ...(rows.length ? rows : [h('p', { class: 'muted small', text: t('research.read.none') })])));
+  }
+
+  // left beside the search: Mappen (where what you keep goes) and Unterwegs (runs through websites, queries)
+  async function drawSide() {
+    const p = focusProject();
+    const ps = projects().filter((x) => x.state !== 'done').slice(0, 8);
+    const mappen = h('section', { class: 'rs-side-card' }, h('h3', { class: 'small rs-side-t', text: t('research.mappen') }),
+      ...ps.map((x) => {
+        const b = h('button', { type: 'button', class: `rs-mappe${p?.path === x.path ? ' on' : ''}`, title: t('research.into.pick') },
+          h('span', { class: 'rs-into-dot', style: `background:${projectAccent(x.slug).color}` }), h('span', { class: 'rs-mappe-t', text: x.title }), h('span', { class: 'muted small', text: String(projectWorks(x).clips.length) }));
+        b.addEventListener('click', () => setFocus(x.path));
+        return b;
+      }),
+      h('button', { type: 'button', class: `rs-mappe${p ? '' : ' on'}`, onclick: () => setFocus('') }, h('span', { class: 'rs-into-dot inbox' }), h('span', { class: 'rs-mappe-t', text: t('research.into.inbox') }), h('span', { class: 'muted small', text: String(inboxWorks().count) })));
+    const way = [];
+    for (const f of folders().filter((x) => x.crawl)) {
+      const cs = crawlState(f.path);
+      const runningHere = cs?.status === 'running' || (f.crawl.on === 'mac' && f.crawl.state === 'running');
+      if (!runningHere) continue;
+      const done = cs?.done ?? f.clips.length; const max = cs?.max || f.crawl.max || 0;
+      const b = h('button', { type: 'button', class: 'rs-way' }, h('span', { class: 'rs-way-t', text: t('research.way.crawl', { site: f.title }) }),
+        h('span', { class: 'meter' }, h('span', { style: { width: `${max ? Math.round((done / max) * 100) : 30}%` } })), h('span', { class: 'muted small', text: t('research.way.pages', { n: done, max: max || '?' }) }));
+      b.addEventListener('click', () => { st.folder = f.path; setTask('crawl'); });
+      way.push(b);
+    }
+    const cr = collectRunning();
+    const qs = await listQueries().catch(() => []);
+    if (cr) way.push(h('div', { class: 'rs-way' }, h('span', { class: 'rs-way-t', text: t('research.way.collect', { title: qs.find((x) => x.id === cr.id)?.title || cr.id }) }), h('span', { class: 'muted small', text: t('research.way.pages', { n: cr.done, max: cr.total || '?' }) })));
+    for (const x of qs.filter((y) => y.every !== 'off').slice(0, 3)) {
+      const b = h('button', { type: 'button', class: 'rs-way' }, h('span', { class: 'rs-way-t', text: x.title }), h('span', { class: 'muted small', text: `${t(`collect.every.${x.every}`)}${x.result ? ` · ${ago(x.result.fetched)}` : ''}` }));
+      b.addEventListener('click', () => { savePref('collect.open', x.id); setTask('collect'); });
+      way.push(b);
+    }
+    const unter = h('section', { class: 'rs-side-card' }, h('h3', { class: 'small rs-side-t', text: t('research.unterwegs') }), ...(way.length ? way : [h('p', { class: 'muted small', text: t('research.unterwegs.none') })]));
+    side.replaceChildren(mappen, unter);
+  }
+
+  // right: Loom reads along: what your knowledge already has on the search, and on the work you look at
+  function drawLoomSide() {
+    const q = st.result?.query.text || st.query || '';
+    const own = q && q.trim().length >= 3 ? knowledgeFor(q, { limit: 8 }) : [];
+    const works = st.result ? shownWorks() : [];
+    const free = works.filter((w) => w.free).length;
+    const kept = works.filter((w) => clipFor(w)).length;
+    const parts = [];
+    if (own.length) parts.push(t('research.loom.own', { n: own.length }));
+    if (works.length) parts.push(t('research.loom.hits', { n: works.length, free, kept }));
+    const w = selectedWork();
+    const made = w ? madeFrom(w, w.clip?.path || clipFor(w)?.path || '') : [];
+    if (made.length) parts.push(t('research.loom.made', { n: made.length }));
+    const chips = own.slice(0, 3).map((d) => h('a', { class: 'loom-chip rs-loom-chip', href: nodeHref(d.path) }, typeTile(d.type, 'small'), h('span', { text: d.title })));
+    const say = parts.length ? parts.join(' ') : t(q ? 'research.loom.nothing' : 'research.loom.idle');
+    const last = trail().find((e) => e.kind === 'read');
+    const lastBox = last ? h('section', { class: 'rs-side-card' }, h('h3', { class: 'small rs-side-t', text: t('research.read.last') }),
+      h('button', { type: 'button', class: 'rs-recent', onclick: async () => { const x = await workFromClip(last.path).catch(() => null); if (x) { st.kept = x; openReader(x); } } }, h('span', { class: 'rs-recent-t', text: last.title || last.path }), h('span', { class: 'muted small', text: ago(new Date(last.at).toISOString()) }))) : null;
+    loomSide.replaceChildren(h('section', { class: 'rs-side-card rs-loom' }, h('div', { class: 'cl-loom-head small' }, h('span', { text: 'Loom' }), h('span', { class: 'cl-loom-state', text: t('research.loom.state') })),
+      h('p', { class: 'cl-loom-say', text: say }), ...chips), ...(lastBox ? [lastBox] : []));
+  }
+
+  // "Durchgehen": a new run, and the runs there are; a run opens its pages as a tree
+  function drawRuns() {
+    const start = h('input', { class: 'field rs-crawl-input', type: 'text', inputmode: 'url', autocapitalize: 'off', spellcheck: 'false', placeholder: t('research.crawl.placeholder'), 'aria-label': t('research.crawl.placeholder') });
+    const goC = h('button', { type: 'submit', class: 'btn primary rs-crawl-go' }, iconEl('globe'), h('span', { text: t('crawl.title') }));
+    const form = h('form', { class: 'rs-crawl-form' }, start, goC);
+    form.addEventListener('submit', (e) => { e.preventDefault(); openCrawl(parseStart(start.value) || start.value.trim()); });
+    list.append(h('li', { class: 'rs-crawl-start' }, form, h('p', { class: 'muted small', text: t('research.crawl.hint') })));
+    const runs = folders().filter((f) => f.crawl).sort((a, b) => String(b.crawl.date || '').localeCompare(String(a.crawl.date || '')));
+    if (!runs.length) { list.append(h('li', { class: 'rs-empty muted', text: t('research.crawl.none') })); return; }
+    for (const f of runs) list.append(siteRow(f));
+  }
 
   // ---------------------------------------------------------------- the reader (0.14.1)
   let reading = null;
@@ -343,6 +519,7 @@ export function renderResearch(main) {
     filterBtn.setAttribute('aria-expanded', String(st.filters && papers));
     filterBtn.replaceChildren(...[iconEl('format'), h('span', { text: t('research.more.filters') }), errors ? h('span', { class: 'rs-filter-warn', title: t('research.silentN', { n: errors }), text: '!' }) : null].filter(Boolean));
     filterPanel.hidden = !(st.filters && papers);
+    drawSrcBar();
     mid.classList.toggle('more', st.filters && papers);
     if (filterPanel.hidden) return;
     const free = h('label', { class: 'rs-check' }, h('input', { type: 'checkbox', checked: st.onlyFree ? true : null }), h('span', { text: t('research.onlyFree') }));
@@ -357,7 +534,7 @@ export function renderResearch(main) {
         (v) => { st.kind = v; savePref('research.kind', v); view.drawList(); }),
       select('research.sort', st.sort, [['relevance', 'research.sort.relevance'], ['year', 'research.sort.year'], ['cited', 'research.sort.cited']],
         (v) => { st.sort = v; savePref('research.sort', v); view.drawList(); }));
-    drawSources();
+    sources.replaceChildren(...sourceChips(false));
     const s = researchSettings();
     const missing = [!hasFetcher(s) && (sourceOn('arxiv', s) || sourceOn('doab', s)) ? t('research.missing.fetcher') : '', !s.openalexKey && sourceOn('openalex', s) ? t('research.missing.key') : ''].filter(Boolean);
     filterPanel.replaceChildren(filters, h('p', { class: 'muted small rs-src-hint', text: t('research.sourcesHint') }), sources,
@@ -366,9 +543,24 @@ export function renderResearch(main) {
         h('a', { class: 'small', href: '#/settings/research', text: t('research.settings') }),
         !solo() && !isIos() && !narrow() ? h('button', { type: 'button', class: 'link-btn small', onclick: openWindow, text: t('research.ownWindow') }) : null));
   }
+  function drawSrcBar() {
+    const papers = !learning();
+    srcBar.hidden = !papers;
+    if (!papers) return;
+    const free = h('label', { class: 'rs-free' }, h('span', { class: 'small', text: t('research.onlyFree.short') }), h('input', { type: 'checkbox', role: 'switch', class: 'switch', checked: st.onlyFree ? true : null, 'aria-label': t('research.onlyFree') }));
+    free.querySelector('input').addEventListener('change', (e) => { st.onlyFree = e.target.checked; savePref('research.onlyFree', st.onlyFree); view.drawList(); drawSrcBar(); drawLoomSide(); });
+    const dots = h('div', { class: 'rs-dots' }, ...sourceChips(true));
+    const r = st.result;
+    const count = r ? h('span', { class: 'muted small rs-merged', text: t('research.merged', { n: Object.values(r.status || {}).reduce((a, x) => a + (x.n || 0), 0), m: shownWorks().length }) }) : null;
+    srcBar.replaceChildren(dots, h('span', { class: 'grow' }), ...(count ? [count] : []), free);
+  }
   function drawSources() {
+    sources.replaceChildren(...sourceChips(false));
+    drawSrcBar();
+  }
+  function sourceChips(dot) {
     const s = researchSettings();
-    sources.replaceChildren(...SOURCES.map((src) => {
+    return SOURCES.map((src) => {
       const on = sourceOn(src.id, s);
       const stat = st.result?.status?.[src.id];
       let state = on ? 'idle' : 'off';
@@ -380,15 +572,15 @@ export function renderResearch(main) {
         else if (stat.state === 'error') text = '!';
       }
       const tip = on ? (stat?.state === 'error' ? errorText(src.id, stat.error, stat.status) : stat?.state === 'skip' ? t('research.skip') : src.what[getLang()] || src.what.en) : t('research.sourceOff');
-      const chip = h('button', { type: 'button', class: `rs-src ${state}`, title: `${src.name}: ${tip}`, 'aria-label': `${src.name}: ${tip}`, 'aria-pressed': String(on) },
-        state === 'busy' ? iconEl('refresh', 'spin') : null, h('span', { text: src.name }), text ? h('span', { class: 'rs-src-n', text }) : null);
+      const chip = h('button', { type: 'button', class: `rs-src ${state}${dot ? ' dot' : ''}`, title: `${src.name}: ${tip}`, 'aria-label': `${src.name}: ${tip}`, 'aria-pressed': String(on) },
+        state === 'busy' ? iconEl('refresh', 'spin') : dot ? h('span', { class: 'rs-dot' }) : null, h('span', { text: src.name }), text ? h('span', { class: 'rs-src-n', text }) : null);
       chip.addEventListener('click', () => {
         setSourceOn(src.id, !on);
         drawSources();
         if (!on && st.query) toast(t('research.sourceOnAgain', { name: src.name }), 'info');
       });
       return chip;
-    }));
+    });
   }
   // Above the list only what you must know now: offline, sources that did not answer (why: in "Filters").
   function drawNotice() {
@@ -405,6 +597,7 @@ export function renderResearch(main) {
   function drawList() {
     list.replaceChildren();
     if (st.folder) return drawFolder();
+    if (st.task === 'crawl') return drawRuns();
     if (st.list === 'kept') return drawKept();
     if (st.list === 'inbox') return drawInbox();
     if (st.address && !st.result) {
@@ -536,7 +729,9 @@ export function renderResearch(main) {
       h('button', { type: 'button', class: 'rs-hit-main', 'aria-pressed': String(on) },
         h('span', { class: 'rs-hit-title', text: w.title || t('research.untitled') }),
         meta ? h('span', { class: 'rs-hit-meta muted small', text: meta }) : null,
-        h('span', { class: 'rs-hit-tags' }, badge(best), clip ? h('span', { class: 'rs-tag kept' }, iconEl('check'), h('span', { text: t('research.keptShort') })) : null)),
+        h('span', { class: 'rs-hit-tags' }, badge(best),
+          w.cited ? h('span', { class: 'rs-tag cited', text: t('research.cited', { n: w.cited }) }) : null,
+          clip ? h('span', { class: 'rs-tag kept' }, iconEl('check'), h('span', { text: keptIn(clip.slug)[0]?.title || t('research.keptShort') })) : null)),
       quick(isKept(clip), () => keepIt(workOf(w)), readable(w) ? () => { st.kept = null; st.selected = w.key; openReader(workOf(w)); } : null));
     row.firstChild.addEventListener('click', () => select(w, row));
     return row;
@@ -715,6 +910,7 @@ export function renderResearch(main) {
     if (st.web1 && !w) right.append(back, webBox(st.web1));
     else if (w) right.append(back, workBox(w));
     else right.append(emptyBox());
+    drawLoomSide();
   }
 
   // Nothing picked yet: how the window works, in three lines.
@@ -730,7 +926,7 @@ export function renderResearch(main) {
   }
 
   // The actions everything on the right shares: read first, keep, open; the rest behind "More".
-  function actionRow({ read, kept, onKeep, open, more }) {
+  function actionRow({ read, kept, onKeep, open, more, card }) {
     const p = focusProject();
     const keep = h('button', { type: 'button', class: `btn rs-keep-main${kept ? ' kept' : ''}` }, iconEl(kept ? 'check' : 'bookmark'),
       h('span', { text: kept ? t('research.keptShort') : p ? t('research.keepInto', { project: p.title }) : t('research.keepInbox') }));
@@ -743,6 +939,7 @@ export function renderResearch(main) {
     return h('div', { class: 'rs-actions' },
       read ? h('button', { type: 'button', class: 'btn primary rs-read-main', onclick: read }, iconEl('book'), h('span', { text: t('research.read') })) : null,
       keep,
+      card ? h('button', { type: 'button', class: 'btn rs-card-from', onclick: card }, iconEl('vars'), h('span', { text: t('research.cardFrom') })) : null,
       open ? h('a', { class: 'btn', href: open, target: '_blank', rel: 'noopener noreferrer' }, iconEl('external'), h('span', { text: t('research.open') })) : null,
       moreBtn);
   }
@@ -807,9 +1004,14 @@ export function renderResearch(main) {
       kept: isKept(clip), onKeep: () => keepIt(w),
       open: best ? ((best.pdf && best.free) || !best.url ? best.pdf : best.url) : '',
       more,
+      card: make('card'),
     }));
     const line = keptLine(clip);
     if (line) box.append(line);
+    // 0.35.0: what it already hangs on: the projects that keep it and the cards made from it
+    const ties = [...(clip ? keptIn(clip.slug).map((x) => ({ label: x.title, href: nodeHref(x.path), kind: 'project' })) : []),
+      ...madeFrom(w, clip?.path || '').slice(0, 6).map((d) => ({ label: `${t(`type.${d.type}`) !== `type.${d.type}` ? t(`type.${d.type}`) : d.type} · ${d.title}`, href: nodeHref(d.path), kind: 'card' }))];
+    if (ties.length) box.append(h('div', { class: 'rs-ties' }, h('span', { class: 'muted small', text: t('research.hangs') }), ...ties.map((x) => h('a', { class: `rs-tie ${x.kind}`, href: x.href, text: x.label }))));
     if (clip?.file) box.append(h('div', { class: 'btn-row' }, originalButton(clip)));
     if (clip && !w.clip && vs && vs !== 'busy' && vs.added) {
       const upd = h('button', { type: 'button', class: 'btn small' }, iconEl('download'), h('span', { text: t('research.updateClip') }));
@@ -937,6 +1139,7 @@ export function renderResearch(main) {
   }
 
   // the project in focus changes here or elsewhere: what "Keep in" and "Kept" show follows
+  const stopQ = onQueries(() => { if (!root.isConnected) { stopQ(); return; } drawSide(); });
   const stopFocus = onFocusChange(() => { if (!root.isConnected) { stopFocus(); return; } view.drawAll(); });
 
   // a run made elsewhere ("+", a project) comes to the front
@@ -953,6 +1156,18 @@ export function renderResearch(main) {
   readQueued();
   if (st.queued) { st.queued = false; run(st.query); } else if (!st.result && !st.learn && st.query) input.focus();
   return view;
+}
+
+// "Lesen" (0.35.0): what you typed as a work for the reader: an arXiv id (its LaTeX source, all formulas), a DOI, or an
+// address (Wikipedia and Wikibooks through their open page API, arXiv HTML, any page). null when it is none of these.
+export function workForAddress(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  const q = parseQuery(s);
+  if (q.kind === 'arxiv' && q.value) return pageWork(`https://arxiv.org/abs/${q.value}`);
+  if (q.kind === 'doi' && q.value) return pageWork(`https://doi.org/${q.value}`);
+  const url = parseStart(s);
+  return url ? pageWork(url) : null;
 }
 
 // The command bar hands over what you typed: the research window searches it when it opens.

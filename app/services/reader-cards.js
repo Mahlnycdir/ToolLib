@@ -84,6 +84,15 @@ export async function createCard(v) {
   await refreshNode(path);
   await noteChange(path, 'added');
   announce([path]);
+  // 0.35.0: the card joins the project you work on, in the section you picked (card-dialog.js)
+  if (v.attach?.project) {
+    try {
+      const { addToProject, placeItem } = await import('./projects.js');
+      const slug = path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '');
+      await addToProject(v.attach.project, [slug]);
+      if (v.attach.section) await placeItem(v.attach.project, slug, v.attach.section, -1);
+    } catch (e) { console.warn('Card not attached', e); }
+  }
   return path;
 }
 

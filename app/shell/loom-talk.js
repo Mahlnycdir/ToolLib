@@ -200,8 +200,13 @@ export async function respond(raw, { go }) {
       go('#/m/scraper');
       return { text: t('loom.research', { q: u.arg }), went: true };
     }
-    case 'collect':
-      return { text: t('loom.collect'), chips: [{ label: t('loom.chip.research'), act: 'research', arg: u.arg || '' }] };
+    case 'collect': {
+      // 0.35.0: opens "Daten sammeln" with what you said as the title of a new query
+      const { queueTask } = await import('./research-view.js');
+      queueTask('collect', { title: u.arg || ' ' });
+      go('#/m/scraper');
+      return { text: u.arg ? t('loom.collect.open', { q: u.arg }) : t('loom.collect.empty'), went: true };
+    }
     case 'attach': return attachTo(lastMade, u.arg);
     case 'next': {
       const p = place.project ? await loadProject(place.project).catch(() => null) : null;

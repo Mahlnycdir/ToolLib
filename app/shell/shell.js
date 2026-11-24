@@ -30,6 +30,7 @@ import { startAutoSync } from '../services/autosync.js';
 import { parseStart, resumeInterrupted } from '../services/crawl.js';
 import { watchInbox } from '../services/pdf-inbox.js';
 import { startBackground } from '../services/background.js';
+import { startCollectSchedule } from '../services/collect.js';
 import { loadPref, savePref } from '../services/prefs.js';
 import { getNode } from '../services/nodes.js';
 import { renderStart } from './start.js';
@@ -990,6 +991,8 @@ export function startShell(root) {
   resumeInterrupted().then((title) => { if (title) toast(t('crawl.resumed', { title }), 'info', 4000); }).catch((e) => console.warn('Crawl not resumed', e));
   // the Toollib in the Mac helper (0.14.4 part 2): runs that devices hand to the Mac
   startBackground();
+  // 0.35.0: queries of "Daten sammeln" that fetch again by themselves (hourly, daily, weekly) while Loom is open
+  startCollectSchedule();
   // PDFs you put into the inbox on your Mac (0.14.4) come in by themselves while Toollib is open and the helper answers
   watchInbox({ title: () => t('inbox.folder'), onDone: (r) => toast(r.added ? t('inbox.done', { n: r.added }) : t('inbox.result', r), r.failed ? 'warn' : 'ok', 5000) })
     .catch((e) => console.warn('PDF inbox', e));

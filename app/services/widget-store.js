@@ -17,7 +17,7 @@
 import { setField, removeField } from './nodes.js';
 import { keepInPart, partText, removePart, setPart } from './md-parts.js';
 
-export const BLOCKS = ['link', 'search', 'note', 'check', 'net', 'countdown'];
+export const BLOCKS = ['link', 'search', 'note', 'check', 'net', 'countdown', 'data'];   // data: a query of "Daten sammeln" (0.35.0)
 export const isBlockId = (id) => /^b[a-z0-9]{4,12}$/.test(String(id));
 export const newBlockId = () => `b${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 5)}`;
 const cfgKey = (id) => `w_${id}`;
@@ -39,6 +39,8 @@ export function cleanConfig(c) {
   } else if (c.kind === 'net') {
     out.center = /^[\w./-]+\.md$/.test(String(c.center || '')) ? String(c.center) : '';
     out.depth = Number(c.depth) === 2 ? 2 : 1;
+  } else if (c.kind === 'data') {
+    out.query = /^[a-z0-9-]{1,60}$/.test(String(c.query || '')) ? String(c.query) : '';
   } else if (c.kind === 'countdown') {
     out.date = /^\d{4}-\d\d-\d\d$/.test(String(c.date || '')) ? String(c.date) : '';
     out.what = str(c.what, 80);

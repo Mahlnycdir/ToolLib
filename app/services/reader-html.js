@@ -41,9 +41,41 @@ function displayOf(el) {
   return d === 'block' || d === 'true' || el.classList?.contains('katex-display') || false;
 }
 
+// 0.35.0: equations that LaTeXML (arXiv's HTML, ar5iv) lays out as tables (equation, eqnarray, align): one display
+// formula per table, rows as lines of an aligned block, the cells of a row joined at "&", equation numbers left out.
+// Before, the table came through as raw HTML with the formula cut into pieces.
+const EQ_TABLES = 'table.ltx_equation, table.ltx_equationgroup, table.ltx_eqn_table';
+function takeEquationTables(doc, maths) {
+  for (const tbl of doc.querySelectorAll(EQ_TABLES)) {
+    if (!tbl.isConnected) continue;
+    const rows = [];
+    for (const tr of tbl.querySelectorAll('tr')) {
+      // the cells between the paddings and the number; an empty one keeps its column (a continued line)
+      const cells = [...tr.children].filter((td) => td.nodeName === 'TD' && !td.matches('.ltx_eqn_eqno, .ltx_eqn_center_padleft, .ltx_eqn_center_padright, .ltx_eqn_left_padleft, .ltx_eqn_right_padright'));
+      let parts = cells.map((td) => [...td.querySelectorAll('math')].map((m) => texOf(m)?.tex || '').filter(Boolean).join(' ').replace(/^\\displaystyle\s*/, '').trim());
+      if (!parts.some(Boolean)) continue;
+      while (parts.length && !parts[parts.length - 1]) parts.pop();
+      // eqnarray puts the relation in a cell of its own ("a & = & b"): it joins the right side ("a & = b")
+      const merged = [];
+      for (let i = 0; i < parts.length; i++) {
+        if (i + 1 < parts.length && /^(=|<|>|\\[lg]eq?|\\equiv|\\approx|\\sim|\\simeq|\\to|\\rightarrow|\\Rightarrow|\\neq|:=|\+|-)$/.test(parts[i])) { merged.push(`${parts[i]} ${parts[i + 1]}`); i++; }
+        else merged.push(parts[i]);
+      }
+      parts = merged;
+      rows.push(parts.join(' & '));
+    }
+    if (!rows.length) continue;
+    const many = rows.length > 1 || rows.some((r) => r.includes(' & '));
+    const tex = many ? `\\begin{aligned}${rows.join(' \\\\ ')}\\end{aligned}` : rows[0];
+    maths.push({ tex, display: true });
+    const p = doc.createElement('p');
+    p.textContent = `${MATH_OPEN}${maths.length - 1}${MATH_CLOSE}`;
+    tbl.replaceWith(p);
+  }
+}
+
 // Replaces every formula in the page by a marker in the text; returns the list of formulas.
-function takeMath(doc) {
-  const maths = [];
+function takeMath(doc, maths = []) {
   const put = (el, found) => {
     if (!found?.tex) return false;
     maths.push(found);
@@ -92,7 +124,9 @@ function takeInlineTex(doc, maths) {
   }
 }
 
-const JUNK = 'script, style, noscript, iframe, form, button, svg, canvas, sup.reference, .mw-editsection, .noprint, .navbox, .hatnote, .mw-cite-backlink, .metadata, table.ambox, .printfooter, .catlinks, [aria-hidden="true"].icon';
+const JUNK = 'script, style, noscript, iframe, form, button, svg, canvas, sup.reference, .mw-editsection, .noprint, .navbox, .hatnote, .mw-cite-backlink, .metadata, table.ambox, .printfooter, .catlinks, [aria-hidden="true"].icon'
+  // 0.35.0: arXiv HTML (LaTeXML): its table of contents (the reader has its own outline), page chrome, addresses
+  + ', nav.ltx_TOC, .ltx_TOC, .ltx_page_logo, .ltx_page_footer, .ltx_role_affiliation, .ltx_role_address, .ltx_contact, .ltx_role_email, .ltx_author_notes, .ar5iv-footer, #mw-toc-heading, .toc, #toc';
 
 export async function htmlToDoc(html, url) {
   const { Readability, TurndownService, gfm } = await load();
@@ -105,7 +139,9 @@ export async function htmlToDoc(html, url) {
   };
   const doc = parse();
   const siteTitle = doc.querySelector('meta[property="og:site_name"]')?.getAttribute('content') || '';
-  const maths = takeMath(doc);
+  const maths = [];
+  takeEquationTables(doc, maths);
+  takeMath(doc, maths);
   takeInlineTex(doc, maths);
   for (const el of doc.querySelectorAll(JUNK)) el.remove();
   // permalink marks behind headings (Sphinx "#", MkDocs "¶", GitHub's anchor): no part of the text
@@ -123,14 +159,38 @@ export async function htmlToDoc(html, url) {
   const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced', bulletListMarker: '-', emDelimiter: '*', strongDelimiter: '**', linkStyle: 'inlined', hr: '---' });
   td.use(gfm);
   td.escape = (s) => s.replace(/\$/g, '＄').replace(/\*/g, '∗').replace(/`/g, "'").replace(/^(\s*)([#>+-]|\d+[.)])(\s)/, '$1​$2$3');
+  // 0.35.0: pictures stay (https only), with their caption; a figure that holds a table keeps the table
+  const pic = (img) => {
+    let src = img.getAttribute('src') || '';
+    try { src = new URL(src, url).href; } catch { return ''; }
+    const w = Number(img.getAttribute('width')) || 0;
+    if (!/^https:\/\//i.test(src) || (w && w < 40) || /\.svg(\?|$)/i.test(src) && w && w < 80) return '';
+    const alt = (img.getAttribute('alt') || '').replace(/[\[\]\n]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+    return `![${alt}](${src.replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/\s/g, '%20')})`;
+  };
+  const tableMd = (node) => {
+    const rows = [...node.querySelectorAll('tr')].map((tr) => [...tr.children].filter((c) => /^(TD|TH)$/.test(c.nodeName)).map((c) => (c.textContent || '').replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim()));
+    const wide = Math.max(0, ...rows.map((r) => r.length));
+    const kept = rows.filter((r) => r.some(Boolean));
+    if (!kept.length) return '';
+    // a table of one column is a list of lines, not a table
+    if (wide < 2) return `\n\n${kept.map((r) => r[0]).join('\n\n')}\n\n`;
+    const pad = (r) => [...r, ...Array(wide - r.length).fill('')];
+    const cap = node.querySelector('caption')?.textContent.replace(/\s+/g, ' ').trim();
+    const lines = [`| ${pad(kept[0]).join(' | ')} |`, `| ${Array(wide).fill('---').join(' | ')} |`, ...kept.slice(1).map((r) => `| ${pad(r).join(' | ')} |`)];
+    return `\n\n${cap ? `*${cap}*\n\n` : ''}${lines.join('\n')}\n\n`;
+  };
   td.addRule('figure', {
     filter: 'figure',
     replacement: (content, node) => {
       const cap = node.querySelector('figcaption')?.textContent.replace(/\s+/g, ' ').trim();
-      return cap ? `\n\n> *${cap}*\n\n` : '\n\n';
+      const tables = [...node.querySelectorAll('table')].map(tableMd).join('');
+      const imgs = [...node.querySelectorAll('img')].map(pic).filter(Boolean).join('\n\n');
+      return `\n\n${imgs ? `${imgs}\n\n` : ''}${tables}${cap ? `> *${cap}*` : ''}\n\n`;
     },
   });
   td.remove(['figcaption']);
+  td.addRule('table', { filter: 'table', replacement: (content, node) => (node.parentElement?.closest('table') ? '' : tableMd(node)) });
   // links without their title ("(in NumPy v2.4)"), so the text stays readable and every reader shows them
   td.addRule('plainLink', {
     filter: (node) => node.nodeName === 'A' && node.getAttribute('href'),
@@ -143,7 +203,7 @@ export async function htmlToDoc(html, url) {
       return /^https?:/i.test(href) ? `[${text}](${href})` : text;
     },
   });
-  td.addRule('image', { filter: 'img', replacement: (c, node) => { const alt = (node.getAttribute('alt') || '').replace(/\s+/g, ' ').trim(); return alt.length > 12 && !alt.includes(MATH_OPEN) ? `*[${alt}]*` : ''; } });
+  td.addRule('image', { filter: 'img', replacement: (c, node) => { const alt = (node.getAttribute('alt') || '').replace(/\s+/g, ' ').trim(); if (alt.includes(MATH_OPEN)) return ''; const md = pic(node); return md ? `\n\n${md}\n\n` : alt.length > 12 ? `*[${alt}]*` : ''; } });
   td.addRule('plainHeading', {
     filter: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
     replacement: (content, node) => {
