@@ -3316,3 +3316,61 @@ math[display="block"] { display: block; overflow-x: auto; max-width: 100%; }
 .board-scroll { box-shadow: 0 0 0 6px var(--bg), 0 8px 10px -6px var(--bg); background-clip: padding-box; }
 .board-scroll::before { content: ""; position: absolute; inset: 0; border-radius: 6px; background: color-mix(in srgb, var(--fg) 8%, var(--bg)); }
 .board-scroll-thumb { z-index: 1; }
+
+/* ------------------------------------------------------------------ 0.34.0: ordering board, canvas and red thread */
+/* the red line takes taps while you order it (new cards go in there); the insertion point glows on it */
+.pc-red-hit { fill: none; stroke: transparent; stroke-width: 18; pointer-events: none; }
+.pc[data-mode="thread"] .pc-red-hit { pointer-events: stroke; cursor: copy; }
+.pc-insert-mark { fill: var(--light); stroke: var(--bg, #0b1210); stroke-width: 3; filter: drop-shadow(0 0 6px var(--light)); }
+.pc-hint { flex-wrap: wrap; justify-content: center; row-gap: 6px; border-radius: 22px; }
+.pc-hint .pc-insert { max-width: 260px; }
+.pc-hint .pc-insert span:not(.icon) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-group-size { width: 18px; height: 18px; }
+@media (max-width: 899px) {
+  .pc-hint { gap: 6px; padding: 5px 6px; }
+  .pc-hint .pc-hint-t { display: none; }
+  .pc-hint .pc-overview span:not(.icon), .pc-hint .pc-suggest span:not(.icon) { display: none; }
+  .pc-hint .pc-insert { max-width: 190px; }
+  .pc-hint .btn span:not(.icon) { font-size: 13px; }
+}
+/* the overview of the red thread */
+.thread-sheet { display: flex; flex-direction: column; gap: 14px; }
+.thread-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.thread-top .grow { flex: 1; }
+.thread-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.thread-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 14px; background: var(--glass, transparent); }
+.thread-n { flex: none; display: grid; place-items: center; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 13px; background: color-mix(in srgb, var(--red-thread) 16%, transparent); color: var(--red-thread); font-weight: 650; font-size: 13px; font-variant-numeric: tabular-nums; }
+.thread-text { flex: 1 1 0; width: 0; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.thread-panel, .thread-sheet { min-width: 0; max-width: 100%; }
+.thread-name { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+.thread-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.thread-rel { color: var(--light); }
+.thread-clash { display: inline-flex; align-items: center; gap: 4px; color: var(--light-next, #e5484d); }
+.thread-clash .icon svg { width: 13px; height: 13px; }
+.thread-btns { flex: none; display: flex; gap: 2px; }
+.thread-btns .icon-btn[disabled] { opacity: 0.3; }
+.thread-slot-row { display: flex; }
+.thread-slot { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; height: 18px; margin: 2px 0; padding: 0; border: 0; border-radius: 9px; background: transparent; color: transparent; font-size: 12px; cursor: pointer; transition: height 0.15s ease, background 0.15s ease, color 0.15s ease; }
+.thread-slot .icon svg { width: 12px; height: 12px; }
+.thread-slot:hover, .thread-slot:focus-visible { height: 26px; color: var(--muted); background: color-mix(in srgb, var(--fg) 5%, transparent); }
+.thread-slot.on { height: 28px; color: var(--light); background: var(--light-soft); outline: 1px dashed var(--light-line); }
+@media (hover: none) { .thread-slot { height: 24px; color: var(--muted); } }
+.thread-out { display: flex; flex-direction: column; gap: 10px; padding-top: 6px; border-top: 1px solid var(--line); }
+.thread-out-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.thread-out-head h3 { margin: 0; }
+.thread-where { color: var(--light); }
+.thread-note { align-self: flex-start; }
+.thread-rest { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.thread-rest-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 12px; }
+.thread-rest-row:hover { background: color-mix(in srgb, var(--fg) 4%, transparent); }
+.thread-proposal { gap: 6px; }
+.thread-why { color: var(--light); }
+.thread-was { color: var(--muted); }
+.thread-was.new { color: var(--light); }
+.thread-actions { justify-content: flex-end; }
+.board-top-end .board-thread .icon, .board-top-end .board-align .icon { color: var(--red-thread); }
+.board-top-end .board-align .icon { color: inherit; }
+@media (max-width: 759px) {
+  .board-top-end .board-thread span:not(.icon), .board-top-end .board-align span:not(.icon) { display: none; }
+  .thread-row { padding: 7px 8px; gap: 8px; }
+}

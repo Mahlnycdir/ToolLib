@@ -16,6 +16,11 @@
 //              and subgroups move along; drop it inside another frame and it becomes a subgroup there. Groups of a
 //              canvas from before 0.33.0 become sections the first time it opens.
 //   notes      double-click the empty surface (or "Note"): what you type becomes a note of the project, right there
+//   0.34.0     "Ausrichten" in the bar (all groups) and in a group's menu: neat, without overlap, in the order of the
+//              red thread (canvas-arrange.js). The corner of a group pulls it to any size: its cards are pushed
+//              inside, the groups beside it out of the way. In "Red thread" new cards go where the insertion point
+//              stands (start, between two cards: tap the red line, or the end); "Overview" lists the thread to
+//              reorder it (thread-sheet.js).
 //
 // Places and groups live in projects/<name>.canvas (canvas-store.js, JSON Canvas like Obsidian), the red thread in
 // the project (`thread:`), threads in the nodes. Everything follows live: a link drawn elsewhere, a card added on
@@ -30,7 +35,7 @@ import { t, getLang } from '../i18n/i18n.js';
 import { nodeBySlug, onNodesChange } from '../services/search.js';
 import { getNode } from '../services/nodes.js';
 import { connect, disconnect, graph, isDrawn, onRelationsChange } from '../services/relations.js';
-import { addSection, boardOf, depthOfSection, loadProject, placeItem, removeSection, repairSections, sectionTree, sectionsOf, setSectionParent, setThread, suggestThread, updateSection } from '../services/projects.js';
+import { addSection, boardOf, depthOfSection, loadProject, placeItem, removeSection, repairSections, sectionTree, sectionsOf, setSectionParent, setThread, updateSection } from '../services/projects.js';
 import { capture } from '../services/notes.js';
 import { loadCanvas, saveCanvas, canvasPathOf } from '../services/canvas-store.js';
 import { onAnnounce } from '../services/channel.js';
@@ -40,6 +45,8 @@ import { typeset } from './math.js';
 import { renderMarkdown } from './markdown.js';
 import { PALETTE, COLOURS, colourVar, typeColour } from './colors.js';
 import { tension } from './net-view.js';
+import { arrangeCtx, frameRects, resizeGroup, restore, settleGroup, snapshot, tidyAll, tidyOne } from './canvas-arrange.js';
+import { openThread, threadWith } from './thread-sheet.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const svg = (name, attrs = {}) => { const el = document.createElementNS(SVG, name); for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v); return el; };
@@ -66,7 +73,7 @@ export function projectCanvas(p, ctx) {
   const lang = getLang();
   let cur = p;   // the project as it stands now (its sections change while the canvas is open)
   const secName = (x) => x.title || (['collect', 'keep', 'apply'].includes(x.id) ? t(`station.${x.id}`) : x.id);
-  const state = { cards: new Map(), frames: new Map(), k: 1, tx: 40, ty: 40, thread: [...(p.thread || [])], mode: '', selected: null, hover: null, loaded: false, fitted: false, auto: false };
+  const state = { cards: new Map(), frames: new Map(), k: 1, tx: 40, ty: 40, thread: [...(p.thread || [])], insertAt: -1, mode: '', selected: null, hover: null, loaded: false, fitted: false, auto: false };
   const wrap = h('section', { class: 'pc', tabindex: '0', 'aria-label': t('canvas.title') });
   const world = h('div', { class: 'pc-world' });
   const lines = svg('svg', { class: 'pc-lines', 'aria-hidden': 'true' });
@@ -88,6 +95,7 @@ export function projectCanvas(p, ctx) {
   const linkBtn = btn('canvas.link', 'link', () => setMode(state.mode === 'link' ? '' : 'link'), 'pc-link');
   const threadBtn = btn('canvas.thread', 'thread', () => setMode(state.mode === 'thread' ? '' : 'thread'), 'pc-thread');
   const groupBtn = btn('canvas.group', 'blocks', () => addGroup(), 'pc-group-add');
+  const tidyBtn = btn('canvas.tidy', 'format', () => tidy(''), 'pc-tidy');
   const noteBtn = btn('canvas.note', 'edit', () => { const r = wrap.getBoundingClientRect(); noteAt(toWorld(r.width / 2 - CARD_W / 2, r.height / 2 - 40)); }, 'pc-note');
   const fullBtn = h('button', { type: 'button', class: 'icon-btn pc-full-btn', title: t('canvas.full'), 'aria-label': t('canvas.full'), 'aria-pressed': 'false', html: icon('expand') });
   fullBtn.addEventListener('click', () => toggleFull());
@@ -101,7 +109,7 @@ export function projectCanvas(p, ctx) {
     zoomBtn('net.fit', 'target', () => fit(), 'pc-fit'),
     zoomBtn('net.zoomIn', 'plus', () => zoomAt(1.25), 'pc-in'),
     fullBtn);
-  const bar = h('div', { class: 'pc-bar' }, linkBtn, threadBtn, groupBtn, noteBtn);
+  const bar = h('div', { class: 'pc-bar' }, linkBtn, threadBtn, groupBtn, tidyBtn, noteBtn);
   wrap.append(world, bar, zoomBox, hint, empty, pop);
 
   function setMode(m) {
@@ -112,17 +120,8 @@ export function projectCanvas(p, ctx) {
     linkBtn.setAttribute('aria-pressed', String(m === 'link'));
     threadBtn.setAttribute('aria-pressed', String(m === 'thread'));
     hint.hidden = !m;
-    if (m === 'thread') {
-      const clear = h('button', { type: 'button', class: 'link-btn pc-thread-clear', text: t('canvas.thread.clear') });
-      clear.addEventListener('click', async () => {
-        if (state.thread.length && await confirmDialog(t('canvas.thread'), t('canvas.thread.clear.confirm'), { okLabel: t('canvas.thread.clear'), danger: true })) saveThread([]);
-      });
-      const suggest = h('button', { type: 'button', class: 'btn small pc-suggest', title: t('canvas.thread.suggest.hint') }, iconEl('wand'), h('span', { text: t('canvas.thread.suggest') }));
-      suggest.addEventListener('click', () => suggestNow());
-      const ready = h('button', { type: 'button', class: 'btn small primary pc-done', text: t('canvas.done') });
-      ready.addEventListener('click', () => setMode(''));
-      hint.replaceChildren(h('span', { text: t('canvas.thread.on') }), suggest, clear, ready);
-    } else if (m === 'link') {
+    if (m === 'thread') { state.insertAt = -1; threadHint(); }
+    else if (m === 'link') {
       const ready = h('button', { type: 'button', class: 'btn small primary pc-done', text: t('canvas.done') });
       ready.addEventListener('click', () => setMode(''));
       hint.replaceChildren(h('span', { text: t('canvas.link.on') }), ready);
@@ -373,7 +372,10 @@ export function projectCanvas(p, ctx) {
       const { d, mid } = curve(a, b, 0.06);
       const ang = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
       lines.append(svg('path', { d, class: 'pc-red-glow', filter: `url(#${glowId})` }), svg('path', { d, class: 'pc-red' }),
-        svg('path', { d: 'M-6,-5 L5,0 L-6,5 Z', class: 'pc-red-arrow', transform: `translate(${mid.x.toFixed(1)},${mid.y.toFixed(1)}) rotate(${ang.toFixed(1)})` }));
+        svg('path', { d: 'M-6,-5 L5,0 L-6,5 Z', class: 'pc-red-arrow', transform: `translate(${mid.x.toFixed(1)},${mid.y.toFixed(1)}) rotate(${ang.toFixed(1)})` }),
+        // 0.34.0: tap the red line between two cards: new cards go in there
+        svg('path', { d, class: 'pc-red-hit', 'data-at': String(i + 1) }));
+      if (state.mode === 'thread' && state.insertAt === i + 1) lines.append(svg('circle', { cx: mid.x.toFixed(1), cy: mid.y.toFixed(1), r: '9', class: 'pc-insert-mark' }));
     }
     if (rubber) lines.append(svg('path', { d: `M${rubber.a.x},${rubber.a.y} L${rubber.b.x},${rubber.b.y}`, class: 'pc-rubber' }));
     // the cards of a lit card stand out, the others step back
@@ -385,25 +387,10 @@ export function projectCanvas(p, ctx) {
   // The frame of a section holds the boxes of its cards and of its subgroups (with room for the name above) and what
   // you gave it yourself (moved or sized: state.frames). skip: a card left out (the one you drag), so a frame does
   // not follow it while it moves.
-  const PAD = 22; const HEAD = 40;
   // without: sections left out entirely (while you carry a group, so its old parent does not grow around it)
-  function rects({ skip = '', without = null } = {}) {
-    const board = boardOf(cur, membersOf(p.slug));
-    const out = new Map();
-    const order = [...board].sort((a, b) => depthOfSection(board, b.id) - depthOfSection(board, a.id));
-    for (const sec of order) {
-      if (without?.has(sec.id)) continue;
-      const boxes = sec.items.filter((d) => d.slug !== skip).map((d) => state.cards.get(d.slug)).filter(Boolean);
-      for (const c of board) if (c.parent === sec.id && out.has(c.id)) boxes.push(out.get(c.id));
-      const own = state.frames.get(sec.id);
-      if (!boxes.length && !own) continue;
-      let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
-      for (const b of boxes) { x0 = Math.min(x0, b.x - PAD); y0 = Math.min(y0, b.y - HEAD); x1 = Math.max(x1, b.x + b.w + PAD); y1 = Math.max(y1, b.y + b.h + PAD); }
-      if (own) { x0 = Math.min(x0, own.x); y0 = Math.min(y0, own.y); x1 = Math.max(x1, own.x + own.w); y1 = Math.max(y1, own.y + own.h); }
-      out.set(sec.id, { id: sec.id, x: Math.round(x0), y: Math.round(y0), w: Math.round(x1 - x0), h: Math.round(y1 - y0), sec, depth: depthOfSection(board, sec.id) });
-    }
-    return out;
-  }
+  // 0.34.0: the arithmetic lives in canvas-arrange.js (frameRects), shared with tidying and pulling a group's corner
+  const rects = (opts = {}) => frameRects(boardOf(cur, membersOf(p.slug)), state.cards, state.frames, opts);
+  const ctxNow = () => arrangeCtx(boardOf(cur, membersOf(p.slug)), state.cards, state.frames, state.thread);
   // the deepest frame at a point of the surface, leaving out the ones in `not`
   function frameAt(pt, all, not = new Set()) {
     let best = null;
@@ -465,12 +452,14 @@ export function projectCanvas(p, ctx) {
     const board = sectionsOf(cur);
     const pick = await actionSheet(secName(sec), [
       { label: t('canvas.group.rename'), value: 'rename', icon: 'edit' },
+      { label: t('canvas.group.tidy'), value: 'tidy', icon: 'format' },
       ...GROUP_COLOURS.map((c) => ({ label: t(`colour.${c}`), value: `c:${c}`, icon: 'dot', color: hexOf(c) })), '-',
       ...(depthOfSection(board, sec.id) < 2 ? [{ label: t('board.sub.new'), value: 'sub', icon: 'plus' }] : []),
       ...(sec.parent ? [{ label: t('board.sub.out'), value: 'out', icon: 'arrowUp' }] : []),
       { label: t('canvas.group.delete'), value: 'delete', icon: 'trash', danger: true, disabled: board.length < 2 },
     ]);
     if (!pick) return;
+    if (pick === 'tidy') { tidy(sec.id); return; }
     if (pick === 'rename') {
       const v = await promptDialog(t('canvas.group.rename'), { value: secName(sec), label: t('canvas.group.name') });
       if (v == null || !v.trim()) return;
@@ -549,6 +538,8 @@ export function projectCanvas(p, ctx) {
         state.cards.set(slug, { x: Math.round(pos.x), y: Math.round(pos.y), w: CARD_W, h: 110 });
         sync();
         scheduleSave();
+        // while ordering the red thread the note goes in at the insertion point (0.34.0)
+        if (state.mode === 'thread') { const at = state.insertAt; await saveThread(threadWith(state.thread, slug, at)); if (at >= 0) state.insertAt = at + 1; threadHint(); }
         toast(t('note.kept'), 'ok');
       } catch { toast(t('create.failed'), 'error', 5000); }
     };
@@ -561,24 +552,80 @@ export function projectCanvas(p, ctx) {
   }
 
   // ---------------------------------------------------------------- the red thread
+  // The bar while you order (0.34.0): where new cards go (start, after card n, end; also a tap on the red line between
+  // two cards), the overview to reorder, suggest, clear, done.
+  const placeLabel = () => {
+    const at = state.insertAt;
+    if (at < 0 || at >= state.thread.length) return t('thread.at.end');
+    if (at === 0) return t('thread.at.start');
+    const d = nodeBySlug(state.thread[at - 1]);
+    return t('thread.at.after', { n: at, title: d ? nodeTitle(d, lang) : '' });
+  };
+  function threadHint() {
+    if (state.mode !== 'thread') return;
+    const place = h('button', { type: 'button', class: 'btn small pc-insert', title: t('thread.at.hint') }, iconEl('enter'), h('span', { text: placeLabel() }));
+    place.addEventListener('click', () => pickInsert());
+    const over = h('button', { type: 'button', class: 'btn small pc-overview', title: t('thread.overview.hint') }, iconEl('list'), h('span', { text: t('thread.overview') }));
+    over.addEventListener('click', () => threadSheet());
+    const clear = h('button', { type: 'button', class: 'link-btn pc-thread-clear', text: t('canvas.thread.clear') });
+    clear.addEventListener('click', async () => {
+      if (state.thread.length && await confirmDialog(t('canvas.thread'), t('canvas.thread.clear.confirm'), { okLabel: t('canvas.thread.clear'), danger: true })) { state.insertAt = -1; saveThread([]); }
+    });
+    const suggest = h('button', { type: 'button', class: 'btn small pc-suggest', title: t('canvas.thread.suggest.hint') }, iconEl('wand'), h('span', { text: t('canvas.thread.suggest') }));
+    suggest.addEventListener('click', () => suggestNow());
+    const ready = h('button', { type: 'button', class: 'btn small primary pc-done', text: t('canvas.done') });
+    ready.addEventListener('click', () => setMode(''));
+    hint.replaceChildren(h('span', { class: 'pc-hint-t', text: t('canvas.thread.on') }), place, over, suggest, clear, ready);
+  }
+  function setInsert(at) {
+    state.insertAt = at < 0 || at >= state.thread.length ? -1 : at;
+    drawLines();
+    threadHint();
+  }
+  async function pickInsert() {
+    const items = [{ label: t('thread.at.start'), value: 0, icon: 'arrowUp' }];
+    state.thread.slice(0, -1).forEach((slug, i) => { const d = nodeBySlug(slug); items.push({ label: t('thread.at.after', { n: i + 1, title: d ? nodeTitle(d, lang) : slug }), value: i + 1, icon: 'enter' }); });
+    items.push({ label: t('thread.at.end'), value: -1, icon: 'arrowDown' });
+    const v = await actionSheet(t('thread.at.hint'), items);
+    if (v != null) setInsert(v);
+  }
   async function saveThread(list) {
     state.thread = list;
     layout();
+    threadHint();
     try { await setThread(path, list); } catch { toast(t('canvas.saveFailed'), 'error', 5000); }
     scheduleSave();   // the canvas file carries the red thread as lines for Obsidian
   }
-  // "Suggest" (0.27.1): the red thread along the derivations (projects.js suggestThread), with Undo
-  async function suggestNow() {
-    const fresh = (await loadProject(path).catch(() => null)) || p;
-    const list = suggestThread(fresh, membersOf(p.slug));
-    if (list.length < 2) { toast(t('canvas.thread.suggest.none'), 'info'); return; }
-    const was = [...state.thread];
-    await saveThread(list);
-    toast(t('canvas.thread.suggested', { n: list.length }), 'ok', 6000, { label: t('delete.undo'), run: () => saveThread(was) });
+  // "Suggest" (0.27.1): since 0.34.0 the overview shows the order along the derivations with the reason for every
+  // place; "Übernehmen" takes it (with Undo)
+  function threadSheet(suggest = false) {
+    return openThread({ path, title: cur.title, suggest, onChange: (list) => { state.thread = [...list]; if (state.insertAt > list.length) state.insertAt = -1; layout(); threadHint(); scheduleSave(); } });
   }
+  const suggestNow = () => threadSheet(true);
   function tapCard(slug) {
-    if (state.mode === 'thread') saveThread(state.thread.includes(slug) ? state.thread.filter((x) => x !== slug) : [...state.thread, slug]);
-    else { state.selected = state.selected === slug ? null : slug; layout(); }
+    if (state.mode !== 'thread') { state.selected = state.selected === slug ? null : slug; layout(); return; }
+    const i = state.thread.indexOf(slug);
+    if (i >= 0) {
+      // out of the thread; the insertion point keeps its neighbours
+      if (state.insertAt > i) state.insertAt -= 1;
+      saveThread(state.thread.filter((x) => x !== slug));
+      return;
+    }
+    // in at the insertion point (0.34.0); the next one comes after it
+    const at = state.insertAt;
+    saveThread(threadWith(state.thread, slug, at));
+    if (at >= 0) state.insertAt = at + 1;
+    threadHint();
+  }
+  // "Ausrichten" (0.34.0): one group or all, with Undo
+  function tidy(id) {
+    const snap = snapshot(state.cards, state.frames);
+    const c = ctxNow();
+    if (id) tidyOne(c, id); else tidyAll(c);
+    layout();
+    scheduleSave();
+    if (!id) requestAnimationFrame(() => fit());
+    toast(t(state.thread.length ? 'canvas.tidied.thread' : 'canvas.tidied'), 'ok', 6000, { label: t('delete.undo'), run: () => { restore(snap, state.cards, state.frames); layout(); scheduleSave(); } });
   }
 
   // ---------------------------------------------------------------- a click on a thread: what it is, let go of it
@@ -630,6 +677,7 @@ export function projectCanvas(p, ctx) {
     }
     const card = e.target.closest('.pc-card');
     const hit = e.target.closest('.pc-hit');
+    const redHit = state.mode === 'thread' ? e.target.closest('.pc-red-hit') : null;
     const groupHead = e.target.closest('.pc-group-head');
     const groupSize = e.target.closest('.pc-group-size');
     if (card && e.target.closest('.pc-size')) {
@@ -643,7 +691,8 @@ export function projectCanvas(p, ctx) {
       drag = { mode: 'card', slug: card.dataset.slug, sx: s.x, sy: s.y, ox: b.x, oy: b.y, moved: false, rects: rects({ skip: card.dataset.slug }) };
     } else if (groupSize) {
       const r = rects().get(groupSize.dataset.id);
-      if (r) drag = { mode: 'size', id: r.id, x: r.x, y: r.y, sx: s.x, sy: s.y, ow: r.w, oh: r.h, moved: false };
+      // 0.34.0: from the boxes as they are now, on every move again (cards inside, neighbours aside)
+      if (r) drag = { mode: 'size', id: r.id, x: r.x, y: r.y, sx: s.x, sy: s.y, ow: r.w, oh: r.h, moved: false, snap: snapshot(state.cards, state.frames), old: { x: r.x, y: r.y, w: r.w, h: r.h } };
     } else if (groupHead) {
       // the section, its subgroups, their cards and the frames you set move along
       const id = groupHead.dataset.id;
@@ -653,6 +702,8 @@ export function projectCanvas(p, ctx) {
       const inside = slugs.map((slug) => state.cards.get(slug)).filter(Boolean).map((b) => ({ b, ox: b.x, oy: b.y }));
       const frames = [...tree].map((x) => [x, all.get(x)]).filter(([, r]) => r).map(([x, r]) => ({ id: x, ox: r.x, oy: r.y, w: r.w, h: r.h }));
       drag = { mode: 'group', id, tree, inside, frames, sx: s.x, sy: s.y, moved: false };
+    } else if (redHit) {
+      drag = { mode: 'redhit', at: Number(redHit.dataset.at), sx: s.x, sy: s.y, moved: false };
     } else if (hit) {
       drag = { mode: 'hit', from: hit.dataset.from, to: hit.dataset.to, both: hit.dataset.both === '1', sx: s.x, sy: s.y, moved: false };
     } else {
@@ -704,8 +755,11 @@ export function projectCanvas(p, ctx) {
       b.sized = true;
       layout();
     } else if (drag.mode === 'size') {
-      state.frames.set(drag.id, { x: drag.x, y: drag.y, w: Math.max(180, Math.round(drag.ow + dx / state.k)), h: Math.max(120, Math.round(drag.oh + dy / state.k)) });
-      drawGroups();
+      restore(drag.snap, state.cards, state.frames);
+      const c = ctxNow();
+      c.before = rects();
+      drag.R = resizeGroup(c, drag.id, drag.ow + dx / state.k, drag.oh + dy / state.k, drag.old);
+      layout();
     } else if (drag.mode === 'link') {
       rubber.b = toWorld(s.x, s.y);
       const over = under(e)?.closest('.pc-card')?.dataset.slug;
@@ -759,7 +813,16 @@ export function projectCanvas(p, ctx) {
       scheduleSave();
       return;
     }
+    if (d.mode === 'size' && d.moved && d.R) {
+      // cards squeezed onto each other: tidied to the new width
+      const c = ctxNow();
+      if (settleGroup(c, d.id, d.R)) layout();
+      scheduleSave();
+      toast(t('canvas.group.sized'), 'ok', 6000, { label: t('delete.undo'), run: () => { restore(d.snap, state.cards, state.frames); layout(); scheduleSave(); } });
+      return;
+    }
     if (d.mode === 'size' || d.mode === 'csize') { if (d.moved) scheduleSave(); return; }
+    if (d.mode === 'redhit' && !d.moved) { setInsert(d.at); return; }
     if (d.mode === 'hit' && !d.moved) { const s = local(e); threadPop(d.from, d.to, s.x, s.y, d.both); return; }
     if (d.mode === 'pan' && !d.moved && state.selected) { state.selected = null; layout(); }
   });
@@ -866,7 +929,7 @@ export function projectCanvas(p, ctx) {
     // a note on the canvas was written: its text on the card follows
     for (const [slug, el] of els) { const d = nodeBySlug(slug); if (d?.type === 'note' && paths.includes(d.path)) noteText(d, el.querySelector('.pc-card-body')); }
     // the red thread changed in the project (here, on the board, in another window): take it over
-    if (paths.includes(path)) loadProject(path).then((fresh) => { if (fresh && !drag) { cur = fresh; state.thread = [...fresh.thread]; layout(); } }).catch(() => {});
+    if (paths.includes(path)) loadProject(path).then((fresh) => { if (fresh && !drag) { cur = fresh; state.thread = [...fresh.thread]; layout(); threadHint(); } }).catch(() => {});
   });
   const stopWin = onAnnounce((msg) => { if (msg?.kind === 'canvas' && msg.path === canvasPathOf(path) && wrap.isConnected && !drag) load({ keepView: true }); });
   function stopAll() { stopRel(); stopNodes(); stopWin(); ro?.disconnect(); document.body.classList.remove('pc-full-open'); }

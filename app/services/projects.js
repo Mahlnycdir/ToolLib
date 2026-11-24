@@ -521,7 +521,11 @@ export function threadPlace(p, slug) {
 // Notes, sources and folders stay out, unless fewer than two cards would remain. Returns the slugs in order.
 // For Python readers: a topological sort like graphlib.TopologicalSorter, picking the next node by a sort key.
 const STEP_RANK = { definition: 0, term: 0, convention: 1, topic: 2, theorem: 3, formula: 3, page: 4, snippet: 5, recipe: 5 };
-export function suggestThread(p, members = projectNodes(p.links)) {
+export const suggestThread = (p, members = projectNodes(p.links)) => suggestThreadWhy(p, members).map((x) => x.slug);
+// The same with the reason for every place (0.34.0, P5: "Vorschlag nachvollziehbar"):
+//   { slug, why: 'chain' (builds on the card before) | 'after' (follows from / uses cards placed earlier: refs)
+//               | 'kind' (definitions before formulas before snippets) | 'board' (the board's order) | 'circle', refs }
+export function suggestThreadWhy(p, members = projectNodes(p.links)) {
   const usable = members.filter((d) => d && !d.conflict && d.type !== 'library' && d.type !== 'project');
   let list = usable.filter((d) => d.type in STEP_RANK);
   if (list.length < 2) list = usable;
@@ -535,14 +539,49 @@ export function suggestThread(p, members = projectNodes(p.links)) {
     const left = list.filter((d) => !placed.has(d.slug));
     const free = left.filter((d) => [...before.get(d.slug)].every((x) => placed.has(x)));
     const pool = free.length ? free : left;   // a circle in the derivations: take the best one and go on
-    const last = out[out.length - 1];
+    const last = out[out.length - 1]?.slug;
     const key = (d) => [last && before.get(d.slug).has(last) ? 0 : 1, STEP_RANK[d.type] ?? 9, boardPos.get(d.slug) ?? 999];
     pool.sort((a, b) => { const ka = key(a); const kb = key(b); return ka[0] - kb[0] || ka[1] - kb[1] || ka[2] - kb[2]; });
-    out.push(pool[0].slug);
-    placed.add(pool[0].slug);
+    const d = pool[0];
+    const refs = [...before.get(d.slug)];
+    const rivals = pool.slice(1);
+    let why = 'board';
+    if (!free.length) why = 'circle';
+    else if (last && before.get(d.slug).has(last)) why = 'chain';
+    else if (refs.length) why = 'after';
+    else if (rivals.some((r) => (STEP_RANK[r.type] ?? 9) > (STEP_RANK[d.type] ?? 9))) why = 'kind';
+    out.push({ slug: d.slug, why, refs: why === 'chain' ? [last] : refs });
+    placed.add(d.slug);
   }
   return out;
 }
+// Where a card stands against what it follows from: the cards of the thread it builds on that come after it
+// (0.34.0, the overview marks them: "kommt vor seiner Herleitung")
+export function threadClashes(p, members = projectNodes(p.links)) {
+  const at = new Map((p.thread || []).map((s, i) => [s, i]));
+  const out = new Map();
+  for (const d of members) {
+    if (!d || !at.has(d.slug)) continue;
+    const late = [...new Set([...(d.derived || []), ...(d.conventions || [])])].filter((x) => at.has(x) && at.get(x) > at.get(d.slug));
+    if (late.length) out.set(d.slug, late);
+  }
+  return out;
+}
+// The cards of sections in the order of the red thread (0.34.0, "Ausrichten" on the board): cards of the thread first,
+// in its order, the others after them as they stood. ids: the sections (all when empty). True when something changed.
+export const orderByThread = (path, ids = []) => changeProject(path, (text, p) => {
+  const at = new Map((p.thread || []).map((s, i) => [s, i]));
+  if (!at.size) return null;
+  let next = text;
+  for (const sec of boardOf(p)) {
+    if (ids.length && !ids.includes(sec.id)) continue;
+    const list = sec.items.map((n) => n.slug);
+    const sorted = list.map((s, i) => [s, i]).sort((a, b) => (at.get(a[0]) ?? Infinity) - (at.get(b[0]) ?? Infinity) || a[1] - b[1]).map((x) => x[0]);
+    if (sorted.every((s, i) => s === list[i])) continue;
+    next = setBoard(next, sec.id, sorted);
+  }
+  return next;
+});
 export const setRead = toggleIn('read');
 export const setPinned = toggleIn('pins');
 export const setDue = (path, date, what = '') => changeProject(path, (text) => {

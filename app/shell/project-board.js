@@ -19,8 +19,9 @@ import {
   removeFromProject, removeLink, removeSection, saveCalc, saveProjectNotes, sectionsOf, setDue, setFocus, setPinned, setRead,
   setWidgets, updateSection, widgetsOf, SECTION_COLOURS, focusProject, projectNodes, nextUp,
   addProjectBlock, saveProjectBlock, saveProjectBlockContent, removeProjectWidget,
-  sectionTree, depthOfSection, setSectionParent, setProjectLayout, projectSnapshot, restoreProjectWidget,
+  sectionTree, depthOfSection, setSectionParent, setProjectLayout, projectSnapshot, restoreProjectWidget, orderByThread,
 } from '../services/projects.js';
+import { openThread } from './thread-sheet.js';
 import { newBlockId } from '../services/widget-store.js';
 import { widgetGrid } from './widget-frame.js';
 import { BLOCK_ICON, blockBody, blockChoices, blockHasContent, blockTitle, editBlock } from './widget-blocks.js';
@@ -207,7 +208,13 @@ function board(p, members, ctx, sw = null) {
     await addSection(path, v, SECTION_COLOURS.find((c) => !used.has(c)) || 'slate');
     redraw();
   });
-  const section = h('section', { class: 'board-wrap' }, h('div', { class: 'board-top' }, h('h2', { class: 'board-h' }, h('span', { text: t('board.title') }), h('span', { class: 'muted small board-hint', text: t(narrow() ? 'board.hint.touch' : 'board.hint') })), h('div', { class: 'board-top-end' }, sw, newSec)), topScroller(wrap), wrap);
+  // 0.34.0: the red thread as a list to reorder and insert into (thread-sheet.js), and "Ausrichten": the cards of
+  // every section in the order of the thread
+  const threadBtn = h('button', { type: 'button', class: 'btn small board-thread', title: t('thread.overview.hint') }, iconEl('thread'), h('span', { text: p.thread?.length ? t('board.thread.btn', { n: p.thread.length }) : t('canvas.thread') }));
+  threadBtn.addEventListener('click', () => { let changed = false; openThread({ path, title: p.title, onChange: () => { changed = true; }, onClose: () => { if (changed) redraw(); } }); });
+  const alignBtn = h('button', { type: 'button', class: 'btn small board-align', title: t('board.align.hint') }, iconEl('format'), h('span', { text: t('board.align') }));
+  alignBtn.addEventListener('click', () => alignBoard(p, ctx));
+  const section = h('section', { class: 'board-wrap' }, h('div', { class: 'board-top' }, h('h2', { class: 'board-h' }, h('span', { text: t('board.title') }), h('span', { class: 'muted small board-hint', text: t(narrow() ? 'board.hint.touch' : 'board.hint') })), h('div', { class: 'board-top-end' }, sw, threadBtn, alignBtn, newSec)), topScroller(wrap), wrap);
   boardThreads(section, wrap, p);
   return section;
 }
@@ -422,6 +429,23 @@ function cardRow(n, index, s, p, ctx, lang) {
   return li;
 }
 
+// "Ausrichten" on the board (0.34.0): the cards of the sections (all, or ids) in the order of the red thread, with Undo
+async function alignBoard(p, ctx, ids = []) {
+  const { path, redraw } = ctx;
+  if (!p.thread?.length) { toast(t('board.align.none'), 'info', 5000); return; }
+  const was = Object.fromEntries(Object.entries(p.board || {}).map(([k, v]) => [k, [...v]]));
+  if (!(await orderByThread(path, ids))) { toast(t('board.align.same'), 'info'); return; }
+  toast(t('board.aligned'), 'ok', 6000, { label: t('delete.undo'), run: async () => {
+    for (const sec of sectionsOf(p)) {
+      const list = was[sec.id];
+      if (!list) continue;
+      for (let i = 0; i < list.length; i++) await placeItem(path, list[i], sec.id, i);
+    }
+    redraw();
+  } });
+  redraw();
+}
+
 async function sectionMenu(p, s, secs, ctx) {
   const { path, redraw } = ctx;
   const sibs = secs.filter((x) => (x.parent || '') === (s.parent || ''));
@@ -432,6 +456,7 @@ async function sectionMenu(p, s, secs, ctx) {
   const pick = await actionSheet(sectionTitle(s), [
     { label: t('board.section.rename'), value: 'rename', icon: 'edit' },
     { label: t('board.section.colour'), value: 'colour', icon: 'palette' },
+    ...(p.thread?.length ? [{ label: t('board.align.section'), value: 'align', icon: 'format' }] : []),
     ...(si > 1 ? [{ label: t('board.section.first'), value: 'first', icon: 'arrowLeft' }] : []),
     { label: t('board.section.left'), value: 'left', icon: 'arrowLeft', disabled: si === 0 },
     { label: t('board.section.right'), value: 'right', icon: 'arrowRight', disabled: si === sibs.length - 1 },
@@ -444,6 +469,7 @@ async function sectionMenu(p, s, secs, ctx) {
   ]);
   const idx = (id) => secs.findIndex((x) => x.id === id);
   const afterTree = (id) => Math.max(...[id, ...sectionTree(secs, id)].map(idx)) + 1;
+  if (pick === 'align') { await alignBoard(p, ctx, [s.id, ...sectionTree(secs, s.id)]); return; }
   if (pick === 'rename') {
     const v = await promptDialog(t('board.section.rename'), { value: sectionTitle(s), validate: (x) => (x.trim() ? '' : t('project.needTitle')) });
     if (v == null || v.trim() === sectionTitle(s)) return;

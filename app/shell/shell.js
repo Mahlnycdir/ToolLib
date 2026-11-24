@@ -477,6 +477,7 @@ export function startShell(root) {
     if (!cmd.firstChild) {
       cmd.append(menuBtn, tabs, h('div', { class: 'cmd-field' }, iconEl('search', 'cmd-icon'), input, kbd), talkBtn, plusBtn, pill, results);
       app.append(fab);
+      keepFabClear(fab, main);
     }
     talkBtn.replaceChildren(loomMark(18), iconEl('mic', 'talk-btn-mic'));
     keyTitle(talkBtn, t('loom.talk'), 'loom.talk');
@@ -992,4 +993,59 @@ export function startShell(root) {
   // PDFs you put into the inbox on your Mac (0.14.4) come in by themselves while Toollib is open and the helper answers
   watchInbox({ title: () => t('inbox.folder'), onDone: (r) => toast(r.added ? t('inbox.done', { n: r.added }) : t('inbox.result', r), r.failed ? 'warn' : 'ok', 5000) })
     .catch((e) => console.warn('PDF inbox', e));
+}
+
+// 0.34.0 (ENTE, 24.11.: "das muss immer drüber sein"): Loom's round button on the phone never lies on the buttons
+// of a tool. Tools that fill the height (Kladde, Kobra, the reader, the network …) have their own bars at the foot;
+// the button sat on Kladde's undo, redo and magnifier. After every change of the page the button looks at what lies
+// under its usual place; is there something to tap, it rises above the bar that holds it (a row across the screen).
+// Pages that flow keep it where it is: their content scrolls past it and ends in room left for it (.main::after).
+const FULL_VIEWS = new Set(['research', 'net', 'kobra', 'kladde', 'library-open', 'source']);
+function keepFabClear(fab, main) {
+  const TAP = 'button, a[href], input, select, textarea, [role="button"], [role="tab"], [tabindex]:not([tabindex="-1"])';
+  let queued = false;
+  const phone = window.matchMedia('(max-width: 759px)');
+  const place = () => {
+    queued = false;
+    // on the Mac (no round button) and on pages that flow nothing is measured
+    const off = !phone.matches || !FULL_VIEWS.has(main.dataset.view || '');
+    if (off && !fab.classList.contains('lifted')) return;
+    fab.style.bottom = '';
+    fab.classList.remove('lifted');
+    if (off || !fab.isConnected || getComputedStyle(fab).display === 'none') return;
+    const vh = window.innerHeight;
+    for (let round = 0; round < 3; round++) {
+      const r = fab.getBoundingClientRect();
+      if (!r.width) return;
+      let top = Infinity;
+      for (const [x, y] of [[r.left + 4, r.top + 4], [r.right - 4, r.top + 4], [r.left + r.width / 2, r.top + r.height / 2], [r.left + 4, r.bottom - 4], [r.right - 4, r.bottom - 4]]) {
+        for (const el of document.elementsFromPoint(x, y)) {
+          if (el === fab || fab.contains(el) || !main.contains(el)) continue;
+          const tap = el.closest(TAP);
+          // a drawing surface or a page you can focus is not a button: the button may lie on it
+          if (!tap || !main.contains(tap) || tap === main || tap.getBoundingClientRect().height > 120) continue;
+          // the bar: the nearest box around the button that spans most of the screen and is not a whole page
+          let bar = tap;
+          for (let up = tap.parentElement; up && up !== main; up = up.parentElement) {
+            const b = up.getBoundingClientRect();
+            if (b.height > 180) break;
+            bar = up;
+            if (b.width >= window.innerWidth * 0.6) break;
+          }
+          top = Math.min(top, bar.getBoundingClientRect().top);
+          break;
+        }
+      }
+      if (top === Infinity) return;
+      fab.style.bottom = `${Math.round(vh - top + 10)}px`;
+      fab.classList.add('lifted');
+    }
+  };
+  const later = () => { if (!queued) { queued = true; requestAnimationFrame(place); } };
+  // the whole app: a tool switches its bars by attributes on the app too (Kladde's magnifier, the keyboard)
+  new MutationObserver(later).observe(fab.parentElement || main, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-view', 'hidden', 'class', 'data-kladde-lupe'] });
+  window.addEventListener('resize', later);
+  window.visualViewport?.addEventListener('resize', later);
+  phone.addEventListener?.('change', later);
+  later();
 }
